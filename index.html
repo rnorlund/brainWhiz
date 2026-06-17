@@ -691,8 +691,17 @@ $('zoomSlider').addEventListener('input', e=>setCamDistance(normToDist(+e.target
 $('zoomVert').addEventListener('input', e=>setCamDistance(normToDist(1-(+e.target.value))));
 $('zoomIn').addEventListener('click', ()=>setCamDistance(camDistance()*0.82));
 $('zoomOut').addEventListener('click', ()=>setCamDistance(camDistance()*1.22));
-$('zoomSpeed').addEventListener('input', e=>{ controls.zoomSpeed=+e.target.value; $('zoomSpdV').textContent=(+e.target.value).toFixed(1)+'×'; });
-controls.zoomSpeed = +$('zoomSpeed').value;
+$('zoomSpeed').addEventListener('input', e=>$('zoomSpdV').textContent=(+e.target.value).toFixed(1)+'×');
+// Mouse wheel drives the SAME setCamDistance() path as the slider/buttons, so the
+// feel is consistent. OrbitControls' own zoom is disabled to avoid a second path.
+controls.enableZoom = false;
+renderer.domElement.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const sens = +$('zoomSpeed').value;                 // "Mouse zoom" slider
+  const factor = Math.exp(e.deltaY * 0.001 * sens);   // >1 zoom out, <1 zoom in
+  const lo = modelRadius*0.4, hi = modelRadius*30;
+  setCamDistance(Math.max(lo, Math.min(hi, camDistance()*factor)));
+}, {passive:false});
 // keep both sliders in sync while wheel-zooming / buttons (unless being dragged)
 controls.addEventListener('change', ()=>{ const n=distToNorm(camDistance());
   const h=$('zoomSlider'), v=$('zoomVert');
