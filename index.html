@@ -599,11 +599,6 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   sceneCenter.copy(sphere.center);
   camDist = sphere.radius*2.6;
   camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
-  // clamp zoom so an inertial/trackpad scroll can't dolly the brain through the
-  // near plane (vanishes) or far past it; keeps it always on-screen.
-  controls.minDistance = sphere.radius*0.55;
-  controls.maxDistance = sphere.radius*14;
-  controls.zoomSpeed = 0.8;
 
   // default to lobe coloring, but if the atlas's names don't map to lobes well
   // (e.g. Brodmann areas, tract atlases) everything lands in one bucket -> use
