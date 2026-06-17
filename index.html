@@ -99,6 +99,9 @@
   .pbCell:hover .rm{display:block}
   .pbCell .cap{position:absolute;bottom:0;left:0;right:0;background:#000a;color:#fff;
     font-size:9px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pbSliders{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px;color:var(--muted)}
+  .pbSliders label{display:flex;flex-direction:column;gap:1px}
+  .pbSliders input[type=range]{width:100%}
 </style>
 </head>
 <body>
@@ -202,19 +205,24 @@
 <div id="panelBuilder">
   <div class="pbHead">🗔 Figure panels
     <select id="pbGrid">
-      <option>1x2</option><option selected>2x2</option><option>2x3</option><option>3x3</option><option>1x3</option><option>3x2</option>
+      <option>1x2</option><option selected>2x2</option><option>2x3</option><option>3x3</option><option>1x3</option><option>3x2</option><option>1x1</option><option>4x4</option>
     </select>
-    <label class="toggle" style="font-size:10px"><input type="checkbox" id="pbLabels" checked>lbl</label>
-    <label class="toggle" style="font-size:10px"><input type="checkbox" id="pbBar" checked>bar</label>
     <span style="flex:1"></span>
     <button class="sm" id="pbClose">✕</button>
   </div>
   <div id="pbCells"></div>
+  <div class="pbSliders">
+    <label>Brain size <span id="pbBrainV"></span><input type="range" id="pbBrain" min="200" max="1100" step="20" value="640"></label>
+    <label>Title size <span id="pbTitleV"></span><input type="range" id="pbTitle" min="0" max="64" step="2" value="24"></label>
+    <label>Colorbar size <span id="pbCbarV"></span><input type="range" id="pbCbar" min="0" max="90" step="4" value="40"></label>
+    <label>Gap <span id="pbGapV"></span><input type="range" id="pbGap" min="0" max="80" step="2" value="18"></label>
+    <label>Figure BG <input type="color" id="pbBg" value="#ffffff"></label>
+  </div>
   <div style="display:flex;gap:6px;margin-top:8px">
     <button class="sm" id="pbExport">⬇ Export PNG</button>
     <button class="sm" id="pbClear">Clear</button>
   </div>
-  <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view into it.</div>
+  <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view in. Each tile keeps its own colorbar.</div>
 </div>
 
 <div id="settings">
@@ -1310,31 +1318,47 @@ function pbCapture(i){
   pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,false), label, cbar: window.brainAPI.colorbar() };
   pbRender();
 }
+// draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)
+function drawCbar(x, cb, bx, by, W, H, txt){
+  const lut = cb.style==='cmap' ? (CMAPS[cb.cmap]||CMAPS.viridis)
+    : [[0.54,0.56,0.6], new THREE.Color(cb.color).toArray()];
+  for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
+    const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
+    x.fillStyle=`rgb(${Math.round(255*(c0[0]+(c1[0]-c0[0])*g))},${Math.round(255*(c0[1]+(c1[1]-c0[1])*g))},${Math.round(255*(c0[2]+(c1[2]-c0[2])*g))})`;
+    x.fillRect(bx+i,by,1,H); }
+  x.strokeStyle=txt; x.globalAlpha=0.4; x.strokeRect(bx,by,W,H); x.globalAlpha=1;
+  const fs=Math.max(9, Math.round(H*0.85));
+  x.fillStyle=txt; x.font=fs+'px system-ui';
+  x.textAlign='left';  x.fillText((cb.min).toFixed(1), bx, by-3);
+  x.textAlign='right'; x.fillText((cb.max).toFixed(1), bx+W, by-3);
+}
 async function pbExport(){
   const items=pbItems; if(!items.some(Boolean)){ alert('Click tiles to add views first.'); return; }
-  const [rows,cols]=pbDims(); const cw=640,ch=480,gap=18,labelH=$('pbLabels').checked?30:0;
-  const cbInfo=$('pbBar').checked ? (items.find(it=>it&&it.cbar)||{}).cbar : null;
-  const cbH=cbInfo?56:0, bgc=$('bg').value;
+  const [rows,cols]=pbDims();
+  const cw=+$('pbBrain').value, ch=Math.round(cw*0.78);
+  const titleH=+$('pbTitle').value, cbarH=+$('pbCbar').value, gap=+$('pbGap').value;
+  const bgc=$('pbBg').value;
+  const titRes = titleH>0 ? titleH+6 : 0;
+  const anyCbar = cbarH>0 && items.some(it=>it&&it.cbar);
+  const cbRes = anyCbar ? cbarH+18 : 0;        // reserved per-cell so the grid stays aligned
+  const blockH = titRes + cbRes + ch;
   const cvs=document.createElement('canvas');
-  cvs.width=cols*cw+(cols+1)*gap; cvs.height=rows*(ch+labelH)+(rows+1)*gap+cbH;
+  cvs.width = cols*cw+(cols+1)*gap; cvs.height = rows*blockH+(rows+1)*gap;
   const x=cvs.getContext('2d'); x.fillStyle=bgc; x.fillRect(0,0,cvs.width,cvs.height);
   const dark = new THREE.Color(bgc).getHSL({}).l<0.5; const txt=dark?'#fff':'#111';
-  await Promise.all(items.map((it,i)=> it? new Promise(res=>{ const c=i%cols,r=Math.floor(i/cols);
-    const px=gap+c*(cw+gap), py=gap+r*(ch+labelH+gap);
-    const img=new Image(); img.onload=()=>{ x.drawImage(img,px,py,cw,ch);
-      if(labelH){ x.fillStyle=txt; x.font='bold 21px system-ui'; x.textAlign='center'; x.fillText(it.label||'', px+cw/2, py+ch+22); }
-      res(); }; img.onerror=res; img.src=it.dataURL; }) : Promise.resolve()));
-  if(cbInfo){ const lut = cbInfo.style==='cmap' ? (CMAPS[cbInfo.cmap]||CMAPS.viridis)
-      : [[0.54,0.56,0.6], new THREE.Color(cbInfo.color).toArray()];
-    const W=Math.min(360,cvs.width-120),H=14,bx=(cvs.width-W)/2,by=cvs.height-cbH+16;
-    for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
-      const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
-      x.fillStyle=`rgb(${Math.round(255*(c0[0]+(c1[0]-c0[0])*g))},${Math.round(255*(c0[1]+(c1[1]-c0[1])*g))},${Math.round(255*(c0[2]+(c1[2]-c0[2])*g))})`;
-      x.fillRect(bx+i,by,1,H); }
-    x.fillStyle=txt; x.font='12px system-ui';
-    x.textAlign='left'; x.fillText(cbInfo.min.toFixed(1),bx,by+H+14);
-    x.textAlign='right'; x.fillText(cbInfo.max.toFixed(1),bx+W,by+H+14);
-    x.textAlign='center'; x.fillText(cbInfo.name||'',bx+W/2,by-4); }
+  await Promise.all(items.map((it,i)=> it? new Promise(res=>{
+    const c=i%cols, r=Math.floor(i/cols);
+    const px=gap+c*(cw+gap), py=gap+r*(blockH+gap);
+    // 1) title on top
+    if(titleH>0 && it.label){ x.fillStyle=txt; x.font='bold '+Math.round(titleH*0.78)+'px system-ui';
+      x.textAlign='center'; x.fillText(it.label, px+cw/2, py+titleH*0.82); }
+    // 2) this panel's own colorbar (below title, above brain)
+    if(cbarH>0 && it.cbar){ const W=Math.min(cw*0.8, cw-20), bx=px+(cw-W)/2, by=py+titRes+14;
+      drawCbar(x, it.cbar, bx, by, W, cbarH, txt); }
+    // 3) brain
+    const img=new Image(); img.onload=()=>{ x.drawImage(img, px, py+titRes+cbRes, cw, ch); res(); };
+    img.onerror=res; img.src=it.dataURL;
+  }) : Promise.resolve()));
   const a=document.createElement('a'); a.download='brain_figure.png'; a.href=cvs.toDataURL('image/png'); a.click();
 }
 $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
@@ -1343,6 +1367,8 @@ $('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none'
 $('pbGrid').addEventListener('change',pbRender);
 $('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
 $('pbExport').addEventListener('click',pbExport);
+[['pbBrain','pbBrainV','px'],['pbTitle','pbTitleV','px'],['pbCbar','pbCbarV','px'],['pbGap','pbGapV','px']]
+  .forEach(([id,vid,suf])=>{ const f=()=>$(vid).textContent=$(id).value+suf; $(id).addEventListener('input',f); f(); });
 $('panelBuilder').style.display='none';
 
 const clock=new THREE.Clock();

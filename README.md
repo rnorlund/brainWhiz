@@ -36,18 +36,28 @@ Switch atlas with the **Atlas** dropdown or the URL: `index.html?atlas=jhu` (`aa
 
 ---
 
-## Atlases
+## Atlases (16 bundled)
 
 | id | atlas | ROIs | connectivity | task maps |
 |----|-------|-----:|:---:|:---:|
 | `jhu` | JHU (Johns Hopkins) | 189 | ✅ | ✅ |
+| `aicha` | AICHA | 384 | ✅ | ✅ |
+| `anatomy3` | SPM Anatomy v3 | 186 | – | ✅ |
+| `aal3` | AAL3 | 161 | – | ✅ |
+| `aalcat` | AAL (categorized) | 150 | – | ✅ |
+| `neuromorph` | Neuromorphometrics | 134 | – | ✅ |
+| `ho` | Harvard-Oxford | 117 | – | ✅ |
 | `aal` | AAL | 116 | – | ✅ |
 | `bro` | Brodmann | 82 | – | ✅ |
-| `aicha` | AICHA | 384 | ✅ | ✅ |
+| `lpba40` | LPBA40 | 56 | – | ✅ |
+| `cobra` | COBRA (subcortical/cerebellar) | 52 | – | ✅ |
+| `xtract` | XTRACT white-matter tracts | 42 | – | ✅ |
+| `arterial` | Arterial territories | 32 | – | ✅ |
+| `hammers` | Hammers | 95 | – | ✅ |
 | `catani` | Catani tracts | 27 | – | ✅ |
 | `fox` | Fox | 10 | – | ✅ |
 
-All atlases are in MNI152 space, so overlays and connectivity align across them.
+All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha` — those are the only atlases with DTI matrices in the source ABC participant data (`dti_jhu`/`dti_AICHA`). Overlays and task maps work for every atlas (sampled/resampled into each atlas's own grid).
 
 ---
 

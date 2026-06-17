@@ -32,36 +32,62 @@ NEURO_TERMS = ["motor","movement","finger tapping","language","speech production
 
 
 def parse_labels(path):
-    """Return {idx: {id, abbr, name}} for many common label formats."""
-    out = {}
-    with open(path, errors="ignore") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    """Return {idx: {id, abbr, name}} for many common label formats
+    (pipe / comma / whitespace / FreeSurfer LUT / CAT12 semicolon CSV)."""
+    lines = [l.rstrip("\n") for l in open(path, errors="ignore")]
+    # --- CAT12-style semicolon CSV with a header row containing ROIid ---
+    hdr = next((l for l in lines if l.strip()), "")
+    if ";" in hdr and "roiid" in hdr.lower():
+        cols = [c.strip().lower() for c in hdr.split(";")]
+        i_id = cols.index("roiid")
+        i_nm = cols.index("roiname") if "roiname" in cols else None
+        i_ab = cols.index("roiabbr") if "roiabbr" in cols else None
+        out = {}
+        for l in lines[lines.index(hdr) + 1:]:
+            if not l.strip():
                 continue
-            if "|" in line:
-                p = [x.strip() for x in line.split("|")]
-            elif "," in line:
-                p = [x.strip() for x in line.split(",")]
-            else:
-                p = line.split()
-            if len(p) < 2:
-                continue
+            p = [x.strip() for x in l.split(";")]
             try:
-                idx = int(float(p[0]))
-            except ValueError:
+                idx = int(float(p[i_id]))
+            except (ValueError, IndexError):
                 continue
             if idx <= 0:
                 continue
-            abbr = p[1] if len(p) > 1 else f"ROI{idx}"
-            # name = a later non-numeric field if present, else abbr
-            name = abbr
-            for extra in p[2:]:
-                if not re.fullmatch(r"[-+0-9. ]+", extra):
-                    name = extra; break
-            if re.fullmatch(r"\d+", abbr):       # numeric abbr (e.g. AAL code) -> use name
-                abbr = name
+            name = p[i_nm] if (i_nm is not None and i_nm < len(p) and p[i_nm]) else None
+            abbr = p[i_ab] if (i_ab is not None and i_ab < len(p) and p[i_ab]) else None
+            name = name or abbr or f"ROI{idx}"
+            abbr = abbr or name
             out[idx] = {"id": idx, "abbr": abbr, "name": name}
+        if out:
+            return out
+    # --- generic delimited formats ---
+    out = {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line:
+            p = [x.strip() for x in line.split("|")]
+        elif "," in line:
+            p = [x.strip() for x in line.split(",")]
+        else:
+            p = line.split()
+        if len(p) < 2:
+            continue
+        try:
+            idx = int(float(p[0]))
+        except ValueError:
+            continue
+        if idx <= 0:
+            continue
+        abbr = p[1].strip()
+        name = abbr
+        for extra in p[2:]:
+            if extra and not re.fullmatch(r"[-+0-9. ]+", extra):
+                name = extra; break
+        if not abbr or re.fullmatch(r"\d+", abbr):   # empty/numeric abbr -> use name
+            abbr = name
+        out[idx] = {"id": idx, "abbr": abbr, "name": name}
     return out
 
 
@@ -212,7 +238,7 @@ def main():
 
     out = os.path.join(BUNDLES, a.id); os.makedirs(out, exist_ok=True)
     print(f"[{a.id}] loading {a.atlas}")
-    img = nib.load(a.atlas); vol = np.asarray(img.dataobj).astype(np.int32); affine = img.affine
+    img = nib.load(a.atlas); vol = np.squeeze(np.asarray(img.dataobj)).astype(np.int32); affine = img.affine
     labels = parse_labels(a.labels)
     print(f"[{a.id}] {len(np.unique(vol))-1} labels in volume, {len(labels)} in label file")
 

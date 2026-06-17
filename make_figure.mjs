@@ -97,46 +97,46 @@ async function renderPanel(ctx, panel) {
   return { dataURL, label: panel.label || "", cbar };
 }
 
+function hexToRgb(h){ h=(h||'#888').replace('#',''); return [parseInt(h.slice(0,2),16)/255,parseInt(h.slice(2,4),16)/255,parseInt(h.slice(4,6),16)/255]; }
 function composite(panels) {
-  // build the montage inside the browser (has Canvas), return final PNG dataURL
+  // per-cell layout: title -> (its own) colorbar -> brain. Each panel keeps its
+  // own colorbar (only drawn when that panel has an overlay).
   const rows = Math.ceil(panels.length / cols);
-  const cbInfo = spec.colorbar ? (panels.find(p => p.cbar) || {}).cbar : null;
-  let lut = null;
-  if (cbInfo) lut = (cbInfo.style === "cmap") ? (CMAPS[cbInfo.cmap] || CMAPS.viridis)
-    : [[0.54, 0.56, 0.6], hexToRgb(cbInfo.color)];
-  const payload = { cols, cellW, cellH, gap, bg, labelSize, labelColor, rows,
-    panels: panels.map(p => ({ dataURL: p.dataURL, label: p.label })),
-    cbar: cbInfo ? { ...cbInfo, lut } : null };
-  return payload;
+  const showBars = spec.colorbar !== false;
+  const cbarSize = spec.cbarSize ?? 38;
+  return { cols, rows, cellW, cellH, gap, bg, labelSize, labelColor, cbarSize, showBars,
+    panels: panels.map(p => ({ dataURL: p.dataURL, label: p.label,
+      cbar: (showBars && p.cbar) ? { ...p.cbar,
+        lut: p.cbar.style === "cmap" ? (CMAPS[p.cbar.cmap] || CMAPS.viridis)
+           : [[0.54,0.56,0.6], hexToRgb(p.cbar.color)] } : null })) };
 }
-function hexToRgb(h){ h=h.replace('#',''); return [parseInt(h.slice(0,2),16)/255,parseInt(h.slice(2,4),16)/255,parseInt(h.slice(4,6),16)/255]; }
 
 const COMPOSITOR = `async (F)=>{
-  const cbH = F.cbar ? 54 : 0;
+  const titRes = F.labelSize>0 ? F.labelSize+6 : 0;
+  const anyCb = F.showBars && F.cbarSize>0 && F.panels.some(p=>p.cbar);
+  const cbRes = anyCb ? F.cbarSize+18 : 0;
+  const blockH = titRes + cbRes + F.cellH;
   const cvs=document.createElement('canvas');
   cvs.width = F.cols*F.cellW + (F.cols+1)*F.gap;
-  cvs.height = F.rows*(F.cellH+F.labelSize) + (F.rows+1)*F.gap + cbH;
+  cvs.height = F.rows*blockH + (F.rows+1)*F.gap;
   const x=cvs.getContext('2d'); x.fillStyle=F.bg; x.fillRect(0,0,cvs.width,cvs.height);
+  function drawCb(cb,bx,by,W,H){ const lut=cb.lut;
+    for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
+      const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
+      x.fillStyle='rgb('+Math.round(255*(c0[0]+(c1[0]-c0[0])*g))+','+Math.round(255*(c0[1]+(c1[1]-c0[1])*g))+','+Math.round(255*(c0[2]+(c1[2]-c0[2])*g))+')';
+      x.fillRect(bx+i,by,1,H); }
+    const fs=Math.max(9,Math.round(H*0.85)); x.fillStyle=F.labelColor; x.font=fs+'px system-ui';
+    x.textAlign='left'; x.fillText(cb.min.toFixed(1),bx,by-3); x.textAlign='right'; x.fillText(cb.max.toFixed(1),bx+W,by-3); }
   await Promise.all(F.panels.map((p,i)=>new Promise(res=>{
-    const img=new Image(); img.onload=()=>{
-      const c=i%F.cols, r=Math.floor(i/F.cols);
-      const px=F.gap+c*(F.cellW+F.gap), py=F.gap+r*(F.cellH+F.labelSize+F.gap);
-      x.drawImage(img,px,py,F.cellW,F.cellH);
-      if(p.label){ x.fillStyle=F.labelColor; x.font='bold '+Math.round(F.labelSize*0.72)+'px system-ui';
-        x.textAlign='center'; x.fillText(p.label, px+F.cellW/2, py+F.cellH+F.labelSize*0.78); }
-      res();
-    }; img.onerror=()=>res(); img.src=p.dataURL;
+    const c=i%F.cols, r=Math.floor(i/F.cols);
+    const px=F.gap+c*(F.cellW+F.gap), py=F.gap+r*(blockH+F.gap);
+    if(F.labelSize>0 && p.label){ x.fillStyle=F.labelColor; x.font='bold '+Math.round(F.labelSize*0.74)+'px system-ui';
+      x.textAlign='center'; x.fillText(p.label, px+F.cellW/2, py+F.labelSize*0.82); }
+    if(F.cbarSize>0 && p.cbar){ const W=Math.min(F.cellW*0.8,F.cellW-20), bx=px+(F.cellW-W)/2, by=py+titRes+14;
+      drawCb(p.cbar, bx, by, W, F.cbarSize); }
+    const img=new Image(); img.onload=()=>{ x.drawImage(img,px,py+titRes+cbRes,F.cellW,F.cellH); res(); };
+    img.onerror=()=>res(); img.src=p.dataURL;
   })));
-  if(F.cbar){ const cb=F.cbar, W=Math.min(360,cvs.width-120), H=14;
-    const bx=(cvs.width-W)/2, by=cvs.height-cbH+14;
-    for(let i=0;i<W;i++){ const t=i/(W-1); const lut=cb.lut; const f=t*(lut.length-1), a=Math.floor(f), g=f-a;
-      const c0=lut[a], c1=lut[Math.min(lut.length-1,a+1)];
-      const rr=Math.round(255*(c0[0]+(c1[0]-c0[0])*g)), gg=Math.round(255*(c0[1]+(c1[1]-c0[1])*g)), bb=Math.round(255*(c0[2]+(c1[2]-c0[2])*g));
-      x.fillStyle='rgb('+rr+','+gg+','+bb+')'; x.fillRect(bx+i,by,1,H); }
-    x.fillStyle=F.labelColor; x.font='12px system-ui'; x.textAlign='left'; x.fillText((cb.min).toFixed(1), bx, by+H+14);
-    x.textAlign='right'; x.fillText((cb.max).toFixed(1), bx+W, by+H+14);
-    x.textAlign='center'; x.fillText(cb.name||'', bx+W/2, by-4);
-  }
   return cvs.toDataURL('image/png');
 }`;
 
