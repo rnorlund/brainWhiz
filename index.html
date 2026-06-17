@@ -852,8 +852,11 @@ function updateConnTransforms(){
 }
 function updateConnInfo(n){
   const el=$('connThVal');
+  const cd=connData();
   const mod = $('connType') && $('connType').value ? $('connType').value.toUpperCase() : '';
-  el.textContent = $('connOn').checked ? `${(+$('connTh').value).toFixed(2)} · ${n} ${mod} edges` : (+$('connTh').value).toFixed(2);
+  const interp = cd && cd.interp ? ' ∗interpolated' : '';
+  el.textContent = $('connOn').checked ? `${(+$('connTh').value).toFixed(2)} · ${n} ${mod}${interp} edges` : (+$('connTh').value).toFixed(2);
+  el.style.color = (cd && cd.interp && $('connOn').checked) ? 'var(--accent2)' : '';
 }
 $('connOn').addEventListener('change', ()=>{ if($('connOn').checked) setConnThreshRange(); rebuildConn(); });
 $('connType').addEventListener('change', ()=>{ setConnThreshRange(); rebuildConn(); });

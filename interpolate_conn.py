@@ -105,7 +105,7 @@ def build_type(tgt_vol, tgt_aff, tgt_labels, kind):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--atlas", required=True); ap.add_argument("--id", required=True)
-    ap.add_argument("--types", default="dti,rs")
+    ap.add_argument("--types", default="rs")   # DTI interpolation is unreliable (r~0.1); RS only
     a = ap.parse_args()
     out = os.path.join(HERE, "bundles", a.id, "conn.js")
     conn = {}
