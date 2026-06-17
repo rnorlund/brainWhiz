@@ -102,6 +102,15 @@
   .pbSliders{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px;color:var(--muted)}
   .pbSliders label{display:flex;flex-direction:column;gap:1px}
   .pbSliders input[type=range]{width:100%}
+  #zoomWidget{position:absolute;right:16px;top:38%;transform:translateY(-50%);z-index:11;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    background:#0c1018cc;border:1px solid var(--line);border-radius:12px;padding:10px 8px;backdrop-filter:blur(6px)}
+  #zoomWidget button{width:34px;height:34px;font-size:20px;line-height:1;border-radius:8px;padding:0;
+    background:var(--panel2);color:var(--txt);border:1px solid var(--line);cursor:pointer}
+  #zoomWidget button:hover{border-color:var(--accent);color:var(--accent)}
+  #zoomWidget input[type=range]{writing-mode:vertical-lr;direction:rtl;
+    appearance:slider-vertical;-webkit-appearance:slider-vertical;
+    width:8px;height:130px;accent-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -201,6 +210,12 @@
 </div>
 
 <div id="hud"><div class="t"></div><div class="s"></div></div>
+
+<div id="zoomWidget" title="Zoom (mouse wheel also works)">
+  <button id="zoomIn">＋</button>
+  <input type="range" id="zoomVert" min="0" max="1" step="0.004" value="0.55">
+  <button id="zoomOut">－</button>
+</div>
 
 <div id="panelBuilder">
   <div class="pbHead">🗔 Figure panels
@@ -672,10 +687,17 @@ function setCamDistance(d){ _zd.subVectors(camera.position, controls.target);
   camera.position.copy(controls.target).add(_zd); controls.update(); }
 const _zd=new THREE.Vector3();
 $('zoomSlider').addEventListener('input', e=>setCamDistance(normToDist(+e.target.value)));
+// floating widget: vertical slider is inverted (top = zoom in) + / - buttons
+$('zoomVert').addEventListener('input', e=>setCamDistance(normToDist(1-(+e.target.value))));
+$('zoomIn').addEventListener('click', ()=>setCamDistance(camDistance()*0.82));
+$('zoomOut').addEventListener('click', ()=>setCamDistance(camDistance()*1.22));
 $('zoomSpeed').addEventListener('input', e=>{ controls.zoomSpeed=+e.target.value; $('zoomSpdV').textContent=(+e.target.value).toFixed(1)+'×'; });
 controls.zoomSpeed = +$('zoomSpeed').value;
-// keep the slider in sync while wheel-zooming (unless the user is dragging it)
-controls.addEventListener('change', ()=>{ const s=$('zoomSlider'); if(document.activeElement!==s) s.value=distToNorm(camDistance()); });
+// keep both sliders in sync while wheel-zooming / buttons (unless being dragged)
+controls.addEventListener('change', ()=>{ const n=distToNorm(camDistance());
+  const h=$('zoomSlider'), v=$('zoomVert');
+  if(document.activeElement!==h) h.value=n;
+  if(document.activeElement!==v) v.value=1-n; });
 
 // ---------- per-tier opacity (colored vs gray vs all) so colored regions pop ----------
 const _hsl={};
