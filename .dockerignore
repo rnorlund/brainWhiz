@@ -1,0 +1,13 @@
+.git
+node_modules
+.chrome-figtmp
+*.py
+*.mjs
+*.json
+!bundles/**
+docs
+README.md
+LICENSE
+.gitignore
+Dockerfile
+.dockerignore

@@ -94,11 +94,14 @@
     align-items:center;justify-content:center;overflow:hidden;position:relative;background:#0b0e14;cursor:pointer}
   .pbCell img{width:100%;height:100%;object-fit:cover}
   .pbCell .plus{font-size:24px;color:var(--muted)}
-  .pbCell .rm{position:absolute;top:2px;right:4px;background:#000a;border-radius:4px;
-    padding:0 5px;font-size:12px;color:#fff;cursor:pointer;display:none}
-  .pbCell:hover .rm{display:block}
-  .pbCell .cap{position:absolute;bottom:0;left:0;right:0;background:#000a;color:#fff;
-    font-size:9px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pbCell .pbBtns{position:absolute;top:2px;right:3px;display:none;gap:3px}
+  .pbCell:hover .pbBtns{display:flex}
+  .pbCell .pbBtns button{background:#000b;border:none;border-radius:4px;padding:1px 5px;
+    font-size:12px;color:#fff;cursor:pointer;line-height:1.3}
+  .pbCell .pbBtns button:hover{color:var(--accent)}
+  .pbCell .pbLab{position:absolute;bottom:0;left:0;right:0;background:#000b;color:#fff;border:none;
+    font-size:10px;padding:2px 4px;width:100%;text-align:center;outline:none}
+  .pbCell .pbLab::placeholder{color:#ffffff66}
   .pbSliders{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px;color:var(--muted)}
   .pbSliders label{display:flex;flex-direction:column;gap:1px}
   .pbSliders input[type=range]{width:100%}
@@ -249,6 +252,16 @@
     <label>Title size <span id="pbTitleV"></span><input type="range" id="pbTitle" min="0" max="64" step="2" value="24"></label>
     <label>Colorbar size <span id="pbCbarV"></span><input type="range" id="pbCbar" min="0" max="90" step="4" value="40"></label>
     <label>Gap <span id="pbGapV"></span><input type="range" id="pbGap" min="0" max="80" step="2" value="18"></label>
+    <label>Title font
+      <select id="pbFont">
+        <option value="system-ui">Sans (system)</option>
+        <option value="Georgia, serif">Serif</option>
+        <option value="'Courier New', monospace">Mono</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="'Helvetica Neue', sans-serif">Helvetica</option>
+        <option value="'Times New Roman', serif">Times</option>
+      </select></label>
+    <label>Title color <input type="color" id="pbTitleColor" value="#111111"></label>
     <label>Figure BG <input type="color" id="pbBg" value="#ffffff"></label>
   </div>
   <div style="display:flex;gap:6px;margin-top:8px">
@@ -1514,19 +1527,53 @@ function pbRender(){
   const wrap=$('pbCells'); wrap.style.gridTemplateColumns=`repeat(${cols},1fr)`; wrap.innerHTML='';
   pbItems.forEach((it,i)=>{
     const cell=document.createElement('div'); cell.className='pbCell';
-    if(it){ cell.innerHTML=`<img src="${it.dataURL}"><span class="cap">${it.label||''}</span><span class="rm">✕</span>`;
-      cell.querySelector('.rm').addEventListener('click',ev=>{ev.stopPropagation(); pbItems[i]=null; pbRender();}); }
-    else cell.innerHTML='<span class="plus">＋</span>';
-    cell.addEventListener('click',()=>pbCapture(i));
+    if(it){
+      cell.innerHTML=`<img src="${it.dataURL}">
+        <div class="pbBtns"><button class="pbEdit" title="restore these settings to the viewer">✎</button>
+        <button class="pbRecap" title="recapture current view here">⟳</button>
+        <button class="pbRm" title="remove">✕</button></div>
+        <input class="pbLab" value="${(it.label||'').replace(/"/g,'&quot;')}" placeholder="(no label)">`;
+      cell.querySelector('.pbLab').addEventListener('input',e=>{ pbItems[i].label=e.target.value; });
+      cell.querySelector('.pbLab').addEventListener('click',e=>e.stopPropagation());
+      cell.querySelector('.pbRm').addEventListener('click',e=>{ e.stopPropagation(); pbItems[i]=null; pbRender(); });
+      cell.querySelector('.pbEdit').addEventListener('click',e=>{ e.stopPropagation(); if(it.cfg) applyViewerCfg(it.cfg); });
+      cell.querySelector('.pbRecap').addEventListener('click',e=>{ e.stopPropagation(); pbCapture(i, it.label); });
+    } else { cell.innerHTML='<span class="plus">＋</span>';
+      cell.addEventListener('click',()=>pbCapture(i)); }
     wrap.appendChild(cell);
   });
 }
-function pbCapture(i){
+function pbCapture(i, keepLabel){
   const task=$('taskMap').value, scheme=$('scheme').value;
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
-  const label = task ? `${atlasName} · ${task}` : `${atlasName} · ${scheme}`;
-  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,false), label, cbar: window.brainAPI.colorbar() };
+  const auto = task ? `${atlasName} · ${task}` : `${atlasName} · ${scheme}`;
+  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,false),
+    label: keepLabel!==undefined ? keepLabel : auto,
+    cbar: window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
+}
+// snapshot the full viewer state for a tile so it can be restored/edited later
+function captureViewerCfg(){
+  const ids=[...PRESET_IDS,'taskMap','taskMapB','regionSet','scheme','singleColor'];
+  const vals={};
+  for(const id of ids){ const el=$(id); if(!el) continue; vals[id]= el.type==='checkbox'?el.checked:el.value; }
+  return { atlas:ATLAS_ID, vals,
+    camP: camera.position.toArray().map(v=>+v.toFixed(2)),
+    camT: controls.target.toArray().map(v=>+v.toFixed(2)),
+    vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id) };
+}
+function applyViewerCfg(cfg){
+  if(cfg.atlas!==ATLAS_ID){
+    if(confirm(`This panel was captured on atlas "${cfg.atlas}". Switch to it now? (the viewer will reload)`))
+      location.href = location.pathname+'?atlas='+encodeURIComponent(cfg.atlas);
+    return;
+  }
+  const v=cfg.vals||{};
+  const last=['ovStyle','ovColor','ovColorB','cmap','cmin','cmax','cthresh','cmapInvert','cmapAbs','ovAndOnly','ovCombine','taskMapB','taskMap'];
+  Object.keys(v).filter(id=>!last.includes(id)).forEach(id=>setControl(id,v[id]));
+  last.forEach(id=>{ if(id in v) setControl(id,v[id]); });
+  if(cfg.vis) showOnly(cfg.vis);
+  if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
 }
 // draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)
 function drawCbar(x, cb, bx, by, W, H, txt){
@@ -1560,8 +1607,10 @@ async function pbExport(){
   const [rows,cols]=pbDims();
   const cw=+$('pbBrain').value, ch=Math.round(cw*0.78);
   const titleH=+$('pbTitle').value, cbarH=+$('pbCbar').value, gap=+$('pbGap').value;
-  const bgc=$('pbBg').value;
-  const titRes = titleH>0 ? titleH+6 : 0;
+  const bgc=$('pbBg').value, font=$('pbFont').value, titleColor=$('pbTitleColor').value;
+  // a tile only reserves title space if it actually has a label
+  const anyTitle = titleH>0 && items.some(it=>it&&it.label);
+  const titRes = anyTitle ? titleH+6 : 0;
   const anyCbar = cbarH>0 && items.some(it=>it&&it.cbar);
   const cbRes = anyCbar ? cbarH+18 : 0;        // reserved per-cell so the grid stays aligned
   const blockH = titRes + cbRes + ch;
@@ -1572,8 +1621,8 @@ async function pbExport(){
   await Promise.all(items.map((it,i)=> it? new Promise(res=>{
     const c=i%cols, r=Math.floor(i/cols);
     const px=gap+c*(cw+gap), py=gap+r*(blockH+gap);
-    // 1) title on top
-    if(titleH>0 && it.label){ x.fillStyle=txt; x.font='bold '+Math.round(titleH*0.78)+'px system-ui';
+    // 1) title on top (custom text + font + color; empty label = no title)
+    if(titleH>0 && it.label){ x.fillStyle=titleColor; x.font='bold '+Math.round(titleH*0.78)+'px '+font;
       x.textAlign='center'; x.fillText(it.label, px+cw/2, py+titleH*0.82); }
     // 2) this panel's own colorbar (below title, above brain)
     if(cbarH>0 && it.cbar){ const W=Math.min(cw*0.8, cw-20), bx=px+(cw-W)/2, by=py+titRes+14;
