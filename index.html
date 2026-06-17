@@ -169,14 +169,31 @@
       <div class="row"><label title="Pick a baked-in NeuroQuery task map">Task map</label>
         <select id="taskMap"><option value="">— none —</option></select></div>
       <div class="muted" style="font-size:11px;color:var(--muted);padding:0 0 4px">NeuroQuery terms (baked). Type in the box to jump.</div>
-      <div class="row"><label title="Load a statistical MNI152 image; regions colored by their mean value">Stat .nii</label>
+      <div class="row"><label title="Load a statistical MNI152 image; regions colored by their mean value">Map A .nii</label>
         <input type="file" id="statFile" accept=".nii,.nii.gz,.gz"></div>
-      <div class="row"><label>Overlay style</label>
+
+      <!-- dual-map: conjunction / subtraction -->
+      <div class="row"><label title="Combine two maps">Combine</label>
+        <select id="ovCombine">
+          <option value="none">Single map</option>
+          <option value="conj">Conjunction (A ∧ B)</option>
+          <option value="sub">Subtraction (A − B)</option>
+        </select></div>
+      <div class="ovB" style="display:none">
+        <div class="row"><label>Map B task</label>
+          <select id="taskMapB"><option value="">— none —</option></select></div>
+        <div class="row"><label>Map B .nii</label>
+          <input type="file" id="statFileB" accept=".nii,.nii.gz,.gz"></div>
+        <div class="row"><label>Color B</label><input type="color" id="ovColorB" value="#1f77b4"></div>
+        <div class="row"><label class="toggle"><input type="checkbox" id="ovAndOnly"> show only where A ∧ B (strict)</label></div>
+      </div>
+
+      <div class="row" id="ovStyleRow"><label>Overlay style</label>
         <select id="ovStyle">
           <option value="solid">Gray brain + 1 color</option>
           <option value="cmap">Colormap (multicolor)</option>
         </select></div>
-      <div class="row" id="ovColorRow"><label>Overlay color</label>
+      <div class="row" id="ovColorRow"><label>Color A</label>
         <input type="color" id="ovColor" value="#ff3b30"></div>
       <div class="row" id="cmapRow" style="display:none"><label>Colormap</label>
         <select id="cmap"></select></div>
@@ -506,7 +523,7 @@ function colorFor(scheme, m, idx){
   }
 }
 let activeScheme = 'lobe';
-const overlay = {on:false, vals:null, name:''};   // value-based coloring state
+const overlay = {on:false, vals:null, name:'', valsB:null, nameB:'', combine:'none'};   // value-based coloring state
 function setSwatch(node, hex){
   const sw = document.querySelector(`.swatch[data-node="${node}"]`);
   if(sw){ sw.style.background = hex; sw.querySelector('input').value = hex; }
@@ -1066,7 +1083,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs',
-  'coloredOp','grayOp','satCut'];
+  'coloredOp','grayOp','satCut','ovCombine','ovColorB','ovAndOnly'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
@@ -1114,6 +1131,15 @@ const NEURO = window.ATLAS_NEURO || {terms:{},order:[]};
 const SAMPLES = window.ATLAS_SAMPLES || {};
 function styleIsCmap(){ return $('ovStyle').value==='cmap'; }
 function syncStyleRows(){
+  const dual = overlay.combine!=='none';
+  document.querySelector('.ovB').style.display = dual?'block':'none';
+  $('ovStyleRow').style.display = dual?'none':'flex';
+  if(dual){   // dual mode: Color A + Color B keys, diverging/blend legend
+    $('cmapRow').style.display='none'; $('cbar').style.display='block';
+    $('ovColorRow').style.display='flex';
+    $('cmapInvert').parentElement.style.display='none';
+    return;
+  }
   const cm=styleIsCmap();
   $('cmapRow').style.display = cm?'flex':'none';
   $('cbar').style.display    = cm?'block':'none';
@@ -1130,16 +1156,27 @@ function initOverlayUI(){
   const ccm=$('connCmap');
   for(const k of CMAP_ORDER){ if(!CMAPS[k]) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; ccm.appendChild(o); }
   ccm.value='turbo';
+  const tmB=$('taskMapB');
+  for(const term of NEURO.order){ const o=document.createElement('option'); o.value=term; o.textContent=term; tmB.appendChild(o); }
   const tm=$('taskMap');
   const applyTask=()=>{ const t=tm.value.trim();
-    if(!t){ applyScheme(activeScheme); return; }
-    if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'". Try: '+NEURO.order.slice(0,6).join(', ')+'…'; return; }
+    if(!t){ if(overlay.combine==='none') applyScheme(activeScheme); else { overlay.vals=null; overlay.name=''; } return; }
+    if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'".'; return; }
     $('statFile').value='';
-    applyOverlay(NEURO.terms[t], 'task: '+t);
+    applyOverlay(NEURO.terms[t], t);
   };
   tm.addEventListener('change', applyTask);
+  tmB.addEventListener('change', ()=>{ const t=tmB.value.trim();
+    if(!t){ overlay.valsB=null; overlay.nameB=''; if(overlay.on) recolorOverlay(); return; }
+    $('statFileB').value=''; applyOverlayB(NEURO.terms[t], t); });
+  $('ovCombine').addEventListener('change', e=>{
+    overlay.combine=e.target.value; syncStyleRows();
+    if(overlay.on){ recolorOverlay(); updateColorbar(); }
+  });
   $('ovStyle').addEventListener('change', ()=>{ syncStyleRows(); if(overlay.on) recolorOverlay(); });
-  $('ovColor').addEventListener('input', ()=>{ if(overlay.on) recolorOverlay(); });
+  $('ovColor').addEventListener('input', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
+  $('ovColorB').addEventListener('input', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
+  $('ovAndOnly').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); });
   $('cmap').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
   $('cmapInvert').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
   $('cmapAbs').addEventListener('change', ()=>{ if(overlay.on){ autoRange(); recolorOverlay(); } });
@@ -1147,8 +1184,11 @@ function initOverlayUI(){
   $('cmin').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
   $('cmax').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
   $('autoRange').addEventListener('click', ()=>{ autoRange(); recolorOverlay(); updateColorbar(); });
-  $('clearOverlay').addEventListener('click', ()=>{ $('taskMap').value=''; $('statFile').value=''; applyScheme(activeScheme); });
-  $('statFile').addEventListener('change', onStatFile);
+  $('clearOverlay').addEventListener('click', ()=>{ $('taskMap').value=''; $('statFile').value='';
+    $('taskMapB').value=''; $('statFileB').value=''; $('ovCombine').value='none';
+    overlay.valsB=null; overlay.nameB=''; overlay.combine='none'; syncStyleRows(); applyScheme(activeScheme); });
+  $('statFile').addEventListener('change', e=>loadStatFile(e,'A'));
+  $('statFileB').addEventListener('change', e=>loadStatFile(e,'B'));
   window.updateColorbar=updateColorbar;
   syncStyleRows();
   updateColorbar();
@@ -1165,31 +1205,41 @@ function applyOverlay(valsObj, name){
   overlay.on=true; overlay.vals=valsObj; overlay.name=name;
   autoRange(); recolorOverlay(); updateColorbar();
 }
+function applyOverlayB(valsObj, name){
+  overlay.valsB=valsObj; overlay.nameB=name;
+  if(overlay.on){ recolorOverlay(); updateColorbar(); }
+}
 const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
 const _gray=new THREE.Color(NEUTRAL);
+// activation-style range: anchor gray baseline at 0 for signed maps
+function rangeOf(vals, abs){
+  let mn=Infinity, mx=-Infinity;
+  for(const k in vals){ let v=vals[k]; if(!isFinite(v)) continue; if(abs) v=Math.abs(v);
+    if(v<mn)mn=v; if(v>mx)mx=v; }
+  if(!isFinite(mn)){ mn=0; mx=1; }
+  const lo = (mn<0 && !abs) ? 0 : mn;
+  return [lo, (mx-lo)||1e-6];
+}
 function recolorOverlay(){
   if(!overlay.on||!overlay.vals) return;
+  const combine = overlay.combine;
+  if(combine!=='none' && overlay.valsB){ recolorDual(combine); return; }
   const mn=parseFloat($('cmin').value), mx=parseFloat($('cmax').value);
   const inv=$('cmapInvert').checked, name=$('cmap').value;
   const solid=!styleIsCmap();
   const ovC=new THREE.Color($('ovColor').value);
-  // solid (activation) mode anchors the gray baseline at 0 for signed maps,
-  // so negative / zero regions stay gray and only activation takes the color.
   const lo = (solid && mn<0) ? 0 : mn;
   const span=(mx-lo)||1e-6, thr=(+$('cthresh').value)*span;
   for(const o of meshes){
     const raw=overlay.vals[o.meta.id];
-    let hex=NEUTRAL;   // gray by default
+    let hex=NEUTRAL;
     if(raw!==undefined && isFinite(raw)){
       const v=curVal(raw);
       if((v-lo) >= thr && (v-lo) > 0){
         let n=(v-lo)/span; if(inv) n=1-n; n=Math.max(0,Math.min(1,n));
         let c;
-        if(solid){   // gray base -> chosen color, intensity = normalized value
-          c=_gray.clone().lerp(ovC, n);
-        } else {     // full colormap
-          const a=sampleCmap(name,n); c=new THREE.Color(a[0],a[1],a[2]);
-        }
+        if(solid){ c=_gray.clone().lerp(ovC, n); }
+        else { const a=sampleCmap(name,n); c=new THREE.Color(a[0],a[1],a[2]); }
         hex='#'+c.getHexString();
       }
     }
@@ -1198,8 +1248,57 @@ function recolorOverlay(){
   setOpacities();
   $('ovInfo').textContent=`${overlay.name} · range ${mn.toFixed(2)}…${mx.toFixed(2)}`;
 }
+// conjunction (additive color mixing) / subtraction (diverging via the 2 colors)
+function recolorDual(combine){
+  const abs=$('cmapAbs').checked;
+  const [loA,spA]=rangeOf(overlay.vals, abs);
+  const [loB,spB]=rangeOf(overlay.valsB, abs);
+  const thr=+$('cthresh').value;                 // fraction of each map's range
+  const cA=new THREE.Color($('ovColor').value), cB=new THREE.Color($('ovColorB').value);
+  const andOnly=$('ovAndOnly').checked;
+  const nrm=(raw,lo,sp)=>{ if(raw===undefined||!isFinite(raw)) return 0;
+    let v=abs?Math.abs(raw):raw; let n=(v-lo)/sp; n=Math.max(0,Math.min(1,n)); return n<thr?0:n; };
+  const _c=new THREE.Color();
+  for(const o of meshes){
+    const nA=nrm(overlay.vals[o.meta.id],loA,spA), nB=nrm(overlay.valsB[o.meta.id],loB,spB);
+    let hex=NEUTRAL;
+    if(combine==='conj'){
+      const show = andOnly ? (nA>0 && nB>0) : (nA>0 || nB>0);
+      if(show){ _c.setStyle(NEUTRAL);
+        _c.r += nA*(cA.r-_c.r) + nB*(cB.r-_c.r);
+        _c.g += nA*(cA.g-_c.g) + nB*(cB.g-_c.g);
+        _c.b += nA*(cA.b-_c.b) + nB*(cB.b-_c.b);
+        hex='#'+_c.getHexString(); }
+    } else {                                       // subtraction A - B
+      const d=nA-nB;
+      if(Math.abs(d)>=thr && Math.abs(d)>0){
+        _c.copy(_gray).lerp(d>0?cA:cB, Math.min(1,Math.abs(d)));
+        hex='#'+_c.getHexString();
+      }
+    }
+    o.meta.color=hex; o.mesh.material.color.set(hex); setSwatch(o.meta.node,hex);
+  }
+  setOpacities();
+  const op = combine==='conj' ? '∧' : '−';
+  $('ovInfo').textContent=`${overlay.name||'A'}  ${op}  ${overlay.nameB||'B'}`;
+}
 function updateColorbar(){
   const cv=$('cbar'), x=cv.getContext('2d'), w=cv.width, h=cv.height;
+  x.clearRect(0,0,w,h);
+  if(overlay.on && overlay.combine!=='none' && overlay.valsB){
+    const cA=$('ovColor').value, cB=$('ovColorB').value;
+    if(overlay.combine==='sub'){            // diverging key:  B  <- gray ->  A
+      const g=new THREE.Color(NEUTRAL);
+      for(let px=0;px<w;px++){ const t=px/(w-1), d=t*2-1;
+        const c=g.clone().lerp(new THREE.Color(d<0?cB:cA), Math.abs(d));
+        x.fillStyle='#'+c.getHexString(); x.fillRect(px,0,1,h); }
+    } else {                                 // conjunction: A | blend | B thirds
+      const blend=new THREE.Color(cA).lerp(new THREE.Color(cB),0.5);
+      const segs=[cA,'#'+blend.getHexString(),cB];
+      for(let s=0;s<3;s++){ x.fillStyle=segs[s]; x.fillRect(s*w/3,0,w/3,h); }
+    }
+    return;
+  }
   const name=$('cmap').value||'viridis', inv=$('cmapInvert').checked;
   for(let px=0; px<w; px++){ let t=px/(w-1); if(inv) t=1-t;
     const c=sampleCmap(name,t); x.fillStyle=`rgb(${c.map(v=>Math.round(v*255)).join(',')})`;
@@ -1251,7 +1350,7 @@ function parseNifti(buf){
   }
   return {sampleMM, dim:[nx,ny,nz]};
 }
-function onStatFile(e){
+function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
   $('ovInfo').textContent='reading '+file.name+' …';
   const fr=new FileReader();
@@ -1267,8 +1366,8 @@ function onStatFile(e){
         if(v!==null && isFinite(v)){ s+=v; n++; } }
       vals[o.meta.id]= n? s/n : NaN;
     }
-    $('taskMap').value='';
-    applyOverlay(vals, 'file: '+file.name);
+    if(which==='B'){ $('taskMapB').value=''; applyOverlayB(vals, file.name); }
+    else { $('taskMap').value=''; applyOverlay(vals, file.name); }
   }catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; }
   };
   fr.readAsArrayBuffer(file);
