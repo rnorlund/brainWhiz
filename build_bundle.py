@@ -141,7 +141,11 @@ def build_meshes(vol, affine, labels):
             big = max(c.area for c in comps)
             keep = [c for c in comps if c.area >= 0.15 * big]
             mesh = trimesh.util.concatenate(keep) if len(keep) > 1 else keep[0]
-        if LAPLACIAN: trimesh.smoothing.filter_laplacian(mesh, iterations=LAPLACIAN)
+        # Taubin smoothing is volume-preserving and tames the thin spikes that
+        # marching cubes throws off thin cortical ribbons (laplacian alone left them).
+        if LAPLACIAN:
+            try: trimesh.smoothing.filter_taubin(mesh, iterations=max(12, LAPLACIAN*2))
+            except Exception: trimesh.smoothing.filter_laplacian(mesh, iterations=LAPLACIAN)
         if TARGET_FACE and len(mesh.faces) > TARGET_FACE:
             try:
                 red = 1.0 - TARGET_FACE/len(mesh.faces)
