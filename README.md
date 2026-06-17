@@ -144,6 +144,17 @@ figure_example.json   example figure spec
 
 ---
 
+## License
+
+**Noncommercial use only** — licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Free for research, education, personal, and other noncommercial purposes (including academic
+papers and figures). Commercial use is **not** permitted under this license — contact the author
+for commercial licensing.
+
+Note that the bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are
+third-party data with their own terms; they are included here for noncommercial research use —
+cite the original sources in any publication.
+
 ## Notes & credits
 
 - Task maps use **NeuroQuery** (the modern successor to Neurosynth); edit `NEURO_TERMS` in `build_bundle.py` to change them.
