@@ -592,7 +592,15 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   camDist = sphere.radius*2.6;
   camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
 
-  applyScheme('lobe');
+  // default to lobe coloring, but if the atlas's names don't map to lobes well
+  // (e.g. Brodmann areas, tract atlases) everything lands in one bucket -> use
+  // a distinct per-ROI scheme instead so regions are actually distinguishable.
+  const lobeCount={}; meshes.forEach(o=>{ lobeCount[o.meta.lobe]=(lobeCount[o.meta.lobe]||0)+1; });
+  const distinctLobes=Object.keys(lobeCount).length;
+  const maxFrac=Math.max(...Object.values(lobeCount))/meshes.length;
+  const defScheme=(distinctLobes<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
+  $('scheme').value=defScheme;
+  applyScheme(defScheme);
   buildList();
   buildAxisLabels(box, sphere.radius);
   initOverlayUI();
