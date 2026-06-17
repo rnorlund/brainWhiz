@@ -1,0 +1,16 @@
+{
+  "out": "figure_example.png",
+  "cols": 2,
+  "cell": [440, 340],
+  "gap": 16, "bg": "#ffffff", "labelSize": 26, "labelColor": "#111",
+  "colorbar": true,
+  "panels": [
+    { "atlas":"jhu", "view":"left", "task":"motor", "label":"Motor (JHU)",
+      "controls": {"ovStyle":"solid","ovColor":"#d62728","vivid":1.6,"cthresh":0.15} },
+    { "atlas":"jhu", "view":"left", "task":"language", "label":"Language (JHU)",
+      "controls": {"ovStyle":"solid","ovColor":"#1f77b4","vivid":1.6,"cthresh":0.15} },
+    { "atlas":"aal", "view":"left", "scheme":"lobe", "label":"AAL — lobes" },
+    { "atlas":"jhu", "view":"left", "task":"working memory", "label":"Working memory",
+      "controls": {"ovStyle":"cmap","cmap":"viridis","vivid":1.4} }
+  ]
+}

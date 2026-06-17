@@ -1,0 +1,1 @@
+{"name":"jhu-brain-atlas","version":"1.0.0","private":true,"type":"module","description":"JHU/multi-atlas exploding-brain viewer + figure tooling","dependencies":{"ws":"^8.21.0"}}

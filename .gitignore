@@ -1,0 +1,5 @@
+node_modules/
+.chrome-figtmp/
+.chrome*/
+*.log
+.DS_Store

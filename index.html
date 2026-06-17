@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JHU Atlas — Exploding Brain</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141925; --panel2:#1b2130; --line:#2a3346;
+    --txt:#e6ebf2; --muted:#8a96ab; --accent:#5db0ff; --accent2:#ff7a59;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
+    color:var(--txt);font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+
+  /* ---- side panel (ROI chart) ---- */
+  #sidebar{position:absolute;top:0;left:0;bottom:0;width:320px;background:var(--panel);
+    border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:10}
+  #sidebar h1{font-size:14px;margin:0;padding:14px 16px;letter-spacing:.5px;
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  #sidebar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+  .pad{padding:10px 14px}
+  .row{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .row label{color:var(--muted);min-width:74px}
+  select,input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:6px;padding:6px 8px;width:100%}
+  input[type=range]{width:100%}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:6px;padding:6px 10px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.sm{padding:3px 7px;font-size:11px}
+  .scheme-row{display:flex;gap:6px}
+  #search{margin-bottom:6px}
+  #roiCount{color:var(--muted);font-size:11px}
+  .sidebody{flex:1;min-height:0;overflow-y:auto}
+  #roiList{border-top:1px solid var(--line)}
+  .group{border-bottom:1px solid var(--line)}
+  .group>summary{cursor:pointer;padding:8px 14px;list-style:none;display:flex;
+    align-items:center;gap:8px;background:var(--panel2);position:sticky;top:0;z-index:1}
+  .group>summary::-webkit-details-marker{display:none}
+  .group>summary .chev{transition:transform .15s;color:var(--muted)}
+  .group[open]>summary .chev{transform:rotate(90deg)}
+  .group .gname{font-weight:600;flex:1}
+  .group .gcount{color:var(--muted);font-size:11px}
+  .roi{display:flex;align-items:center;gap:8px;padding:4px 14px 4px 22px}
+  .roi:hover{background:var(--panel2)}
+  .roi.sel{background:#23304a}
+  .roi input[type=checkbox]{accent-color:var(--accent)}
+  .swatch{width:16px;height:16px;border-radius:4px;border:1px solid #0006;cursor:pointer;
+    position:relative;flex:none}
+  .swatch input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .roi .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .roi .abbr{color:var(--muted);font-size:11px}
+
+  /* ---- bottom settings bar ---- */
+  #settings{position:absolute;left:320px;right:0;bottom:0;background:var(--panel);
+    border-top:1px solid var(--line);padding:8px 14px;display:flex;flex-wrap:wrap;
+    gap:14px 20px;align-items:center;z-index:10}
+  .ctl{display:flex;flex-direction:column;gap:3px;min-width:120px}
+  .ctl .lab{color:var(--muted);font-size:11px;display:flex;justify-content:space-between}
+  .ctl.inline{flex-direction:row;align-items:center;min-width:auto}
+  .toggle{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+
+  /* ---- info / hover ---- */
+  #hud{position:absolute;top:10px;left:332px;background:#0009;backdrop-filter:blur(6px);
+    border:1px solid var(--line);border-radius:8px;padding:8px 12px;z-index:9;max-width:320px;
+    pointer-events:none;opacity:0;transition:opacity .15s}
+  #hud .t{font-weight:600}
+  #hud .s{color:var(--muted);font-size:11px}
+  #loader{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);z-index:50;flex-direction:column;gap:14px}
+  .spin{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .hint{position:absolute;right:12px;bottom:90px;color:var(--muted);font-size:11px;z-index:9;text-align:right}
+  details.ov{margin:8px 0;border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+  details.ov>summary{cursor:pointer;padding:7px 10px;list-style:none;font-weight:600}
+  details.ov>summary::-webkit-details-marker{display:none}
+  details.ov>summary::before{content:'▶ ';color:var(--muted)}
+  details.ov[open]>summary::before{content:'▼ '}
+  details.ov .row{padding:0 10px}
+  details.ov .row:last-of-type{padding-bottom:8px}
+  #cbar{width:calc(100% - 20px);height:14px;margin:6px 10px;border-radius:3px;border:1px solid var(--line);display:block}
+  input[type=file]{font-size:11px;color:var(--muted);width:100%}
+  #ovInfo{padding:0 10px 8px}
+  #panelBuilder{position:absolute;top:10px;right:10px;z-index:12;background:#0c1018ee;
+    border:1px solid var(--line);border-radius:10px;padding:8px;width:300px;backdrop-filter:blur(6px)}
+  .pbHead{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:600;font-size:12px}
+  .pbHead select{width:auto;flex:none}
+  #pbCells{display:grid;gap:6px}
+  .pbCell{aspect-ratio:4/3;border:1px dashed var(--line);border-radius:6px;display:flex;
+    align-items:center;justify-content:center;overflow:hidden;position:relative;background:#0b0e14;cursor:pointer}
+  .pbCell img{width:100%;height:100%;object-fit:cover}
+  .pbCell .plus{font-size:24px;color:var(--muted)}
+  .pbCell .rm{position:absolute;top:2px;right:4px;background:#000a;border-radius:4px;
+    padding:0 5px;font-size:12px;color:#fff;cursor:pointer;display:none}
+  .pbCell:hover .rm{display:block}
+  .pbCell .cap{position:absolute;bottom:0;left:0;right:0;background:#000a;color:#fff;
+    font-size:9px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="sidebar">
+  <h1><span class="dot"></span> JHU Atlas — Exploding Brain</h1>
+  <div class="sidebody">
+  <div class="pad">
+    <div class="row"><label>Atlas</label><select id="atlasSel"></select></div>
+    <!-- region sets -->
+    <div class="row"><label>Region set</label>
+      <select id="regionSet">
+        <option value="">— presets / saved —</option>
+        <optgroup label="Built-in">
+          <option value="__all">All regions</option>
+          <option value="__none">None</option>
+          <option value="__motor">Canonical motor</option>
+          <option value="__lang">Canonical LH language</option>
+        </optgroup>
+        <optgroup label="Saved" id="savedSets"></optgroup>
+      </select>
+    </div>
+    <div class="row">
+      <button class="sm" id="saveSet">＋ Save current</button>
+      <button class="sm" id="delSet">🗑 Delete saved</button>
+    </div>
+
+    <!-- per-tier opacity so colored regions can pop over faded gray ones -->
+    <div class="row" style="margin-top:4px"><label>Opacity · colored <span id="coloredOpVal" class="muted"></span></label>
+      <input type="range" id="coloredOp" min="0" max="1" step="0.02" value="1"></div>
+    <div class="row"><label>Opacity · gray <span id="grayOpVal" class="muted"></span></label>
+      <input type="range" id="grayOp" min="0" max="1" step="0.02" value="1"></div>
+    <div class="row"><label>Color cutoff <span id="satCutVal" class="muted"></span></label>
+      <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
+    <div class="row"><button class="sm" id="saveColored">💾 Save colored regions as set</button></div>
+
+    <!-- color scheme -->
+    <div class="row"><label>Color scheme</label>
+      <select id="scheme">
+        <option value="lobe">By lobe / structure</option>
+        <option value="hemi">By hemisphere</option>
+        <option value="rainbow">Rainbow (by id)</option>
+        <option value="random">Random</option>
+        <option value="single">Single color</option>
+      </select>
+      <button id="applyScheme" class="sm" title="Re-apply">↻</button>
+    </div>
+    <div class="row" id="singleRow" style="display:none">
+      <label>Color</label><input type="color" id="singleColor" value="#9aa7bd">
+    </div>
+
+    <!-- data overlay -->
+    <details class="ov" open>
+      <summary>📊 Data overlay — color by value</summary>
+      <div class="row"><label title="Pick a baked-in NeuroQuery task map">Task map</label>
+        <select id="taskMap"><option value="">— none —</option></select></div>
+      <div class="muted" style="font-size:11px;color:var(--muted);padding:0 0 4px">NeuroQuery terms (baked). Type in the box to jump.</div>
+      <div class="row"><label title="Load a statistical MNI152 image; regions colored by their mean value">Stat .nii</label>
+        <input type="file" id="statFile" accept=".nii,.nii.gz,.gz"></div>
+      <div class="row"><label>Overlay style</label>
+        <select id="ovStyle">
+          <option value="solid">Gray brain + 1 color</option>
+          <option value="cmap">Colormap (multicolor)</option>
+        </select></div>
+      <div class="row" id="ovColorRow"><label>Overlay color</label>
+        <input type="color" id="ovColor" value="#ff3b30"></div>
+      <div class="row" id="cmapRow" style="display:none"><label>Colormap</label>
+        <select id="cmap"></select></div>
+      <canvas id="cbar" width="280" height="14" title="colorbar" style="display:none"></canvas>
+      <div class="row" style="gap:6px">
+        <label style="min-width:auto">min</label><input type="text" id="cmin" style="width:60px">
+        <label style="min-width:auto">max</label><input type="text" id="cmax" style="width:60px">
+        <button class="sm" id="autoRange">auto</button>
+      </div>
+      <div class="row"><label>Threshold</label>
+        <input type="range" id="cthresh" min="0" max="1" step="0.01" value="0"></div>
+      <div class="row" style="gap:14px">
+        <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
+        <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
+        <button class="sm" id="clearOverlay">clear</button>
+      </div>
+      <div id="ovInfo" class="muted" style="font-size:11px;color:var(--muted)"></div>
+    </details>
+
+    <input id="search" type="text" placeholder="Search regions…" />
+    <div class="row" style="justify-content:space-between">
+      <span id="roiCount"></span>
+      <span>
+        <button class="sm" id="showAll">Show all</button>
+        <button class="sm" id="hideAll">Hide all</button>
+      </span>
+    </div>
+  </div>
+  <div id="roiList"></div>
+  </div>
+</div>
+
+<div id="hud"><div class="t"></div><div class="s"></div></div>
+
+<div id="panelBuilder">
+  <div class="pbHead">🗔 Figure panels
+    <select id="pbGrid">
+      <option>1x2</option><option selected>2x2</option><option>2x3</option><option>3x3</option><option>1x3</option><option>3x2</option>
+    </select>
+    <label class="toggle" style="font-size:10px"><input type="checkbox" id="pbLabels" checked>lbl</label>
+    <label class="toggle" style="font-size:10px"><input type="checkbox" id="pbBar" checked>bar</label>
+    <span style="flex:1"></span>
+    <button class="sm" id="pbClose">✕</button>
+  </div>
+  <div id="pbCells"></div>
+  <div style="display:flex;gap:6px;margin-top:8px">
+    <button class="sm" id="pbExport">⬇ Export PNG</button>
+    <button class="sm" id="pbClear">Clear</button>
+  </div>
+  <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view into it.</div>
+</div>
+
+<div id="settings">
+  <div class="ctl">
+    <div class="lab"><span>💥 Explosion amount</span><span id="expVal">0%</span></div>
+    <input type="range" id="explode" min="0" max="1" step="0.005" value="0">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Explosion distance</span><span id="distVal">1.5×</span></div>
+    <input type="range" id="distance" min="0" max="5" step="0.05" value="1.5">
+  </div>
+  <div class="ctl inline">
+    <button id="play">▶ Animate</button>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Explosion speed</span><span id="spdVal">1.0×</span></div>
+    <input type="range" id="animSpeed" min="0.1" max="3" step="0.1" value="1">
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="autoRotate"> Auto-rotate</label>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Rotate speed</span><span id="rotVal">1.0×</span></div>
+    <input type="range" id="rotSpeed" min="-4" max="4" step="0.1" value="1">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>All opacity</span><span id="opVal">1.00</span></div>
+    <input type="range" id="opacity" min="0.1" max="1" step="0.01" value="1">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Surface style</span></div>
+    <select id="surfStyle">
+      <option>Solid</option>
+      <option>Flat shaded</option>
+      <option>Wireframe</option>
+      <option>Wireframe + fill</option>
+      <option>Checkerboard</option>
+      <option>Stripes</option>
+      <option>Grid lines</option>
+      <option>Dots</option>
+      <option>Hatch</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
+    <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
+    <input type="range" id="patScale" min="0.01" max="0.4" step="0.005" value="0.08">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Pattern strength</span><span id="patStrVal"></span></div>
+    <input type="range" id="patStr" min="0" max="1" step="0.02" value="0.55">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Pattern fill</span></div>
+    <select id="patMode"><option value="0">Darken cells</option><option value="1">Transparent cells</option></select>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Shading</span></div>
+    <select id="shading"><option>Standard</option><option>Matcap</option></select>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Vividness</span><span id="vividVal"></span></div>
+    <input type="range" id="vivid" min="1" max="2.5" step="0.05" value="1.3">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
+    <input type="range" id="rim" min="0" max="1.5" step="0.05" value="0.3">
+  </div>
+  <div class="ctl inline">
+    <label>Rim color</label><input type="color" id="rimColor" value="#ffffff">
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="spin"> Slow spin idle</label>
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="axisLines" checked> Axis lines</label>
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="axisLetters" checked> Axis letters</label>
+  </div>
+  <div class="ctl inline">
+    <label>Axis color</label><input type="color" id="axisColor" value="#9fb3c8">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Axis width</span><span id="axisWVal"></span></div>
+    <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7">
+  </div>
+  <div class="ctl inline" style="border-left:1px solid var(--line);padding-left:16px">
+    <label class="toggle"><input type="checkbox" id="connOn"> 🧬 DTI connectivity</label>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Min strength</span><span id="connThVal">40</span></div>
+    <input type="range" id="connTh" min="0" max="120" step="0.5" value="40">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Line thickness</span><span id="connScaleVal">1.0×</span></div>
+    <input type="range" id="connScale" min="0.2" max="5" step="0.1" value="1">
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="connAll"> connect hidden too</label>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Conn color</span></div>
+    <select id="connColorMode"><option value="strength">By strength (cmap)</option><option value="single">Single color</option></select>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Conn colormap</span></div>
+    <select id="connCmap"></select>
+  </div>
+  <div class="ctl inline">
+    <label>Single</label><input type="color" id="connColor" value="#5db0ff">
+  </div>
+  <div class="ctl inline">
+    <label class="toggle"><input type="checkbox" id="connPulse"> ⚡ Pulse</label>
+    <input type="color" id="connPulseColor" value="#ffffff" title="pulse color">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Pulse speed</span><span id="connPulseVal">0.8</span></div>
+    <input type="range" id="connPulseSpeed" min="0.1" max="3" step="0.1" value="0.8">
+  </div>
+  <div class="ctl inline">
+    <label>Background</label><input type="color" id="bg" value="#0b0e14">
+    <button class="sm" id="bgWhite" title="white">▢</button>
+    <button class="sm" id="bgBlack" title="black">▣</button>
+  </div>
+  <div class="ctl inline">
+    <button id="reset">Reset view</button>
+  </div>
+  <div class="ctl inline">
+    <button id="vTop" class="sm">Top</button>
+    <button id="vSide" class="sm">Side</button>
+    <button id="vFront" class="sm">Front</button>
+  </div>
+  <div class="ctl inline">
+    <button id="snap" class="sm">📷 PNG</button>
+    <button id="pbToggle" class="sm">🗔 Panels</button>
+  </div>
+  <div class="ctl inline" style="border-left:1px solid var(--line);padding-left:14px">
+    <label>Preset</label>
+    <select id="presetSel" style="width:120px"><option value="">—</option></select>
+    <button id="savePreset" class="sm">💾 Save</button>
+    <button id="delPreset" class="sm">🗑</button>
+  </div>
+</div>
+
+<div class="hint">drag = rotate · scroll = zoom · right-drag = pan · click region = info</div>
+
+<div id="loader"><div class="spin"></div><div>Loading 189 brain regions…</div></div>
+
+<script src="colormaps.js"></script>
+<script src="bundles/registry.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ---------- pick & load atlas bundle (dynamic, file://-friendly) ----------
+function loadScript(src){ return new Promise((res)=>{ const s=document.createElement('script');
+  s.src=src; s.onload=()=>res(true); s.onerror=()=>res(false); document.head.appendChild(s); }); }
+const REG = window.ATLAS_REGISTRY || [{id:'jhu',name:'JHU',has:{conn:true,neuro:true}}];
+const params = new URLSearchParams(location.search);
+const ATLAS_ID = params.get('atlas') || (REG[0]&&REG[0].id) || 'jhu';
+const ENTRY = REG.find(a=>a.id===ATLAS_ID) || REG[0];
+const BASE = `bundles/${ATLAS_ID}/`;
+document.querySelector('#loader div:last-child').textContent = 'Loading '+(ENTRY?ENTRY.name:ATLAS_ID)+' …';
+await loadScript(BASE+'data.js');
+await loadScript(BASE+'samples.js');
+if(ENTRY && ENTRY.has && ENTRY.has.conn)  await loadScript(BASE+'conn.js');
+if(ENTRY && ENTRY.has && ENTRY.has.neuro) await loadScript(BASE+'neuro.js');
+
+const META = window.ATLAS_LABELS;
+const byNode = new Map(META.map(m => [m.node, m]));
+document.querySelector('#sidebar h1').lastChild.textContent = ' '+(ENTRY?ENTRY.name:ATLAS_ID)+' — Exploding Brain';
+
+// ---------- scene ----------
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0b0e14');
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+camera.position.set(0, 0, 320);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.98;
+app.appendChild(renderer.domElement);
+// soft studio environment -> gives MeshStandard materials a reflective "pop"
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// procedurally generated matcap (studio sphere) for the Matcap shading option
+function makeMatcap(){
+  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
+  const g=x.createRadialGradient(96,80,20, 128,128,150);
+  g.addColorStop(0,'#ffffff'); g.addColorStop(0.35,'#cfd6e0');
+  g.addColorStop(0.75,'#6a7180'); g.addColorStop(1,'#2a2f3a');
+  x.fillStyle=g; x.beginPath(); x.arc(128,128,128,0,7); x.fill();
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const matcapTex = makeMatcap();
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x202028, 0.9); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 0.7); key.position.set(1,1,1); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(-1,-0.5,-1); scene.add(fill);
+// headlight: always lights whatever the camera is looking at
+const headlight = new THREE.DirectionalLight(0xffffff, 0.65); scene.add(headlight);
+
+// Model is exported in three.js axes already: +X=right, +Y=superior, -Z=anterior.
+const group = new THREE.Group();
+scene.add(group);
+
+// connectivity lives in the same group so it rotates/explodes with the brain
+const connGroup = new THREE.Group();
+group.add(connGroup);
+
+const meshes = [];          // {mesh, base:Vector3(centroid dir), meta}
+const byId = new Map();     // roi id -> mesh record
+let modelRadius = 150;
+
+// ---------- palettes ----------
+const LOBE_COLORS = {
+  Frontal:'#4e79a7', Parietal:'#59a14f', Temporal:'#e15759', Occipital:'#b07aa1',
+  Limbic:'#f28e2b', SubcorticalGM:'#edc948', WhiteMatter:'#bab0ac',
+  Cerebellum:'#76b7b2', Brainstem:'#ff9da7', Ventricle:'#86bcb6', Other:'#9c755f'
+};
+const HEMI_COLORS = { L:'#4e79a7', R:'#e15759', M:'#edc948' };
+function hslHex(h,s,l){const c=new THREE.Color();c.setHSL(h,s,l);return '#'+c.getHexString();}
+function seededRand(i){const x=Math.sin(i*97.13+0.7)*43758.5453;return x-Math.floor(x);}
+
+function colorFor(scheme, m, idx){
+  switch(scheme){
+    case 'lobe':   return LOBE_COLORS[m.lobe] || '#888';
+    case 'hemi':   return HEMI_COLORS[m.hemi] || '#888';
+    case 'rainbow':return hslHex((m.id/189)%1, 0.6, 0.55);
+    case 'random': return hslHex(seededRand(m.id), 0.55, 0.55);
+    case 'single': return document.getElementById('singleColor').value;
+  }
+}
+let activeScheme = 'lobe';
+const overlay = {on:false, vals:null, name:''};   // value-based coloring state
+function setSwatch(node, hex){
+  const sw = document.querySelector(`.swatch[data-node="${node}"]`);
+  if(sw){ sw.style.background = hex; sw.querySelector('input').value = hex; }
+}
+function applyScheme(scheme){
+  activeScheme = scheme;
+  overlay.on = false;                              // categorical scheme clears overlay
+  meshes.forEach((o,i)=>{
+    const hex = colorFor(scheme, o.meta, i);
+    o.meta.color = hex;
+    o.mesh.material.color.set(hex);
+    setSwatch(o.meta.node, hex);
+  });
+  setOpacities();
+  if(window.updateColorbar) updateColorbar();
+}
+
+// ---------- shared shader FX (patterns + vividness + rim glow) ----------
+const patternUniforms = {
+  uPattern:{value:0}, uScale:{value:0.08}, uContrast:{value:0.55}, uPatMode:{value:0},
+  uVivid:{value:1.3}, uRim:{value:0.3}, uRimColor:{value:new THREE.Color('#ffffff')},
+  uWire:{value:0}, uWireWidth:{value:1.0}, uWireFill:{value:0}
+};
+// "on" = 1 for solid cells, 0 for pattern cells. uPatMode 0=darken off cells, 1=make them transparent (cutout).
+const COLOR_GLSL = `
+  { float _l=dot(diffuseColor.rgb, vec3(0.2126,0.7152,0.0722));
+    diffuseColor.rgb = clamp(mix(vec3(_l), diffuseColor.rgb, uVivid), 0.0, 1.0); }
+  if(uPattern>0){
+    vec3 q = vPatPos * uScale;
+    float on = 1.0;
+    if(uPattern==1){ on = 1.0 - mod(floor(q.x)+floor(q.y)+floor(q.z),2.0); }
+    else if(uPattern==2){ on = 1.0 - step(0.5, fract(q.x)); }
+    else if(uPattern==3){ vec3 g=abs(fract(q)-0.5); float l=min(min(g.x,g.y),g.z); on = smoothstep(0.0,0.06,l); }
+    else if(uPattern==4){ vec3 f=fract(q)-0.5; float d=length(f.xy); on = smoothstep(0.18,0.27,d); }
+    else if(uPattern==5){ on = 1.0 - step(0.5, fract(q.x+q.y)); }
+    if(uPatMode==0){ diffuseColor.rgb *= mix(uContrast, 1.0, on); }
+    else { float a = mix(uContrast, 1.0, on); diffuseColor.a *= a; if(a < 0.04) discard; }
+  }
+  if(uWire>0.5){
+    vec3 dB=fwidth(vBary);
+    vec3 a3=smoothstep(vec3(0.0), dB*uWireWidth, vBary);
+    float e=1.0 - min(min(a3.x,a3.y),a3.z);       // 1 on triangle edges
+    if(uWireFill>0.5){ diffuseColor.rgb *= mix(1.0, 0.12, e); }   // dark mesh lines on solid
+    else if(e < 0.2) discard;                       // pure wireframe: drop interiors
+  }`;
+const RIM_GLSL = `
+  { float _f = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
+    outgoingLight += uRimColor * (_f * uRim); }
+`;
+function attachFX(mat){
+  mat.onBeforeCompile = (shader)=>{
+    for(const k of Object.keys(patternUniforms)) shader.uniforms[k]=patternUniforms[k];
+    shader.vertexShader = 'varying vec3 vPatPos;\nattribute vec3 barycentric;\nvarying vec3 vBary;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPatPos = position;\n  vBary = barycentric;');
+    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\n'
+      + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + COLOR_GLSL);
+    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + '\n#include <opaque_fragment>');
+    shader.fragmentShader = f;
+  };
+}
+function buildMaterial(type, hex){
+  let m;
+  if(type==='Matcap'){
+    m=new THREE.MeshMatcapMaterial({matcap:matcapTex, color:new THREE.Color(hex||'#fff'),
+      side:THREE.DoubleSide, transparent:true, opacity:1});
+  } else {
+    m=new THREE.MeshStandardMaterial({color:new THREE.Color(hex||'#fff'), roughness:0.62, metalness:0.0,
+      envMapIntensity:0.35, side:THREE.DoubleSide, transparent:true, opacity:1});
+  }
+  attachFX(m); return m;
+}
+let shadingType='Standard';
+function setShading(type){
+  shadingType=type;
+  for(const o of meshes){ const old=o.mesh.material;
+    const nm=buildMaterial(type, o.meta.color);
+    nm.wireframe=old.wireframe; nm.opacity=old.opacity; nm.transparent=old.transparent;
+    nm.flatShading = (type!=='Matcap') && old.flatShading;
+    o.mesh.material=nm; old.dispose();
+  }
+  applySurfStyle(); setOpacities();
+}
+
+// ---------- load model ----------
+function b64ToBuf(b64){
+  const bin = atob(b64); const len = bin.length; const bytes = new Uint8Array(len);
+  for(let i=0;i<len;i++) bytes[i]=bin.charCodeAt(i);
+  return bytes.buffer;
+}
+const loader = new GLTFLoader();
+loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
+  let i=0;
+  gltf.scene.traverse(o=>{
+    if(!o.isMesh) return;
+    const meta = byNode.get(o.name) || META[i] || {node:o.name, abbr:o.name, name:o.name, lobe:'Other', hemi:'M', id:i+1};
+    let g=o.geometry; if(g.index) g=g.toNonIndexed();
+    if(!g.attributes.normal) g.computeVertexNormals();
+    const vc=g.attributes.position.count, bary=new Float32Array(vc*3);
+    for(let k=0;k<vc;k++){ const m3=k%3; bary[k*3+m3]=1; }   // per-triangle barycentric
+    g.setAttribute('barycentric', new THREE.BufferAttribute(bary,3));
+    o.geometry=g;
+    o.material = buildMaterial('Standard', '#ffffff');
+    o.castShadow = false;
+    const base = new THREE.Vector3(meta.centroid[0], meta.centroid[1], meta.centroid[2]);
+    const rec = {mesh:o, base, meta};
+    meshes.push(rec);
+    byId.set(meta.id, rec);
+    o.userData.meta = meta;
+    i++;
+  });
+  group.add(gltf.scene);
+
+  // fit camera
+  const box = new THREE.Box3().setFromObject(group);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  modelRadius = sphere.radius;
+  sceneCenter.copy(sphere.center);
+  camDist = sphere.radius*2.6;
+  camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
+
+  applyScheme('lobe');
+  buildList();
+  buildAxisLabels(box, sphere.radius);
+  initOverlayUI();
+  refreshSavedSets();
+  refreshPresets();
+  initAtlasPicker();
+  window.__DBG={meshes,scene,camera,renderer,group};
+  view([-1,0,0]);           // DEFAULT: left-hemisphere sagittal view
+  home.copy(camera.position); homeTarget.copy(controls.target);
+  document.getElementById('loader').style.display='none';
+  if(window.__brainReady) window.__brainReady();   // signal scripting API
+}, (err)=>{
+  document.getElementById('loader').innerHTML='<b>Failed to load model.</b><br>'+err;
+});
+
+// ---------- explosion ----------
+let explodeAmt = 0;                       // 0..1 from slider
+function curOffset(){ return explodeAmt * (+$('distance').value); }
+function setExplode(v){
+  explodeAmt = v;
+  const off = curOffset();
+  for(const o of meshes){
+    o.mesh.position.copy(o.base).multiplyScalar(off);
+  }
+  $('expVal').textContent = Math.round(v*100) + '%';
+  $('explode').value = v;
+  updateConnTransforms();
+}
+
+// ---------- UI: settings ----------
+const $ = id=>document.getElementById(id);
+$('explode').addEventListener('input', e=>{ playing=false; $('play').textContent='▶ Animate'; setExplode(+e.target.value); });
+$('distance').addEventListener('input', e=>{ $('distVal').textContent=(+e.target.value).toFixed(2)+'×'; setExplode(explodeAmt); });
+
+let playing=false, animPhase=0;
+$('play').addEventListener('click', ()=>{
+  playing=!playing;
+  $('play').textContent = playing ? '⏸ Pause' : '▶ Animate';
+});
+$('animSpeed').addEventListener('input', e=>$('spdVal').textContent=(+e.target.value).toFixed(1)+'×');
+$('rotSpeed').addEventListener('input', e=>$('rotVal').textContent=(+e.target.value).toFixed(1)+'×');
+$('autoRotate').addEventListener('change', e=>controls.autoRotate=e.target.checked);
+$('rotSpeed').addEventListener('input', e=>controls.autoRotateSpeed=2*+e.target.value);
+controls.autoRotateSpeed = 2;
+
+// ---------- per-tier opacity (colored vs gray vs all) so colored regions pop ----------
+const _hsl={};
+function isColored(o){ new THREE.Color(o.meta.color||'#888').getHSL(_hsl); return _hsl.s >= (+$('satCut').value); }
+function setOpacities(){
+  const all=+$('opacity').value, colO=+$('coloredOp').value, grO=+$('grayOp').value;
+  const cutout = (patternUniforms.uPatMode.value===1 && patternUniforms.uPattern.value>0)
+              || (patternUniforms.uWire.value>0 && patternUniforms.uWireFill.value<1);
+  for(const o of meshes){
+    const op = (isColored(o) ? colO : grO) * all;
+    o.mesh.material.opacity = op; o.mesh.material.transparent = op < 1 || cutout;
+  }
+}
+$('opacity').addEventListener('input', e=>{ $('opVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
+$('coloredOp').addEventListener('input', e=>{ $('coloredOpVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
+$('grayOp').addEventListener('input', e=>{ $('grayOpVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
+$('satCut').addEventListener('input', e=>{ $('satCutVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
+$('saveColored').addEventListener('click', ()=>{
+  const ids=meshes.filter(isColored).map(o=>o.meta.id);
+  if(!ids.length){ alert('No colored (saturated) regions to save.'); return; }
+  const name=prompt('Name this colored-region set:','colored '+ids.length); if(!name) return;
+  const sets=loadSets(); sets[name]=ids; saveSets(sets); refreshSavedSets(); $('regionSet').value='saved:'+name;
+});
+
+// ---------- render style (shading / vividness / rim glow) ----------
+$('shading').addEventListener('change', e=>setShading(e.target.value));
+$('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; });
+$('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
+$('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
+$('vividVal').textContent=(+$('vivid').value).toFixed(2)+'×';
+$('rimVal').textContent=(+$('rim').value).toFixed(2);
+$('coloredOpVal').textContent=(+$('coloredOp').value).toFixed(2);
+$('grayOpVal').textContent=(+$('grayOp').value).toFixed(2);
+$('satCutVal').textContent=(+$('satCut').value).toFixed(2);
+// surface style: solid / flat / wireframe / procedural patterns
+const STYLE_MAP = {
+  'Solid':{p:0}, 'Flat shaded':{p:0,flat:true},
+  'Wireframe':{p:0,wire:1,fill:0}, 'Wireframe + fill':{p:0,wire:1,fill:1},
+  'Checkerboard':{p:1}, 'Stripes':{p:2}, 'Grid lines':{p:3}, 'Dots':{p:4}, 'Hatch':{p:5}
+};
+function applySurfStyle(){
+  const s = STYLE_MAP[$('surfStyle').value] || {p:0};
+  patternUniforms.uPattern.value = s.p||0;
+  patternUniforms.uWire.value = s.wire||0;
+  patternUniforms.uWireFill.value = s.fill||0;
+  meshes.forEach(o=>{ const m=o.mesh.material;
+    if(m.flatShading !== !!s.flat){ m.flatShading = !!s.flat; m.needsUpdate=true; }
+  });
+}
+$('surfStyle').addEventListener('change', ()=>{ applySurfStyle(); setOpacities(); });
+$('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
+patternUniforms.uWireWidth.value=+$('wireWidth').value; $('wireWVal').textContent=(+$('wireWidth').value).toFixed(1);
+$('patMode').addEventListener('change', e=>{ patternUniforms.uPatMode.value=+e.target.value; setOpacities(); });
+$('patScale').addEventListener('input', e=>{ patternUniforms.uScale.value=+e.target.value; $('patScaleVal').textContent=(+e.target.value).toFixed(3); });
+$('patStr').addEventListener('input', e=>{ patternUniforms.uContrast.value=1-(+e.target.value); $('patStrVal').textContent=(+e.target.value).toFixed(2); });
+patternUniforms.uContrast.value = 1 - (+$('patStr').value);
+$('patScaleVal').textContent=(+$('patScale').value).toFixed(3);
+$('patStrVal').textContent=(+$('patStr').value).toFixed(2);
+
+$('bg').addEventListener('input', e=>scene.background=new THREE.Color(e.target.value));
+$('bgWhite').addEventListener('click', ()=>{ $('bg').value='#ffffff'; scene.background=new THREE.Color('#ffffff'); });
+$('bgBlack').addEventListener('click', ()=>{ $('bg').value='#0b0e14'; scene.background=new THREE.Color('#0b0e14'); });
+
+// ---------- DTI connectivity (avg of ABC participants) ----------
+const CONN = window.ATLAS_CONN;                 // {n_subjects, max, edges:[[i,j,w]...] desc}
+const cylGeo = new THREE.CylinderGeometry(1,1,1,8,1,true);
+const Y = new THREE.Vector3(0,1,0);
+let connMeshes = [];                          // {mesh, oi, oj, r}
+const MAX_EDGES = 2500;
+// shared pulse uniforms -> a bright bead travels along each connection
+const connUniforms = { uTime:{value:0}, uPulse:{value:0}, uPulseSpeed:{value:0.8},
+  uPulseWidth:{value:0.18}, uPulseFreq:{value:1.0}, uPulseColor:{value:new THREE.Color('#ffffff')} };
+function attachConnFX(mat){
+  mat.onBeforeCompile = (sh)=>{
+    for(const k of Object.keys(connUniforms)) sh.uniforms[k]=connUniforms[k];
+    sh.vertexShader = 'varying float vConnY;\n' + sh.vertexShader
+      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vConnY = position.y + 0.5;');
+    let f='varying float vConnY;\nuniform float uTime;\nuniform float uPulse;\nuniform float uPulseSpeed;\nuniform float uPulseWidth;\nuniform float uPulseFreq;\nuniform vec3 uPulseColor;\n'+sh.fragmentShader;
+    const pulse = `
+      if(uPulse>0.5){ float ph=fract(vConnY*uPulseFreq - uTime*uPulseSpeed);
+        float p=smoothstep(uPulseWidth,0.0,ph)+smoothstep(uPulseWidth,0.0,1.0-ph);
+        outgoingLight = mix(outgoingLight, uPulseColor, clamp(p,0.0,1.0)); }`;
+    if(f.includes('#include <opaque_fragment>')) f=f.replace('#include <opaque_fragment>', pulse+'\n#include <opaque_fragment>');
+    sh.fragmentShader=f;
+  };
+}
+function connColor(w){
+  if($('connColorMode').value==='single') return new THREE.Color($('connColor').value);
+  const t = Math.min(1, w/Math.max(1e-6,CONN.max));
+  const c = sampleCmap($('connCmap').value, t); return new THREE.Color(c[0],c[1],c[2]);
+}
+function rebuildConn(){
+  for(const c of connMeshes){ connGroup.remove(c.mesh); c.mesh.material.dispose(); }
+  connMeshes = [];
+  if(!CONN || !$('connOn').checked){ updateConnInfo(0); return; }
+  const th = +$('connTh').value;
+  const inclHidden = $('connAll').checked;
+  const scale = +$('connScale').value;
+  let n=0;
+  for(const [i,j,w] of CONN.edges){
+    if(w < th) break;                         // edges are sorted descending
+    const oi=byId.get(i), oj=byId.get(j);
+    if(!oi||!oj) continue;
+    if(!inclHidden && (!oi.mesh.visible || !oj.mesh.visible)) continue;
+    const mat=new THREE.MeshBasicMaterial({color:connColor(w), transparent:true, opacity:0.92});
+    attachConnFX(mat);
+    const mesh=new THREE.Mesh(cylGeo, mat);
+    mesh.renderOrder=1;
+    connGroup.add(mesh);
+    const r=(0.35 + 3.4*Math.sqrt(w/CONN.max))*scale;   // radius from avg strength
+    connMeshes.push({mesh, oi, oj, r});
+    if(++n>=MAX_EDGES) break;
+  }
+  updateConnTransforms();
+  updateConnInfo(connMeshes.length);
+}
+const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_m=new THREE.Vector3(),_d=new THREE.Vector3();
+function roiPos(o,out){ return out.copy(o.base).multiplyScalar(1+curOffset()); }
+function updateConnTransforms(){
+  for(const c of connMeshes){
+    roiPos(c.oi,_a); roiPos(c.oj,_b);
+    _m.addVectors(_a,_b).multiplyScalar(0.5);
+    _d.subVectors(_b,_a); const len=_d.length()||1e-4;
+    c.mesh.position.copy(_m);
+    c.mesh.quaternion.setFromUnitVectors(Y,_d.normalize());
+    c.mesh.scale.set(c.r,len,c.r);
+  }
+}
+function updateConnInfo(n){
+  const el=$('connThVal');
+  el.textContent = $('connOn').checked ? `${(+$('connTh').value).toFixed(1)} · ${n} edges` : (+$('connTh').value).toFixed(1);
+}
+$('connOn').addEventListener('change', rebuildConn);
+$('connAll').addEventListener('change', rebuildConn);
+$('connTh').addEventListener('input', rebuildConn);
+$('connScale').addEventListener('input', e=>{ $('connScaleVal').textContent=(+e.target.value).toFixed(1)+'×'; rebuildConn(); });
+$('connColorMode').addEventListener('change', rebuildConn);
+$('connCmap').addEventListener('change', rebuildConn);
+$('connColor').addEventListener('input', rebuildConn);
+$('connPulse').addEventListener('change', e=>{ connUniforms.uPulse.value = e.target.checked?1:0; });
+$('connPulseSpeed').addEventListener('input', e=>{ connUniforms.uPulseSpeed.value=+e.target.value; $('connPulseVal').textContent=(+e.target.value).toFixed(1); });
+$('connPulseColor').addEventListener('input', e=>connUniforms.uPulseColor.value.set(e.target.value));
+
+const home=new THREE.Vector3(), homeTarget=new THREE.Vector3();
+const sceneCenter=new THREE.Vector3(); let camDist=320;
+$('reset').addEventListener('click', ()=>{ camera.position.copy(home); controls.target.copy(homeTarget); controls.update(); });
+function view(pos){ // pos = direction the camera sits from center
+  const c=sceneCenter; controls.target.copy(c);
+  camera.position.set(c.x+pos[0]*camDist, c.y+pos[1]*camDist, c.z+pos[2]*camDist);
+  camera.up.set(0,1,0); controls.update();
+}
+$('vTop').onclick   = ()=>view([0,1,0.0001]);   // superior
+$('vSide').onclick  = ()=>view([-1,0,0]);        // left sagittal
+$('vFront').onclick = ()=>view([0,0,-1]);        // anterior (face)
+$('snap').onclick = ()=>{ const a=document.createElement('a');
+  a.download='jhu_brain.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); };
+
+// color scheme
+$('scheme').addEventListener('change', e=>{
+  $('singleRow').style.display = e.target.value==='single' ? 'flex':'none';
+  applyScheme(e.target.value);
+});
+$('applyScheme').onclick = ()=>applyScheme($('scheme').value);
+$('singleColor').addEventListener('input', ()=>{ if($('scheme').value==='single') applyScheme('single'); });
+
+// ---------- UI: ROI chart ----------
+function buildList(){
+  const list = $('roiList');
+  const groups = {};
+  meshes.forEach(o=>{ (groups[o.meta.lobe] ||= []).push(o); });
+  const order = ['Frontal','Parietal','Temporal','Occipital','Limbic','SubcorticalGM','WhiteMatter','Cerebellum','Brainstem','Ventricle','Other'];
+  const keys = Object.keys(groups).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  list.innerHTML='';
+  for(const g of keys){
+    const det=document.createElement('details'); det.className='group'; det.open=false;
+    const sum=document.createElement('summary');
+    sum.innerHTML=`<span class="chev">▶</span><span class="gname">${g}</span>
+      <span class="gcount">${groups[g].length}</span>
+      <button class="sm gtoggle">toggle</button>`;
+    det.appendChild(sum);
+    sum.querySelector('.gtoggle').addEventListener('click',ev=>{
+      ev.preventDefault(); ev.stopPropagation();
+      const any = groups[g].some(o=>!o.mesh.visible);
+      groups[g].forEach(o=>setVisible(o, any));
+    });
+    groups[g].sort((a,b)=>a.meta.abbr.localeCompare(b.meta.abbr));
+    for(const o of groups[g]){
+      const row=document.createElement('div'); row.className='roi'; row.dataset.node=o.meta.node;
+      row.innerHTML=`<input type="checkbox" checked>
+        <span class="swatch" data-node="${o.meta.node}" style="background:${o.meta.color}">
+          <input type="color" value="${o.meta.color||'#888888'}"></span>
+        <span class="nm" title="${o.meta.name}">${o.meta.name}</span>
+        <span class="abbr">${o.meta.abbr}</span>`;
+      row.querySelector('input[type=checkbox]').addEventListener('change',e=>setVisible(o,e.target.checked));
+      const ci=row.querySelector('.swatch input');
+      ci.addEventListener('input',e=>{ o.meta.color=e.target.value;
+        o.mesh.material.color.set(e.target.value);
+        row.querySelector('.swatch').style.background=e.target.value; });
+      row.querySelector('.nm').addEventListener('click',()=>focusROI(o));
+      row.querySelector('.abbr').addEventListener('click',()=>focusROI(o));
+      det.appendChild(row);
+    }
+    list.appendChild(det);
+  }
+  updateCount();
+}
+function setVisible(o,vis,defer){
+  o.mesh.visible=vis;
+  const cb=document.querySelector(`.roi[data-node="${o.meta.node}"] input[type=checkbox]`);
+  if(cb) cb.checked=vis;
+  if(!defer){ updateCount(); if($('connOn').checked) rebuildConn(); }
+}
+function updateCount(){
+  const vis=meshes.filter(o=>o.mesh.visible).length;
+  $('roiCount').textContent=`${vis}/${meshes.length} regions visible`;
+}
+$('showAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,true,true)); updateCount(); rebuildConn(); };
+$('hideAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,false,true)); updateCount(); rebuildConn(); };
+$('search').addEventListener('input',e=>{
+  const q=e.target.value.toLowerCase();
+  document.querySelectorAll('.roi').forEach(r=>{
+    const o=meshes.find(x=>x.meta.node===r.dataset.node);
+    const hit=!q || o.meta.name.toLowerCase().includes(q) || o.meta.abbr.toLowerCase().includes(q);
+    r.style.display=hit?'':'none';
+  });
+});
+
+// ---------- picking + focus ----------
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+const hud=$('hud');
+let selected=null;
+function setSelected(o){
+  if(selected) selected.mesh.material.emissive.setHex(0x000000);
+  selected=o;
+  if(o){ o.mesh.material.emissive.setHex(0x3366aa);
+    document.querySelectorAll('.roi.sel').forEach(r=>r.classList.remove('sel'));
+    const r=document.querySelector(`.roi[data-node="${o.meta.node}"]`);
+    if(r){ r.classList.add('sel'); r.scrollIntoView({block:'nearest'}); }
+  }
+}
+function focusROI(o){
+  setSelected(o);
+  const wp=new THREE.Vector3(); o.mesh.getWorldPosition(wp);
+  // include explosion offset
+  controls.target.copy(wp); controls.update();
+}
+renderer.domElement.addEventListener('pointermove',ev=>{
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((ev.clientX-r.left)/r.width)*2-1;
+  mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
+  if(hits.length){
+    const m=hits[0].object.userData.meta;
+    hud.querySelector('.t').textContent=m.name;
+    hud.querySelector('.s').textContent=`${m.abbr} · ${m.lobe} · ${m.hemi==='L'?'left':m.hemi==='R'?'right':'midline'} hemisphere`;
+    hud.style.opacity=1;
+  } else hud.style.opacity=0;
+});
+renderer.domElement.addEventListener('click',ev=>{
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((ev.clientX-r.left)/r.width)*2-1;
+  mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
+  if(hits.length) setSelected(meshes.find(o=>o.mesh===hits[0].object));
+});
+
+// ================= AXIS LABELS (L/R, A/P, D/V) =================
+const axisLineGroup = new THREE.Group(); group.add(axisLineGroup);
+const axisLetterGroup = new THREE.Group(); group.add(axisLetterGroup);
+function makeTextSprite(txt, col){
+  const c=document.createElement('canvas'); c.width=128; c.height=72;
+  const x=c.getContext('2d');
+  x.font='bold 54px system-ui'; x.textAlign='center'; x.textBaseline='middle';
+  x.lineWidth=6; x.strokeStyle='rgba(0,0,0,0.85)'; x.strokeText(txt,64,38);
+  x.fillStyle=col; x.fillText(txt,64,38);
+  const t=new THREE.CanvasTexture(c); t.anisotropy=4;
+  // depthTest:true -> the brain occludes letters, so they never draw over it
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:true,depthWrite:false,transparent:true}));
+  return s;
+}
+let _axisBox=null, _axisR=150;
+function buildAxisLabels(box, r){
+  _axisBox=box; _axisR=r;
+  while(axisLineGroup.children.length) axisLineGroup.remove(axisLineGroup.children[0]);
+  while(axisLetterGroup.children.length) axisLetterGroup.remove(axisLetterGroup.children[0]);
+  const gap = r*0.05, sc = r*0.20;
+  const col = $('axisColor').value, wr = +$('axisWidth').value;
+  const hx = Math.max(Math.abs(box.min.x), Math.abs(box.max.x)) + gap;
+  const hy = Math.max(Math.abs(box.min.y), Math.abs(box.max.y)) + gap;
+  const hz = Math.max(Math.abs(box.min.z), Math.abs(box.max.z)) + gap;
+  // three.js axes: +X=Right, -X=Left, +Y=Dorsal(sup), -Y=Ventral(inf), -Z=Anterior, +Z=Posterior
+  const defs=[['R',[ hx,0,0]],['L',[-hx,0,0]],['D',[0, hy,0]],['V',[0,-hy,0]],['A',[0,0,-hz]],['P',[0,0, hz]]];
+  for(const [t,p] of defs){
+    const s=makeTextSprite(t,col); s.position.set(...p); s.scale.set(sc,sc*0.56,1);
+    axisLetterGroup.add(s);
+  }
+  // reference axes as thin cylinders (real adjustable width), one chosen color
+  const cyl=(len,axis)=>{ const g=new THREE.CylinderGeometry(wr,wr,len,12);
+    const m=new THREE.Mesh(g, new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.65,depthTest:false}));
+    if(axis==='x') m.rotation.z=Math.PI/2; if(axis==='z') m.rotation.x=Math.PI/2; return m; };
+  axisLineGroup.add(cyl(2*hx,'x')); axisLineGroup.add(cyl(2*hy,'y')); axisLineGroup.add(cyl(2*hz,'z'));
+}
+$('axisLines').addEventListener('change', e=>axisLineGroup.visible=e.target.checked);
+$('axisLetters').addEventListener('change', e=>axisLetterGroup.visible=e.target.checked);
+function rebuildAxes(){ if(_axisBox) buildAxisLabels(_axisBox,_axisR); }
+$('axisColor').addEventListener('input', rebuildAxes);
+$('axisWidth').addEventListener('input', e=>{ $('axisWVal').textContent=(+e.target.value).toFixed(1); rebuildAxes(); });
+$('axisWVal').textContent=(+$('axisWidth').value).toFixed(1);
+
+// ================= ATLAS PICKER =================
+function initAtlasPicker(){
+  const sel=$('atlasSel'); sel.innerHTML='';
+  for(const a of REG){ const o=document.createElement('option'); o.value=a.id; o.textContent=a.name; sel.appendChild(o); }
+  sel.value=ATLAS_ID;
+  sel.addEventListener('change', e=>{ location.href = location.pathname+'?atlas='+encodeURIComponent(e.target.value); });
+  if(!window.ATLAS_CONN){ const c=$('connOn'); c.checked=false; c.disabled=true;
+    c.parentElement.style.opacity=0.45; c.parentElement.title='No connectivity data for this atlas'; }
+}
+
+// ================= SETTINGS PRESETS =================
+// Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
+// to a different overlay map. Excludes the data source itself (task/file/region).
+const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr',
+  'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
+  'connOn','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
+  'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs',
+  'coloredOp','grayOp','satCut'];
+function capturePreset(){
+  const p={};
+  for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
+    p[id] = el.type==='checkbox' ? el.checked : el.value; }
+  return p;
+}
+function applyPreset(p){
+  for(const id of PRESET_IDS){ const el=$(id); if(!el || !(id in p)) continue;
+    if(el.type==='checkbox'){ el.checked=p[id]; el.dispatchEvent(new Event('change')); }
+    else { el.value=p[id];
+      el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }
+  }
+}
+function loadPresets(){ try{ return JSON.parse(localStorage.getItem('brainPresets')||'{}'); }catch(e){ return {}; } }
+function savePresets(s){ localStorage.setItem('brainPresets', JSON.stringify(s)); }
+function refreshPresets(){
+  const sel=$('presetSel'); const cur=sel.value; sel.innerHTML='<option value="">—</option>';
+  for(const name of Object.keys(loadPresets())){ const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o); }
+  sel.value=cur;
+}
+$('savePreset').addEventListener('click', ()=>{
+  const name=prompt('Preset name (saves look/settings, not the chosen map):'); if(!name) return;
+  const all=loadPresets(); all[name]=capturePreset(); savePresets(all); refreshPresets(); $('presetSel').value=name;
+});
+$('presetSel').addEventListener('change', e=>{ const p=loadPresets()[e.target.value]; if(p) applyPreset(p); });
+$('delPreset').addEventListener('click', ()=>{
+  const v=$('presetSel').value; if(!v){ alert('Pick a preset first.'); return; }
+  const all=loadPresets(); delete all[v]; savePresets(all); refreshPresets(); $('presetSel').value='';
+});
+
+// ================= COLORMAPS =================
+const CMAPS = window.JHU_CMAPS || {};
+const CMAP_ORDER = ['viridis','plasma','inferno','magma','cividis','turbo','parula',
+  'jet','actc','fire','hot','cool','rainbow','hsv','spring','summer','autumn','winter',
+  'gray','bone','copper','coolwarm','bwr','seismic','RdBu_rev','RdYlBu_rev','Spectral_rev','PiYG','BrBG'];
+function sampleCmap(name, t){
+  const lut=CMAPS[name]||CMAPS.viridis; if(!lut) return [0.5,0.5,0.5];
+  t=Math.max(0,Math.min(1,t)); const f=t*(lut.length-1), i=Math.floor(f), g=f-i;
+  const a=lut[i], b=lut[Math.min(lut.length-1,i+1)];
+  return [a[0]+(b[0]-a[0])*g, a[1]+(b[1]-a[1])*g, a[2]+(b[2]-a[2])*g];
+}
+
+// ================= DATA OVERLAY (task maps + stat .nii) =================
+const NEURO = window.ATLAS_NEURO || {terms:{},order:[]};
+const SAMPLES = window.ATLAS_SAMPLES || {};
+function styleIsCmap(){ return $('ovStyle').value==='cmap'; }
+function syncStyleRows(){
+  const cm=styleIsCmap();
+  $('cmapRow').style.display = cm?'flex':'none';
+  $('cbar').style.display    = cm?'block':'none';
+  $('ovColorRow').style.display = cm?'none':'flex';
+  $('cmapInvert').parentElement.style.display = cm?'flex':'none';
+}
+function initOverlayUI(){
+  const tmSel=$('taskMap');
+  for(const term of NEURO.order){ const o=document.createElement('option'); o.value=term; o.textContent=term; tmSel.appendChild(o); }
+  const cm=$('cmap');
+  for(const k of CMAP_ORDER){ if(!CMAPS[k]) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; cm.appendChild(o); }
+  for(const k of Object.keys(CMAPS)){ if(CMAP_ORDER.includes(k)) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; cm.appendChild(o); }
+  cm.value='viridis';
+  const ccm=$('connCmap');
+  for(const k of CMAP_ORDER){ if(!CMAPS[k]) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; ccm.appendChild(o); }
+  ccm.value='turbo';
+  const tm=$('taskMap');
+  const applyTask=()=>{ const t=tm.value.trim();
+    if(!t){ applyScheme(activeScheme); return; }
+    if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'". Try: '+NEURO.order.slice(0,6).join(', ')+'…'; return; }
+    $('statFile').value='';
+    applyOverlay(NEURO.terms[t], 'task: '+t);
+  };
+  tm.addEventListener('change', applyTask);
+  $('ovStyle').addEventListener('change', ()=>{ syncStyleRows(); if(overlay.on) recolorOverlay(); });
+  $('ovColor').addEventListener('input', ()=>{ if(overlay.on) recolorOverlay(); });
+  $('cmap').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
+  $('cmapInvert').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
+  $('cmapAbs').addEventListener('change', ()=>{ if(overlay.on){ autoRange(); recolorOverlay(); } });
+  $('cthresh').addEventListener('input', ()=>{ if(overlay.on) recolorOverlay(); });
+  $('cmin').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
+  $('cmax').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
+  $('autoRange').addEventListener('click', ()=>{ autoRange(); recolorOverlay(); updateColorbar(); });
+  $('clearOverlay').addEventListener('click', ()=>{ $('taskMap').value=''; $('statFile').value=''; applyScheme(activeScheme); });
+  $('statFile').addEventListener('change', onStatFile);
+  window.updateColorbar=updateColorbar;
+  syncStyleRows();
+  updateColorbar();
+}
+function curVal(raw){ return $('cmapAbs').checked ? Math.abs(raw) : raw; }
+function autoRange(){
+  let mn=Infinity, mx=-Infinity;
+  overlay.vals && Object.keys(overlay.vals).forEach(k=>{ const v=curVal(overlay.vals[k]);
+    if(isFinite(v)){ if(v<mn)mn=v; if(v>mx)mx=v; } });
+  if(!isFinite(mn)){ mn=0; mx=1; }
+  $('cmin').value=(+mn).toFixed(2); $('cmax').value=(+mx).toFixed(2);
+}
+function applyOverlay(valsObj, name){
+  overlay.on=true; overlay.vals=valsObj; overlay.name=name;
+  autoRange(); recolorOverlay(); updateColorbar();
+}
+const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
+const _gray=new THREE.Color(NEUTRAL);
+function recolorOverlay(){
+  if(!overlay.on||!overlay.vals) return;
+  const mn=parseFloat($('cmin').value), mx=parseFloat($('cmax').value);
+  const inv=$('cmapInvert').checked, name=$('cmap').value;
+  const solid=!styleIsCmap();
+  const ovC=new THREE.Color($('ovColor').value);
+  // solid (activation) mode anchors the gray baseline at 0 for signed maps,
+  // so negative / zero regions stay gray and only activation takes the color.
+  const lo = (solid && mn<0) ? 0 : mn;
+  const span=(mx-lo)||1e-6, thr=(+$('cthresh').value)*span;
+  for(const o of meshes){
+    const raw=overlay.vals[o.meta.id];
+    let hex=NEUTRAL;   // gray by default
+    if(raw!==undefined && isFinite(raw)){
+      const v=curVal(raw);
+      if((v-lo) >= thr && (v-lo) > 0){
+        let n=(v-lo)/span; if(inv) n=1-n; n=Math.max(0,Math.min(1,n));
+        let c;
+        if(solid){   // gray base -> chosen color, intensity = normalized value
+          c=_gray.clone().lerp(ovC, n);
+        } else {     // full colormap
+          const a=sampleCmap(name,n); c=new THREE.Color(a[0],a[1],a[2]);
+        }
+        hex='#'+c.getHexString();
+      }
+    }
+    o.meta.color=hex; o.mesh.material.color.set(hex); setSwatch(o.meta.node,hex);
+  }
+  setOpacities();
+  $('ovInfo').textContent=`${overlay.name} · range ${mn.toFixed(2)}…${mx.toFixed(2)}`;
+}
+function updateColorbar(){
+  const cv=$('cbar'), x=cv.getContext('2d'), w=cv.width, h=cv.height;
+  const name=$('cmap').value||'viridis', inv=$('cmapInvert').checked;
+  for(let px=0; px<w; px++){ let t=px/(w-1); if(inv) t=1-t;
+    const c=sampleCmap(name,t); x.fillStyle=`rgb(${c.map(v=>Math.round(v*255)).join(',')})`;
+    x.fillRect(px,0,1,h); }
+}
+// ---- NIfTI-1 reader ----
+function inv3(m){ // m row-major 3x3
+  const [a,b,c,d,e,f,g,h,i]=m;
+  const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g,D=-(b*i-c*h),E=a*i-c*g,F=-(a*h-b*g),
+        G=b*f-c*e,H=-(a*f-c*d),I=a*e-b*d, det=a*A+b*B+c*C||1e-9;
+  return [A/det,D/det,G/det,B/det,E/det,H/det,C/det,F/det,I/det];
+}
+function parseNifti(buf){
+  let dv=new DataView(buf);
+  let little=true; if(dv.getInt32(0,true)!==348){ little=false; if(dv.getInt32(0,false)!==348) little=true; }
+  const i16=o=>dv.getInt16(o,little), f32=o=>dv.getFloat32(o,little);
+  const dim=[]; for(let k=0;k<8;k++) dim.push(i16(40+k*2));
+  const nx=dim[1],ny=dim[2],nz=dim[3];
+  const datatype=i16(70);
+  let voff=Math.round(f32(108)); if(!voff||voff<352) voff=352;
+  let slope=f32(112); const inter=f32(116); if(!slope) slope=1;
+  const sform=i16(254);
+  let M, T;
+  if(sform>0){
+    M=[f32(280),f32(284),f32(288), f32(296),f32(300),f32(304), f32(312),f32(316),f32(320)];
+    T=[f32(292),f32(308),f32(324)];
+  } else {
+    const px=[f32(80),f32(84),f32(88)];
+    M=[px[0],0,0, 0,px[1],0, 0,0,px[2]];
+    T=[-px[0]*nx/2,-px[1]*ny/2,-px[2]*nz/2];
+  }
+  const Minv=inv3(M);
+  const read=(idx)=>{ switch(datatype){
+    case 2: return dv.getUint8(voff+idx);
+    case 256: return dv.getInt8(voff+idx);
+    case 4: return dv.getInt16(voff+idx*2,little);
+    case 512: return dv.getUint16(voff+idx*2,little);
+    case 8: return dv.getInt32(voff+idx*4,little);
+    case 16: return dv.getFloat32(voff+idx*4,little);
+    case 64: return dv.getFloat64(voff+idx*8,little);
+    default: return dv.getFloat32(voff+idx*4,little);
+  }};
+  function sampleMM(x,y,z){ const dx=x-T[0],dy=y-T[1],dz=z-T[2];
+    const i=Math.round(Minv[0]*dx+Minv[1]*dy+Minv[2]*dz);
+    const j=Math.round(Minv[3]*dx+Minv[4]*dy+Minv[5]*dz);
+    const k=Math.round(Minv[6]*dx+Minv[7]*dy+Minv[8]*dz);
+    if(i<0||j<0||k<0||i>=nx||j>=ny||k>=nz) return null;
+    return read(i + j*nx + k*nx*ny)*slope+inter;
+  }
+  return {sampleMM, dim:[nx,ny,nz]};
+}
+function onStatFile(e){
+  const file=e.target.files[0]; if(!file) return;
+  $('ovInfo').textContent='reading '+file.name+' …';
+  const fr=new FileReader();
+  fr.onload=()=>{ try{
+    let buf=fr.result;
+    if(/\.gz$/i.test(file.name)){ buf=window.pako.ungzip(new Uint8Array(buf)).buffer; }
+    const nii=parseNifti(buf);
+    const vals={};
+    for(const o of meshes){
+      const pts=SAMPLES[o.meta.id]; if(!pts){ vals[o.meta.id]=NaN; continue; }
+      let s=0,n=0;
+      for(let p=0;p<pts.length;p+=3){ const v=nii.sampleMM(pts[p],pts[p+1],pts[p+2]);
+        if(v!==null && isFinite(v)){ s+=v; n++; } }
+      vals[o.meta.id]= n? s/n : NaN;
+    }
+    $('taskMap').value='';
+    applyOverlay(vals, 'file: '+file.name);
+  }catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; }
+  };
+  fr.readAsArrayBuffer(file);
+}
+
+// ================= REGION SETS =================
+const CANON = {
+  __motor: [25,26,23,24,1,2],                       // pre/post-central + SFG-post (SMA-ish)
+  __lang:  [11,15,35,184,39,186,29,31],             // IFG op/tri, STG, pSTG, MTG, pMTG, SMG, AG (L)
+};
+function showOnly(ids){
+  const s=new Set(ids);
+  meshes.forEach(o=>setVisible(o, s.has(o.meta.id), true));
+  updateCount(); if($('connOn').checked) rebuildConn();
+}
+function loadSets(){ try{ return JSON.parse(localStorage.getItem('jhuSets')||'{}'); }catch(e){ return {}; } }
+function saveSets(s){ localStorage.setItem('jhuSets', JSON.stringify(s)); }
+function refreshSavedSets(){
+  const og=$('savedSets'); og.innerHTML='';
+  const sets=loadSets();
+  for(const name of Object.keys(sets)){ const o=document.createElement('option');
+    o.value='saved:'+name; o.textContent=name; og.appendChild(o); }
+}
+$('regionSet').addEventListener('change', e=>{
+  const v=e.target.value; if(!v) return;
+  if(v==='__all') meshes.forEach(o=>setVisible(o,true,true)),updateCount(),($('connOn').checked&&rebuildConn());
+  else if(v==='__none') showOnly([]);
+  else if(CANON[v]) showOnly(CANON[v]);
+  else if(v.startsWith('saved:')){ const s=loadSets()[v.slice(6)]; if(s) showOnly(s); }
+});
+$('saveSet').addEventListener('click', ()=>{
+  const name=prompt('Name this region set:'); if(!name) return;
+  const ids=meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id);
+  const sets=loadSets(); sets[name]=ids; saveSets(sets); refreshSavedSets();
+  $('regionSet').value='saved:'+name;
+});
+$('delSet').addEventListener('click', ()=>{
+  const v=$('regionSet').value;
+  if(!v.startsWith('saved:')){ alert('Pick a saved set first.'); return; }
+  const sets=loadSets(); delete sets[v.slice(6)]; saveSets(sets); refreshSavedSets();
+  $('regionSet').value='';
+});
+
+// ---------- resize + render ----------
+// Inset the 3D canvas so it fills only the open area (right of sidebar, above
+// the settings bar) — keeps the brain centred in the visible black region.
+const cv = renderer.domElement;
+cv.style.position='absolute';
+function resize(){
+  const sb = document.getElementById('sidebar').getBoundingClientRect().width;
+  const bar = document.getElementById('settings').getBoundingClientRect().height;
+  const left = sb, top = 0;
+  const w = Math.max(10, window.innerWidth - sb);
+  const h = Math.max(10, window.innerHeight - bar);
+  cv.style.left = left+'px'; cv.style.top = top+'px';
+  renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize); resize();
+// settings bar can change height (wrapping) on first layout — re-fit shortly after
+setTimeout(resize, 200);
+
+// ================= SCRIPTING API (for headless figure panels) =================
+const VIEWS = {left:[-1,0,0], right:[1,0,0], top:[0,1,0.0001], bottom:[0,-1,0.0001],
+  front:[0,0,-1], back:[0,0,1], anterior:[0,0,-1], posterior:[0,0,1],
+  superior:[0,1,0.0001], inferior:[0,-1,0.0001]};
+function setControl(id,val){ const el=$(id); if(!el) return;
+  if(el.type==='checkbox'){ el.checked=!!val; el.dispatchEvent(new Event('change')); }
+  else { el.value=val; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); } }
+function nextFrames(n=2){ return new Promise(res=>{ (function step(k){ k<=0?res():requestAnimationFrame(()=>step(k-1)); })(n); }); }
+let _readyResolve; const _ready = new Promise(r=>_readyResolve=r);
+window.__brainReady = _readyResolve;
+window.brainAPI = {
+  ready: _ready,
+  atlas: ATLAS_ID,
+  atlases: REG.map(a=>({id:a.id,name:a.name,nroi:a.nroi})),
+  views: Object.keys(VIEWS),
+  hasConn: !!window.ATLAS_CONN,
+  tasks: (window.ATLAS_NEURO&&window.ATLAS_NEURO.order)||[],
+  async applyConfig(cfg={}){
+    cfg = cfg||{};
+    if(cfg.controls) for(const [id,v] of Object.entries(cfg.controls)) setControl(id,v);
+    if(cfg.scheme){ setControl('scheme', cfg.scheme); }
+    if(cfg.regionSet!==undefined){ setControl('regionSet', cfg.regionSet); }
+    if(cfg.task!==undefined){ setControl('taskMap', cfg.task); }
+    if(cfg.explosion!==undefined){ if(cfg.explosion.distance!==undefined) setControl('distance',cfg.explosion.distance);
+      setExplode(cfg.explosion.amount!==undefined?cfg.explosion.amount:explodeAmt); }
+    if(cfg.connectivity!==undefined){ setControl('connOn', !!cfg.connectivity); }
+    if(cfg.bg){ setControl('bg', cfg.bg); }
+    if(cfg.view){ view(VIEWS[cfg.view]||VIEWS.left); }
+    if(cfg.uiHidden){ document.getElementById('sidebar').style.display='none';
+      document.getElementById('settings').style.display='none'; document.querySelector('.hint').style.display='none'; resize(); }
+    await nextFrames(3);
+    return true;
+  },
+  setView(name){ view(VIEWS[name]||VIEWS.left); },
+  // render the 3D scene at an exact size and return a PNG data URL (no UI chrome)
+  renderTo(w=600,h=480,transparent=false){
+    const oldBG=scene.background; if(transparent) scene.background=null;
+    renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+    renderer.render(scene,camera);
+    const url=renderer.domElement.toDataURL('image/png');
+    scene.background=oldBG; resize(); renderer.render(scene,camera);
+    return url;
+  },
+  screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
+  // describe the active overlay colorbar (for figure legends), or null
+  colorbar(){ if(!overlay.on) return null;
+    return { name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
+             cmap:$('cmap').value, style:$('ovStyle').value, color:$('ovColor').value }; }
+};
+
+// ================= IN-APP PANEL BUILDER =================
+let pbItems = [];  // per-cell {dataURL,label,cbar} | null
+function pbDims(){ const [r,c]=$('pbGrid').value.split('x').map(Number); return [r,c]; }
+function pbRender(){
+  const [rows,cols]=pbDims(); const n=rows*cols;
+  while(pbItems.length<n) pbItems.push(null); pbItems.length=n;
+  const wrap=$('pbCells'); wrap.style.gridTemplateColumns=`repeat(${cols},1fr)`; wrap.innerHTML='';
+  pbItems.forEach((it,i)=>{
+    const cell=document.createElement('div'); cell.className='pbCell';
+    if(it){ cell.innerHTML=`<img src="${it.dataURL}"><span class="cap">${it.label||''}</span><span class="rm">✕</span>`;
+      cell.querySelector('.rm').addEventListener('click',ev=>{ev.stopPropagation(); pbItems[i]=null; pbRender();}); }
+    else cell.innerHTML='<span class="plus">＋</span>';
+    cell.addEventListener('click',()=>pbCapture(i));
+    wrap.appendChild(cell);
+  });
+}
+function pbCapture(i){
+  const task=$('taskMap').value, scheme=$('scheme').value;
+  const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
+  const label = task ? `${atlasName} · ${task}` : `${atlasName} · ${scheme}`;
+  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,false), label, cbar: window.brainAPI.colorbar() };
+  pbRender();
+}
+async function pbExport(){
+  const items=pbItems; if(!items.some(Boolean)){ alert('Click tiles to add views first.'); return; }
+  const [rows,cols]=pbDims(); const cw=640,ch=480,gap=18,labelH=$('pbLabels').checked?30:0;
+  const cbInfo=$('pbBar').checked ? (items.find(it=>it&&it.cbar)||{}).cbar : null;
+  const cbH=cbInfo?56:0, bgc=$('bg').value;
+  const cvs=document.createElement('canvas');
+  cvs.width=cols*cw+(cols+1)*gap; cvs.height=rows*(ch+labelH)+(rows+1)*gap+cbH;
+  const x=cvs.getContext('2d'); x.fillStyle=bgc; x.fillRect(0,0,cvs.width,cvs.height);
+  const dark = new THREE.Color(bgc).getHSL({}).l<0.5; const txt=dark?'#fff':'#111';
+  await Promise.all(items.map((it,i)=> it? new Promise(res=>{ const c=i%cols,r=Math.floor(i/cols);
+    const px=gap+c*(cw+gap), py=gap+r*(ch+labelH+gap);
+    const img=new Image(); img.onload=()=>{ x.drawImage(img,px,py,cw,ch);
+      if(labelH){ x.fillStyle=txt; x.font='bold 21px system-ui'; x.textAlign='center'; x.fillText(it.label||'', px+cw/2, py+ch+22); }
+      res(); }; img.onerror=res; img.src=it.dataURL; }) : Promise.resolve()));
+  if(cbInfo){ const lut = cbInfo.style==='cmap' ? (CMAPS[cbInfo.cmap]||CMAPS.viridis)
+      : [[0.54,0.56,0.6], new THREE.Color(cbInfo.color).toArray()];
+    const W=Math.min(360,cvs.width-120),H=14,bx=(cvs.width-W)/2,by=cvs.height-cbH+16;
+    for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
+      const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
+      x.fillStyle=`rgb(${Math.round(255*(c0[0]+(c1[0]-c0[0])*g))},${Math.round(255*(c0[1]+(c1[1]-c0[1])*g))},${Math.round(255*(c0[2]+(c1[2]-c0[2])*g))})`;
+      x.fillRect(bx+i,by,1,H); }
+    x.fillStyle=txt; x.font='12px system-ui';
+    x.textAlign='left'; x.fillText(cbInfo.min.toFixed(1),bx,by+H+14);
+    x.textAlign='right'; x.fillText(cbInfo.max.toFixed(1),bx+W,by+H+14);
+    x.textAlign='center'; x.fillText(cbInfo.name||'',bx+W/2,by-4); }
+  const a=document.createElement('a'); a.download='brain_figure.png'; a.href=cvs.toDataURL('image/png'); a.click();
+}
+$('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
+  p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender(); });
+$('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none');
+$('pbGrid').addEventListener('change',pbRender);
+$('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
+$('pbExport').addEventListener('click',pbExport);
+$('panelBuilder').style.display='none';
+
+const clock=new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=clock.getDelta();
+  if(playing){
+    animPhase += dt*(+$('animSpeed').value)*0.9;
+    const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
+    setExplode(v);
+  }
+  if($('spin').checked && !controls.autoRotate){ group.rotation.y += dt*0.12; }
+  if(connUniforms.uPulse.value>0.5) connUniforms.uTime.value += dt;
+  headlight.position.copy(camera.position);
+  controls.update();
+  renderer.render(scene,camera);
+}
+tick();
+</script>
+</body>
+</html>
