@@ -249,6 +249,14 @@
     <input type="range" id="rotSpeed" min="-4" max="4" step="0.1" value="1">
   </div>
   <div class="ctl">
+    <div class="lab"><span>🔍 Zoom</span></div>
+    <input type="range" id="zoomSlider" min="0" max="1" step="0.004" value="0.45">
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Mouse zoom</span><span id="zoomSpdV">1.0×</span></div>
+    <input type="range" id="zoomSpeed" min="0.15" max="3" step="0.05" value="1">
+  </div>
+  <div class="ctl">
     <div class="lab"><span>All opacity</span><span id="opVal">1.00</span></div>
     <input type="range" id="opacity" min="0.1" max="1" step="0.01" value="1">
   </div>
@@ -654,6 +662,21 @@ $('autoRotate').addEventListener('change', e=>controls.autoRotate=e.target.check
 $('rotSpeed').addEventListener('input', e=>controls.autoRotateSpeed=2*+e.target.value);
 controls.autoRotateSpeed = 2;
 
+// ---------- zoom: slider (direct distance) + mouse-wheel sensitivity ----------
+function camDistance(){ return camera.position.distanceTo(controls.target); }
+function zoomRange(){ return [modelRadius*0.6, modelRadius*8]; }
+function normToDist(n){ const [mn,mx]=zoomRange(); return mn*Math.pow(mx/mn, n); }   // log scale = smooth
+function distToNorm(d){ const [mn,mx]=zoomRange(); return Math.max(0,Math.min(1, Math.log(d/mn)/Math.log(mx/mn))); }
+function setCamDistance(d){ _zd.subVectors(camera.position, controls.target);
+  if(_zd.lengthSq()<1e-9) _zd.set(0,0,1); _zd.normalize().multiplyScalar(d);
+  camera.position.copy(controls.target).add(_zd); controls.update(); }
+const _zd=new THREE.Vector3();
+$('zoomSlider').addEventListener('input', e=>setCamDistance(normToDist(+e.target.value)));
+$('zoomSpeed').addEventListener('input', e=>{ controls.zoomSpeed=+e.target.value; $('zoomSpdV').textContent=(+e.target.value).toFixed(1)+'×'; });
+controls.zoomSpeed = +$('zoomSpeed').value;
+// keep the slider in sync while wheel-zooming (unless the user is dragging it)
+controls.addEventListener('change', ()=>{ const s=$('zoomSlider'); if(document.activeElement!==s) s.value=distToNorm(camDistance()); });
+
 // ---------- per-tier opacity (colored vs gray vs all) so colored regions pop ----------
 const _hsl={};
 function isColored(o){ new THREE.Color(o.meta.color||'#888').getHSL(_hsl); return _hsl.s >= (+$('satCut').value); }
@@ -979,7 +1002,7 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
-  'connOn','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
+  'zoomSpeed','connOn','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs',
   'coloredOp','grayOp','satCut'];
 function capturePreset(){
