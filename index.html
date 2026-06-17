@@ -198,6 +198,7 @@
       <div class="row" id="cmapRow" style="display:none"><label>Colormap</label>
         <select id="cmap"></select></div>
       <canvas id="cbar" width="280" height="14" title="colorbar" style="display:none"></canvas>
+      <canvas id="cbar2d" width="120" height="120" title="conjunction key" style="display:none;margin:6px auto;border:1px solid var(--line);border-radius:3px"></canvas>
       <div class="row" style="gap:6px">
         <label style="min-width:auto">min</label><input type="text" id="cmin" style="width:60px">
         <label style="min-width:auto">max</label><input type="text" id="cmax" style="width:60px">
@@ -1282,21 +1283,43 @@ function recolorDual(combine){
   const op = combine==='conj' ? '∧' : '−';
   $('ovInfo').textContent=`${overlay.name||'A'}  ${op}  ${overlay.nameB||'B'}`;
 }
+// shared legend drawers (used by the live panel + figure export)
+function conjMix(out, cA, cB, nA, nB){ out.setStyle(NEUTRAL);
+  out.r += nA*(cA.r-out.r) + nB*(cB.r-out.r);
+  out.g += nA*(cA.g-out.g) + nB*(cB.g-out.g);
+  out.b += nA*(cA.b-out.b) + nB*(cB.b-out.b); return out; }
+function drawBivariate(ctx, x, y, S, colorA, colorB, txt){
+  const cA=new THREE.Color(colorA), cB=new THREE.Color(colorB), c=new THREE.Color();
+  const N=48, cell=S/N;
+  for(let ix=0;ix<N;ix++) for(let iy=0;iy<N;iy++){
+    conjMix(c, cA, cB, ix/(N-1), iy/(N-1));
+    ctx.fillStyle='#'+c.getHexString();
+    ctx.fillRect(x+ix*cell, y+S-(iy+1)*cell, Math.ceil(cell), Math.ceil(cell)); // B up
+  }
+  ctx.strokeStyle='#0006'; ctx.strokeRect(x,y,S,S);
+  ctx.fillStyle=txt||'#888'; ctx.font=Math.max(9,Math.min(12,Math.round(S*0.15)))+'px system-ui';
+  ctx.textAlign='center'; ctx.fillText('A →', x+S/2, y+S+Math.round(S*0.17));
+  ctx.save(); ctx.translate(x-3, y+S/2); ctx.rotate(-Math.PI/2); ctx.textAlign='center'; ctx.fillText('B →',0,0); ctx.restore();
+}
+function drawDiverging(ctx, x, y, W, H, colorA, colorB){
+  const g=new THREE.Color(NEUTRAL), c=new THREE.Color();
+  for(let px=0;px<W;px++){ const d=(px/(W-1))*2-1;
+    c.copy(g).lerp(new THREE.Color(d<0?colorB:colorA), Math.abs(d));
+    ctx.fillStyle='#'+c.getHexString(); ctx.fillRect(x+px,y,1,H); }
+}
 function updateColorbar(){
   const cv=$('cbar'), x=cv.getContext('2d'), w=cv.width, h=cv.height;
-  x.clearRect(0,0,w,h);
-  if(overlay.on && overlay.combine!=='none' && overlay.valsB){
-    const cA=$('ovColor').value, cB=$('ovColorB').value;
-    if(overlay.combine==='sub'){            // diverging key:  B  <- gray ->  A
-      const g=new THREE.Color(NEUTRAL);
-      for(let px=0;px<w;px++){ const t=px/(w-1), d=t*2-1;
-        const c=g.clone().lerp(new THREE.Color(d<0?cB:cA), Math.abs(d));
-        x.fillStyle='#'+c.getHexString(); x.fillRect(px,0,1,h); }
-    } else {                                 // conjunction: A | blend | B thirds
-      const blend=new THREE.Color(cA).lerp(new THREE.Color(cB),0.5);
-      const segs=[cA,'#'+blend.getHexString(),cB];
-      for(let s=0;s<3;s++){ x.fillStyle=segs[s]; x.fillRect(s*w/3,0,w/3,h); }
-    }
+  const cv2=$('cbar2d'), x2=cv2.getContext('2d');
+  x.clearRect(0,0,w,h); x2.clearRect(0,0,cv2.width,cv2.height);
+  const dual = overlay.on && overlay.combine!=='none' && overlay.valsB;
+  if(dual && overlay.combine==='conj'){
+    cv.style.display='none'; cv2.style.display='block';
+    drawBivariate(x2, 16, 6, cv2.width-32, $('ovColor').value, $('ovColorB').value, '#aab3c2');
+    return;
+  }
+  cv2.style.display='none'; cv.style.display='block';
+  if(dual && overlay.combine==='sub'){            // diverging: B ◄ gray ► A
+    drawDiverging(x, 0, w, h, $('ovColor').value, $('ovColorB').value);
     return;
   }
   const name=$('cmap').value||'viridis', inv=$('cmapInvert').checked;
@@ -1475,7 +1498,10 @@ window.brainAPI = {
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
   // describe the active overlay colorbar (for figure legends), or null
   colorbar(){ if(!overlay.on) return null;
-    return { name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
+    if(overlay.combine!=='none' && overlay.valsB)
+      return { kind:overlay.combine, name:overlay.name||'A', nameB:overlay.nameB||'B',
+               colorA:$('ovColor').value, colorB:$('ovColorB').value };
+    return { kind:'single', name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
              cmap:$('cmap').value, style:$('ovStyle').value, color:$('ovColor').value }; }
 };
 
@@ -1504,6 +1530,20 @@ function pbCapture(i){
 }
 // draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)
 function drawCbar(x, cb, bx, by, W, H, txt){
+  const fs=Math.max(9, Math.min(13, Math.round(H*0.4))); x.font=fs+'px system-ui';
+  if(cb.kind==='conj'){                       // bivariate square key
+    const S=H, sx=bx+(W-S)/2;
+    drawBivariate(x, sx, by, S, cb.colorA, cb.colorB, txt);
+    return;
+  }
+  if(cb.kind==='sub'){                         // diverging:  B ◄ gray ► A
+    drawDiverging(x, bx, by, W, H, cb.colorA, cb.colorB);
+    x.strokeStyle=txt; x.globalAlpha=0.4; x.strokeRect(bx,by,W,H); x.globalAlpha=1;
+    x.fillStyle=txt;
+    x.textAlign='left';  x.fillText(cb.nameB||'B', bx, by-3);
+    x.textAlign='right'; x.fillText(cb.name||'A', bx+W, by-3);
+    return;
+  }
   const lut = cb.style==='cmap' ? (CMAPS[cb.cmap]||CMAPS.viridis)
     : [[0.54,0.56,0.6], new THREE.Color(cb.color).toArray()];
   for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
@@ -1511,8 +1551,7 @@ function drawCbar(x, cb, bx, by, W, H, txt){
     x.fillStyle=`rgb(${Math.round(255*(c0[0]+(c1[0]-c0[0])*g))},${Math.round(255*(c0[1]+(c1[1]-c0[1])*g))},${Math.round(255*(c0[2]+(c1[2]-c0[2])*g))})`;
     x.fillRect(bx+i,by,1,H); }
   x.strokeStyle=txt; x.globalAlpha=0.4; x.strokeRect(bx,by,W,H); x.globalAlpha=1;
-  const fs=Math.max(9, Math.round(H*0.85));
-  x.fillStyle=txt; x.font=fs+'px system-ui';
+  x.fillStyle=txt;
   x.textAlign='left';  x.fillText((cb.min).toFixed(1), bx, by-3);
   x.textAlign='right'; x.fillText((cb.max).toFixed(1), bx+W, by-3);
 }

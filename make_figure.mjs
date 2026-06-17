@@ -104,11 +104,13 @@ function composite(panels) {
   const rows = Math.ceil(panels.length / cols);
   const showBars = spec.colorbar !== false;
   const cbarSize = spec.cbarSize ?? 38;
+  const withLut = cb => (cb.kind==='single' || cb.style)   // single map -> precompute LUT
+    ? { ...cb, lut: cb.style === "cmap" ? (CMAPS[cb.cmap] || CMAPS.viridis)
+                                        : [[0.54,0.56,0.6], hexToRgb(cb.color)] }
+    : cb;                                                    // conj/sub -> pass colors through
   return { cols, rows, cellW, cellH, gap, bg, labelSize, labelColor, cbarSize, showBars,
     panels: panels.map(p => ({ dataURL: p.dataURL, label: p.label,
-      cbar: (showBars && p.cbar) ? { ...p.cbar,
-        lut: p.cbar.style === "cmap" ? (CMAPS[p.cbar.cmap] || CMAPS.viridis)
-           : [[0.54,0.56,0.6], hexToRgb(p.cbar.color)] } : null })) };
+      cbar: (showBars && p.cbar) ? withLut(p.cbar) : null })) };
 }
 
 const COMPOSITOR = `async (F)=>{
@@ -120,12 +122,26 @@ const COMPOSITOR = `async (F)=>{
   cvs.width = F.cols*F.cellW + (F.cols+1)*F.gap;
   cvs.height = F.rows*blockH + (F.rows+1)*F.gap;
   const x=cvs.getContext('2d'); x.fillStyle=F.bg; x.fillRect(0,0,cvs.width,cvs.height);
-  function drawCb(cb,bx,by,W,H){ const lut=cb.lut;
+  const hx=h=>{h=(h||'#888').replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+  const GRAY=[138,143,153];
+  function drawCb(cb,bx,by,W,H){
+    const fs=Math.max(9,Math.min(13,Math.round(H*0.4))); x.font=fs+'px system-ui'; x.fillStyle=F.labelColor;
+    if(cb.kind==='conj'){ const S=H, sx=bx+(W-S)/2, A=hx(cb.colorA), B=hx(cb.colorB), N=48, cell=S/N;
+      for(let ix=0;ix<N;ix++)for(let iy=0;iy<N;iy++){ const nA=ix/(N-1),nB=iy/(N-1);
+        const r=GRAY[0]+nA*(A[0]-GRAY[0])+nB*(B[0]-GRAY[0]), g=GRAY[1]+nA*(A[1]-GRAY[1])+nB*(B[1]-GRAY[1]), b=GRAY[2]+nA*(A[2]-GRAY[2])+nB*(B[2]-GRAY[2]);
+        x.fillStyle='rgb('+Math.round(r)+','+Math.round(g)+','+Math.round(b)+')'; x.fillRect(sx+ix*cell, by+S-(iy+1)*cell, Math.ceil(cell),Math.ceil(cell)); }
+      x.font=Math.max(9,Math.min(12,Math.round(S*0.15)))+'px system-ui';
+      x.textAlign='center'; x.fillText('A →', sx+S/2, by+S+Math.round(S*0.17));
+      x.save(); x.translate(sx-3, by+S/2); x.rotate(-Math.PI/2); x.fillText('B →',0,0); x.restore(); return; }
+    if(cb.kind==='sub'){ const A=hx(cb.colorA), B=hx(cb.colorB);
+      for(let px=0;px<W;px++){ const d=(px/(W-1))*2-1, t=Math.abs(d), C=d<0?B:A;
+        x.fillStyle='rgb('+Math.round(GRAY[0]+(C[0]-GRAY[0])*t)+','+Math.round(GRAY[1]+(C[1]-GRAY[1])*t)+','+Math.round(GRAY[2]+(C[2]-GRAY[2])*t)+')'; x.fillRect(bx+px,by,1,H); }
+      x.textAlign='left'; x.fillText(cb.nameB||'B',bx,by-3); x.textAlign='right'; x.fillText(cb.name||'A',bx+W,by-3); return; }
+    const lut=cb.lut;
     for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
       const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
       x.fillStyle='rgb('+Math.round(255*(c0[0]+(c1[0]-c0[0])*g))+','+Math.round(255*(c0[1]+(c1[1]-c0[1])*g))+','+Math.round(255*(c0[2]+(c1[2]-c0[2])*g))+')';
       x.fillRect(bx+i,by,1,H); }
-    const fs=Math.max(9,Math.round(H*0.85)); x.fillStyle=F.labelColor; x.font=fs+'px system-ui';
     x.textAlign='left'; x.fillText(cb.min.toFixed(1),bx,by-3); x.textAlign='right'; x.fillText(cb.max.toFixed(1),bx+W,by-3); }
   await Promise.all(F.panels.map((p,i)=>new Promise(res=>{
     const c=i%F.cols, r=Math.floor(i/F.cols);
