@@ -1039,14 +1039,17 @@ $('axisWVal').textContent=(+$('axisWidth').value).toFixed(1);
 function initAtlasPicker(){
   const sel=$('atlasSel'); sel.innerHTML='';
   for(const a of REG){ const o=document.createElement('option'); o.value=a.id;
-    const tags=[]; if(a.has&&a.has.dti)tags.push('DTI'); if(a.has&&a.has.rs)tags.push('RS');
+    const tags=[]; if(a.has&&a.has.dti)tags.push(a.has.dti===2?'DTI*':'DTI');
+    if(a.has&&a.has.rs)tags.push(a.has.rs===2?'RS*':'RS');
     o.textContent = a.name + (tags.length?'  ('+tags.join('·')+')':''); sel.appendChild(o); }
   sel.value=ATLAS_ID;
   sel.addEventListener('change', e=>{ location.href = location.pathname+'?atlas='+encodeURIComponent(e.target.value); });
   // populate connectivity modality selector from what this bundle actually has
   const ct=$('connType'); ct.innerHTML='';
-  if(CONN && CONN.dti){ const o=document.createElement('option'); o.value='dti'; o.textContent='DTI (structural)'; ct.appendChild(o); }
-  if(CONN && CONN.rs){ const o=document.createElement('option'); o.value='rs'; o.textContent='rsfMRI (functional)'; ct.appendChild(o); }
+  if(CONN && CONN.dti){ const o=document.createElement('option'); o.value='dti';
+    o.textContent='DTI (structural)'+(CONN.dti.interp?' ∗ interpolated (low fidelity, r≈0.1)':''); ct.appendChild(o); }
+  if(CONN && CONN.rs){ const o=document.createElement('option'); o.value='rs';
+    o.textContent='rsfMRI (functional)'+(CONN.rs.interp?' ∗ interpolated (r≈0.5 vs ground truth)':''); ct.appendChild(o); }
   if(!CONN){ const c=$('connOn'); c.checked=false; c.disabled=true;
     c.parentElement.style.opacity=0.45; c.parentElement.title='No connectivity data for this atlas';
     $('connType').disabled=true; }

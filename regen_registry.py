@@ -16,12 +16,17 @@ for d in sorted(glob.glob(B+"/*/")):
     name=NAMES.get(idd, idd.upper()+f" ({nroi})")
     # keep declared count in name accurate
     name=re.sub(r"\(\d+\)$", f"({nroi})", name) if "(" in name else f"{name} ({nroi})"
-    dti=rs=False
+    dti=rs=0   # 0 none, 1 real, 2 interpolated
     if os.path.exists(d+"conn.js"):
-        ct=open(d+"conn.js").read(); dti='"dti"' in ct; rs='"rs"' in ct
+        try:
+            cj=json.loads(re.search(r"=\s*({.*})\s*;", open(d+"conn.js").read(), re.S).group(1))
+            if "dti" in cj: dti = 2 if cj["dti"].get("interp") else 1
+            if "rs"  in cj: rs  = 2 if cj["rs"].get("interp")  else 1
+        except Exception: pass
     reg.append({"id":idd,"name":name,"nroi":nroi,
                 "has":{"dti":dti,"rs":rs,"neuro":os.path.exists(d+"neuro.js")}})
 reg.sort(key=lambda r:r["name"])
 open(B+"/registry.js","w").write("window.ATLAS_REGISTRY = "+json.dumps(reg)+";\n")
+LB={0:'-',1:'real',2:'interp'}
 print(f"{len(reg)} atlases:")
-for r in reg: print(f"  {r['id']:11s} {r['name']:26s} dti={r['has']['dti']} rs={r['has']['rs']} neuro={r['has']['neuro']}")
+for r in reg: print(f"  {r['id']:11s} {r['name']:26s} dti={LB[r['has']['dti']]:6s} rs={LB[r['has']['rs']]:6s} neuro={r['has']['neuro']}")
