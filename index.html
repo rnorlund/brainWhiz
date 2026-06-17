@@ -262,13 +262,21 @@
         <option value="'Times New Roman', serif">Times</option>
       </select></label>
     <label>Title color <input type="color" id="pbTitleColor" value="#111111"></label>
-    <label>Figure BG <input type="color" id="pbBg" value="#ffffff"></label>
+    <label>Figure BG
+      <span style="display:flex;gap:4px;align-items:center">
+        <input type="color" id="pbBg" value="#ffffff" style="flex:1">
+        <button class="sm" id="pbBgW" title="white bg">▢</button>
+        <button class="sm" id="pbBgB" title="black bg">▣</button>
+      </span></label>
   </div>
-  <div style="display:flex;gap:6px;margin-top:8px">
-    <button class="sm" id="pbExport">⬇ Export PNG</button>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+    <button class="sm" id="pbExport">⬇ PNG</button>
+    <button class="sm" id="pbSaveBwz">💾 .bwz</button>
+    <button class="sm" id="pbLoadBwz">📂 .bwz</button>
     <button class="sm" id="pbClear">Clear</button>
+    <input type="file" id="pbBwzFile" accept=".bwz,.json" style="display:none">
   </div>
-  <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view in. Each tile keeps its own colorbar.</div>
+  <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view in. Save a <b>.bwz</b> to share/recreate the whole figure.</div>
 </div>
 
 <div id="settings">
@@ -474,7 +482,7 @@ scene.background = new THREE.Color('#0b0e14');
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
 camera.position.set(0, 0, 320);
 
-const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true, alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.98;
@@ -1173,14 +1181,14 @@ function initOverlayUI(){
   const tmB=$('taskMapB');
   for(const term of NEURO.order){ const o=document.createElement('option'); o.value=term; o.textContent=term; tmB.appendChild(o); }
   const tm=$('taskMap');
-  const applyTask=()=>{ const t=tm.value.trim();
+  const applyTask=()=>{ const t=tm.value.trim(); overlay.fileA=null;
     if(!t){ if(overlay.combine==='none') applyScheme(activeScheme); else { overlay.vals=null; overlay.name=''; } return; }
     if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'".'; return; }
     $('statFile').value='';
     applyOverlay(NEURO.terms[t], t);
   };
   tm.addEventListener('change', applyTask);
-  tmB.addEventListener('change', ()=>{ const t=tmB.value.trim();
+  tmB.addEventListener('change', ()=>{ const t=tmB.value.trim(); overlay.fileB=null;
     if(!t){ overlay.valsB=null; overlay.nameB=''; if(overlay.on) recolorOverlay(); return; }
     $('statFileB').value=''; applyOverlayB(NEURO.terms[t], t); });
   $('ovCombine').addEventListener('change', e=>{
@@ -1386,26 +1394,29 @@ function parseNifti(buf){
   }
   return {sampleMM, dim:[nx,ny,nz]};
 }
+// sample a parsed NIfTI buffer into per-ROI mean values
+function statBufferToVals(buf, name){
+  if(/\.gz$/i.test(name)){ buf=window.pako.ungzip(new Uint8Array(buf)).buffer; }
+  const nii=parseNifti(buf); const vals={};
+  for(const o of meshes){
+    const pts=SAMPLES[o.meta.id]; if(!pts){ vals[o.meta.id]=NaN; continue; }
+    let s=0,n=0;
+    for(let p=0;p<pts.length;p+=3){ const v=nii.sampleMM(pts[p],pts[p+1],pts[p+2]);
+      if(v!==null && isFinite(v)){ s+=v; n++; } }
+    vals[o.meta.id]= n? s/n : NaN;
+  }
+  return vals;
+}
+function applyStatVals(vals, name, which){
+  if(which==='B'){ overlay.fileB=name; $('taskMapB').value=''; applyOverlayB(vals, name); }
+  else { overlay.fileA=name; $('taskMap').value=''; applyOverlay(vals, name); }
+}
 function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
   $('ovInfo').textContent='reading '+file.name+' …';
   const fr=new FileReader();
-  fr.onload=()=>{ try{
-    let buf=fr.result;
-    if(/\.gz$/i.test(file.name)){ buf=window.pako.ungzip(new Uint8Array(buf)).buffer; }
-    const nii=parseNifti(buf);
-    const vals={};
-    for(const o of meshes){
-      const pts=SAMPLES[o.meta.id]; if(!pts){ vals[o.meta.id]=NaN; continue; }
-      let s=0,n=0;
-      for(let p=0;p<pts.length;p+=3){ const v=nii.sampleMM(pts[p],pts[p+1],pts[p+2]);
-        if(v!==null && isFinite(v)){ s+=v; n++; } }
-      vals[o.meta.id]= n? s/n : NaN;
-    }
-    if(which==='B'){ $('taskMapB').value=''; applyOverlayB(vals, file.name); }
-    else { $('taskMap').value=''; applyOverlay(vals, file.name); }
-  }catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; }
-  };
+  fr.onload=()=>{ try{ applyStatVals(statBufferToVals(fr.result, file.name), file.name, which); }
+    catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; } };
   fr.readAsArrayBuffer(file);
 }
 
@@ -1499,6 +1510,12 @@ window.brainAPI = {
     return true;
   },
   setView(name){ view(VIEWS[name]||VIEWS.left); },
+  // restore a full tile/.bwz panel config (controls + overlay + camera + regions)
+  async applyCfg(cfg){ if(typeof applyViewerCfg==='function') applyViewerCfg(cfg); await nextFrames(3); return true; },
+  // load a NIfTI from raw bytes (base64) and apply as overlay A or B — for headless file overlays
+  async loadStatArray(b64, which, name){
+    const buf=b64ToBuf(b64); applyStatVals(statBufferToVals(buf, name||'map.nii'), name||'map.nii', which||'A');
+    await nextFrames(2); return true; },
   // render the 3D scene at an exact size and return a PNG data URL (no UI chrome)
   renderTo(w=600,h=480,transparent=false){
     const oldBG=scene.background; if(transparent) scene.background=null;
@@ -1527,7 +1544,7 @@ function pbRender(){
   const wrap=$('pbCells'); wrap.style.gridTemplateColumns=`repeat(${cols},1fr)`; wrap.innerHTML='';
   pbItems.forEach((it,i)=>{
     const cell=document.createElement('div'); cell.className='pbCell';
-    if(it){
+    if(it && it.dataURL){
       cell.innerHTML=`<img src="${it.dataURL}">
         <div class="pbBtns"><button class="pbEdit" title="restore these settings to the viewer">✎</button>
         <button class="pbRecap" title="recapture current view here">⟳</button>
@@ -1538,16 +1555,48 @@ function pbRender(){
       cell.querySelector('.pbRm').addEventListener('click',e=>{ e.stopPropagation(); pbItems[i]=null; pbRender(); });
       cell.querySelector('.pbEdit').addEventListener('click',e=>{ e.stopPropagation(); if(it.cfg) applyViewerCfg(it.cfg); });
       cell.querySelector('.pbRecap').addEventListener('click',e=>{ e.stopPropagation(); pbCapture(i, it.label); });
+    } else if(it){   // imported panel without a thumbnail yet (cross-atlas or needs a file)
+      const otherAtlas = it.cfg && it.cfg.atlas!==ATLAS_ID;
+      const note = it.needsFile ? '📎 needs file' : (otherAtlas ? 'atlas: '+it.cfg.atlas : 'render');
+      cell.innerHTML=`<div style="text-align:center;font-size:10px;color:var(--muted);padding:4px">
+          <div style="font-weight:600;color:var(--txt)">${(it.label||'').replace(/</g,'&lt;')||'(panel)'}</div>
+          <div>${note}</div>
+          <button class="sm pbFix" style="margin-top:4px">${it.needsFile?'📎 relink':(otherAtlas?'↪ switch atlas':'⟳ render')}</button>
+        </div>
+        <div class="pbBtns"><button class="pbRm" title="remove">✕</button></div>`;
+      cell.querySelector('.pbRm').addEventListener('click',e=>{ e.stopPropagation(); pbItems[i]=null; pbRender(); });
+      cell.querySelector('.pbFix').addEventListener('click',e=>{ e.stopPropagation(); pbResolveTile(i); });
     } else { cell.innerHTML='<span class="plus">＋</span>';
       cell.addEventListener('click',()=>pbCapture(i)); }
     wrap.appendChild(cell);
   });
 }
+function pickFile(accept){ return new Promise(res=>{ const inp=document.createElement('input');
+  inp.type='file'; inp.accept=accept||'.nii,.nii.gz,.gz'; inp.onchange=()=>res(inp.files[0]||null); inp.click(); }); }
+const _raf2=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+// fill an imported tile: switch atlas if needed, relink files, apply cfg, render
+async function pbResolveTile(i){
+  const it=pbItems[i]; if(!it||!it.cfg) return;
+  if(it.cfg.atlas!==ATLAS_ID){ applyViewerCfg(it.cfg); return; }   // applyViewerCfg offers reload
+  applyViewerCfg(it.cfg); await _raf2();
+  for(const slot of ['A','B']){ const fn=it.cfg['file'+slot]; if(!fn) continue;
+    alert('Select the file for Map '+slot+': '+fn);
+    const file=await pickFile(); if(!file) return;
+    applyStatVals(statBufferToVals(await file.arrayBuffer(), file.name), file.name, slot); await _raf2();
+  }
+  it.dataURL=window.brainAPI.renderTo(640,480,true); it.cbar=window.brainAPI.colorbar();
+  it.needsFile=false; pbRender();
+}
 function pbCapture(i, keepLabel){
-  const task=$('taskMap').value, scheme=$('scheme').value;
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
-  const auto = task ? `${atlasName} · ${task}` : `${atlasName} · ${scheme}`;
-  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,false),
+  const A=$('taskMap').value||overlay.fileA||'', B=$('taskMapB').value||overlay.fileB||'';
+  const combine=$('ovCombine').value;
+  let auto;
+  if(A && combine==='sub')      auto=`${A} − ${B}`;
+  else if(A && combine==='conj') auto=`${A} ∧ ${B}`;
+  else if(A)                     auto=`${atlasName} · ${A}`;
+  else                           auto=`${atlasName} · ${$('scheme').value}`;
+  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,true),   // transparent -> figure BG shows through
     label: keepLabel!==undefined ? keepLabel : auto,
     cbar: window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
@@ -1560,7 +1609,10 @@ function captureViewerCfg(){
   return { atlas:ATLAS_ID, vals,
     camP: camera.position.toArray().map(v=>+v.toFixed(2)),
     camT: controls.target.toArray().map(v=>+v.toFixed(2)),
-    vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id) };
+    vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id),
+    // overlay sources that aren't fully captured by control values (loaded files)
+    fileA: (!$('taskMap').value && overlay.vals && overlay.fileA) ? overlay.fileA : null,
+    fileB: (!$('taskMapB').value && overlay.valsB && overlay.fileB) ? overlay.fileB : null };
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
@@ -1633,12 +1685,51 @@ async function pbExport(){
   }) : Promise.resolve()));
   const a=document.createElement('a'); a.download='brain_figure.png'; a.href=cvs.toDataURL('image/png'); a.click();
 }
+function pbFigureSettings(){ return { brain:+$('pbBrain').value, titleSize:+$('pbTitle').value,
+  titleFont:$('pbFont').value, titleColor:$('pbTitleColor').value, colorbarSize:+$('pbCbar').value,
+  gap:+$('pbGap').value, bg:$('pbBg').value }; }
+// ---- .bwz : portable figure recipe (settings + sources + camera + regions) ----
+function bwzExport(){
+  if(!pbItems.some(Boolean)){ alert('Add at least one tile first.'); return; }
+  const data = { bwz:1, app:'brainWhiz', grid:$('pbGrid').value, figure:pbFigureSettings(),
+    panels: pbItems.map(it => it ? { label:it.label, ...it.cfg } : null) };
+  const a=document.createElement('a');
+  a.download='figure.bwz';
+  a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(data,null,2));
+  a.click();
+}
+async function bwzImport(file){
+  const text=await file.text(); let data;
+  try{ data=JSON.parse(text); }catch(e){ alert('Not a valid .bwz/JSON file.'); return; }
+  if(!data.panels){ alert('No panels in this .bwz.'); return; }
+  if(data.grid){ $('pbGrid').value=data.grid; }
+  const f=data.figure||{};
+  const set=(id,v)=>{ if(v!==undefined){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
+  set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
+  if(f.titleFont) $('pbFont').value=f.titleFont; if(f.titleColor) $('pbTitleColor').value=f.titleColor;
+  if(f.bg) $('pbBg').value=f.bg;
+  pbItems = data.panels.map(p => p ? { label:p.label, cfg:p, dataURL:null, cbar:null,
+    needsFile:(p.fileA||p.fileB)||null } : null);
+  pbRender();
+  // re-render thumbnails for panels in the current atlas that don't need a missing file
+  for(let i=0;i<pbItems.length;i++){ const it=pbItems[i]; if(!it) continue;
+    if(it.cfg.atlas===ATLAS_ID && !it.needsFile){
+      applyViewerCfg(it.cfg); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      it.dataURL=window.brainAPI.renderTo(640,480,true); it.cbar=window.brainAPI.colorbar(); }
+  }
+  pbRender();
+}
 $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
   p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender(); });
 $('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none');
 $('pbGrid').addEventListener('change',pbRender);
 $('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
 $('pbExport').addEventListener('click',pbExport);
+$('pbBgW').addEventListener('click',()=>{ $('pbBg').value='#ffffff'; $('pbTitleColor').value='#111111'; });
+$('pbBgB').addEventListener('click',()=>{ $('pbBg').value='#000000'; $('pbTitleColor').value='#ffffff'; });
+$('pbSaveBwz').addEventListener('click',bwzExport);
+$('pbLoadBwz').addEventListener('click',()=>$('pbBwzFile').click());
+$('pbBwzFile').addEventListener('change',e=>{ if(e.target.files[0]) bwzImport(e.target.files[0]); e.target.value=''; });
 [['pbBrain','pbBrainV','px'],['pbTitle','pbTitleV','px'],['pbCbar','pbCbarV','px'],['pbGap','pbGapV','px']]
   .forEach(([id,vid,suf])=>{ const f=()=>$(vid).textContent=$(id).value+suf; $(id).addEventListener('input',f); f(); });
 $('panelBuilder').style.display='none';

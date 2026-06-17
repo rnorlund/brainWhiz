@@ -92,6 +92,21 @@ node make_figure.mjs figure_example.json
 
 Each panel sets its own atlas, view, overlay, colors, explosion, etc. (`figure_example.json` included).
 
+### Shareable figure recipes (`.bwz`)
+A **`.bwz`** file is a portable, human-/Claude-readable JSON that captures a whole figure —
+grid, per-panel atlas, overlay (task term *or* `.nii` filename), combine mode, colors,
+camera, visible regions, and all render + figure settings.
+
+- In the 🗔 panel builder: **💾 .bwz** saves the recipe; **📂 .bwz** re-imports it (task panels
+  recreate instantly; file panels offer a "relink" to locate the `.nii`).
+- Render a `.bwz` reproducibly (resolving `.nii` files from a folder):
+  ```bash
+  node make_figure.mjs figure.bwz --root /path/to/nii-folder --out figure.png
+  ```
+- Because it's plain JSON ([`example.bwz`](example.bwz) included), you can ask **Claude**:
+  *"write a brainWhiz .bwz for a 2×2 of motor, language, motor−language, and a working-memory map"* —
+  then render it. Share `.bwz` + the `.nii` files and anyone recreates your exact figure.
+
 The viewer exposes **`window.brainAPI`** for headless control:
 
 ```js

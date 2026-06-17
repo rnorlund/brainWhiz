@@ -39,13 +39,29 @@ const CHROME_CANDIDATES = [
 const CHROME = CHROME_CANDIDATES.find(p => { try { return p.includes('/') ? fs.existsSync(p) : true; } catch { return false; } });
 
 const specPath = process.argv[2];
-if (!specPath) { console.error("usage: node make_figure.mjs <spec.json>"); process.exit(1); }
+if (!specPath) { console.error("usage: node make_figure.mjs <spec.json|figure.bwz> [--root <folder-with-nii>] [--out file.png]"); process.exit(1); }
+// --root resolves .nii file overlays in .bwz panels; defaults to the spec's folder
+function argVal(name){ const i=process.argv.indexOf(name); if(i>=0) return process.argv[i+1];
+  const eq=process.argv.find(a=>a.startsWith(name+"=")); return eq?eq.split("=").slice(1).join("="):undefined; }
 const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
-const cols = spec.cols || 2;
-const [cellW, cellH] = spec.cell || [460, 360];
-const gap = spec.gap ?? 14, bg = spec.bg || "#ffffff";
-const labelSize = spec.labelSize ?? 24, labelColor = spec.labelColor || "#111";
-const out = path.resolve(path.dirname(specPath), spec.out || "figure.png");
+const isBwz = !!spec.bwz;
+const ROOT = path.resolve(argVal("--root") || path.dirname(specPath));
+let cols, cellW, cellH, gap, bg, labelSize, labelColor, cbarSize, titleFont;
+if (isBwz) {
+  cols = parseInt((spec.grid||"2x2").split("x")[1]) || 2;
+  const f = spec.figure || {};
+  cellW = f.brain || 640; cellH = Math.round(cellW * 0.78);
+  gap = f.gap ?? 18; bg = f.bg || "#ffffff";
+  labelSize = f.titleSize ?? 24; labelColor = f.titleColor || "#111";
+  cbarSize = f.colorbarSize ?? 40; titleFont = f.titleFont || "system-ui";
+} else {
+  cols = spec.cols || 2; [cellW, cellH] = spec.cell || [460, 360];
+  gap = spec.gap ?? 14; bg = spec.bg || "#ffffff";
+  labelSize = spec.labelSize ?? 24; labelColor = spec.labelColor || "#111";
+  cbarSize = spec.cbarSize ?? 38; titleFont = spec.titleFont || "system-ui";
+}
+const out = path.resolve(path.dirname(specPath),
+  argVal("--out") || spec.out || (isBwz ? path.basename(specPath).replace(/\.bwz$/i,"")+".png" : "figure.png"));
 
 // colormaps (for the shared colorbar) parsed from colormaps.js
 function loadCmaps() {
@@ -80,19 +96,30 @@ async function cdp() {
 }
 
 async function renderPanel(ctx, panel) {
+  if (!panel) return null;
   const atlas = panel.atlas || "jhu";
   await ctx.navigate(`file://${HERE}/index.html?atlas=${encodeURIComponent(atlas)}`);
-  // wait for brainAPI + model
   for (let i = 0; i < 60; i++) { const t = await ctx.ev(`typeof window.brainAPI`); if (t === "object") break; await sleep(400); }
   await ctx.ev(`window.brainAPI.ready`);
-  const cfg = {
-    view: panel.view || "left", task: panel.task, regionSet: panel.regionSet,
-    scheme: panel.scheme, explosion: panel.explosion, connectivity: panel.connectivity,
-    bg: panel.bg || bg, controls: panel.controls || {}, uiHidden: true,
-  };
-  await ctx.ev(`window.brainAPI.applyConfig(${JSON.stringify(cfg)})`);
-  await sleep(250);
-  const dataURL = await ctx.ev(`window.brainAPI.renderTo(${cellW},${cellH},false)`);
+  if (panel.vals) {
+    // .bwz panel: restore full viewer config, then load any file overlays from --root
+    await ctx.ev(`window.brainAPI.applyCfg(${JSON.stringify({atlas:panel.atlas, vals:panel.vals, camP:panel.camP, camT:panel.camT, vis:panel.vis})})`);
+    for (const slot of ["A","B"]) {
+      const fn = panel["file"+slot]; if (!fn) continue;
+      const fp = path.resolve(ROOT, fn);
+      if (!fs.existsSync(fp)) { console.warn(`  ! missing file for Map ${slot}: ${fp}`); continue; }
+      const b64 = fs.readFileSync(fp).toString("base64");
+      await ctx.ev(`window.brainAPI.loadStatArray(${JSON.stringify(b64)}, ${JSON.stringify(slot)}, ${JSON.stringify(fn)})`);
+    }
+    await sleep(150);
+  } else {
+    const cfg = { view: panel.view || "left", task: panel.task, regionSet: panel.regionSet,
+      scheme: panel.scheme, explosion: panel.explosion, connectivity: panel.connectivity,
+      bg: panel.bg || bg, controls: panel.controls || {}, uiHidden: true };
+    await ctx.ev(`window.brainAPI.applyConfig(${JSON.stringify(cfg)})`);
+    await sleep(250);
+  }
+  const dataURL = await ctx.ev(`window.brainAPI.renderTo(${cellW},${cellH},true)`);
   const cbar = await ctx.ev(`window.brainAPI.colorbar()`);
   return { dataURL, label: panel.label || "", cbar };
 }
@@ -103,19 +130,18 @@ function composite(panels) {
   // own colorbar (only drawn when that panel has an overlay).
   const rows = Math.ceil(panels.length / cols);
   const showBars = spec.colorbar !== false;
-  const cbarSize = spec.cbarSize ?? 38;
   const withLut = cb => (cb.kind==='single' || cb.style)   // single map -> precompute LUT
     ? { ...cb, lut: cb.style === "cmap" ? (CMAPS[cb.cmap] || CMAPS.viridis)
                                         : [[0.54,0.56,0.6], hexToRgb(cb.color)] }
     : cb;                                                    // conj/sub -> pass colors through
-  return { cols, rows, cellW, cellH, gap, bg, labelSize, labelColor, cbarSize, showBars,
-    panels: panels.map(p => ({ dataURL: p.dataURL, label: p.label,
-      cbar: (showBars && p.cbar) ? withLut(p.cbar) : null })) };
+  return { cols, rows, cellW, cellH, gap, bg, labelSize, labelColor, cbarSize, showBars, font: titleFont,
+    panels: panels.map(p => p ? ({ dataURL: p.dataURL, label: p.label,
+      cbar: (showBars && p.cbar) ? withLut(p.cbar) : null }) : null) };
 }
 
 const COMPOSITOR = `async (F)=>{
-  const titRes = F.labelSize>0 ? F.labelSize+6 : 0;
-  const anyCb = F.showBars && F.cbarSize>0 && F.panels.some(p=>p.cbar);
+  const titRes = (F.labelSize>0 && F.panels.some(p=>p&&p.label)) ? F.labelSize+6 : 0;
+  const anyCb = F.showBars && F.cbarSize>0 && F.panels.some(p=>p&&p.cbar);
   const cbRes = anyCb ? F.cbarSize+18 : 0;
   const blockH = titRes + cbRes + F.cellH;
   const cvs=document.createElement('canvas');
@@ -144,9 +170,10 @@ const COMPOSITOR = `async (F)=>{
       x.fillRect(bx+i,by,1,H); }
     x.textAlign='left'; x.fillText(cb.min.toFixed(1),bx,by-3); x.textAlign='right'; x.fillText(cb.max.toFixed(1),bx+W,by-3); }
   await Promise.all(F.panels.map((p,i)=>new Promise(res=>{
+    if(!p){ res(); return; }
     const c=i%F.cols, r=Math.floor(i/F.cols);
     const px=F.gap+c*(F.cellW+F.gap), py=F.gap+r*(blockH+F.gap);
-    if(F.labelSize>0 && p.label){ x.fillStyle=F.labelColor; x.font='bold '+Math.round(F.labelSize*0.74)+'px system-ui';
+    if(F.labelSize>0 && p.label){ x.fillStyle=F.labelColor; x.font='bold '+Math.round(F.labelSize*0.74)+'px '+(F.font||'system-ui');
       x.textAlign='center'; x.fillText(p.label, px+F.cellW/2, py+F.labelSize*0.82); }
     if(F.cbarSize>0 && p.cbar){ const W=Math.min(F.cellW*0.8,F.cellW-20), bx=px+(F.cellW-W)/2, by=py+titRes+14;
       drawCb(p.cbar, bx, by, W, F.cbarSize); }
@@ -162,8 +189,10 @@ const COMPOSITOR = `async (F)=>{
   const ctx = await cdp();
   const rendered = [];
   for (let i = 0; i < spec.panels.length; i++) {
-    process.stdout.write(`  panel ${i + 1}/${spec.panels.length} (${spec.panels[i].atlas || 'jhu'} · ${spec.panels[i].label || ''}) … `);
-    rendered.push(await renderPanel(ctx, spec.panels[i]));
+    const p = spec.panels[i];
+    if (!p) { rendered.push(null); continue; }   // empty tile
+    process.stdout.write(`  panel ${i + 1}/${spec.panels.length} (${p.atlas || 'jhu'} · ${p.label || ''}) … `);
+    rendered.push(await renderPanel(ctx, p));
     console.log("ok");
   }
   console.log("compositing …");
