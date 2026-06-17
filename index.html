@@ -387,7 +387,7 @@ function loadScript(src){ return new Promise((res)=>{ const s=document.createEle
   s.src=src; s.onload=()=>res(true); s.onerror=()=>res(false); document.head.appendChild(s); }); }
 const REG = window.ATLAS_REGISTRY || [{id:'jhu',name:'JHU',has:{conn:true,neuro:true}}];
 const params = new URLSearchParams(location.search);
-const ATLAS_ID = params.get('atlas') || (REG[0]&&REG[0].id) || 'jhu';
+const ATLAS_ID = params.get('atlas') || (REG.some(a=>a.id==='jhu')?'jhu':(REG[0]&&REG[0].id)) || 'jhu';
 const ENTRY = REG.find(a=>a.id===ATLAS_ID) || REG[0];
 const BASE = `bundles/${ATLAS_ID}/`;
 document.querySelector('#loader div:last-child').textContent = 'Loading '+(ENTRY?ENTRY.name:ATLAS_ID)+' …';
