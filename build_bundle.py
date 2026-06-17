@@ -181,7 +181,10 @@ def build_samples(vol, affine):
     return samples
 
 
-def build_conn(vol, mats_glob, field):
+def build_conn(vol, mats_glob, field, kind="dti"):
+    """Average a connectivity matrix across participants.
+    kind 'dti' = plain mean of streamline counts (positive weights).
+    kind 'rs'  = Fisher-z mean of correlations, keep positive functional edges."""
     import scipy.io as sio
     files = sorted(glob.glob(mats_glob))
     present = np.unique(vol); present = present[present>0]; N = int(present.max())
@@ -192,18 +195,24 @@ def build_conn(vol, mats_glob, field):
             if field not in m: continue
             r = np.array(m[field][0,0]["r"], dtype=float)
             if r.shape != (N,N): continue
+            if kind == "rs":
+                r = np.arctanh(np.clip(r, -0.999, 0.999))   # Fisher z
             mask = np.isfinite(r); acc[mask]+=r[mask]; cnt[mask]+=1; used+=1
         except Exception: continue
     if used == 0: return None
-    avg = np.divide(acc,cnt,out=np.zeros_like(acc),where=cnt>0); avg=0.5*(avg+avg.T); np.fill_diagonal(avg,0)
+    avg = np.divide(acc,cnt,out=np.zeros_like(acc),where=cnt>0)
+    if kind == "rs":
+        avg = np.tanh(avg)                                   # back to correlation
+    avg = 0.5*(avg+avg.T); np.fill_diagonal(avg,0)
+    floor = 0.1 if kind == "rs" else 0.0                     # RS: keep meaningful +FC
     edges=[]
     for i in range(N):
         for j in range(i+1,N):
             w=avg[i,j]
-            if w>0: edges.append([i+1,j+1,round(float(w),3)])
+            if w>floor: edges.append([i+1,j+1,round(float(w),3)])
     edges.sort(key=lambda e:-e[2])
     if not edges: return None
-    return {"n_subjects":used,"max":edges[0][2],"edges":edges}
+    return {"n_subjects":used,"max":edges[0][2],"kind":kind,"edges":edges}
 
 
 def build_neuro(vol, affine, atlas_img):
@@ -245,7 +254,9 @@ def main():
     ap.add_argument("--atlas", required=True); ap.add_argument("--labels", required=True)
     ap.add_argument("--id", required=True); ap.add_argument("--name", required=True)
     ap.add_argument("--no-neuro", action="store_true")
-    ap.add_argument("--conn-mats"); ap.add_argument("--conn-field")
+    ap.add_argument("--conn-mats")
+    ap.add_argument("--dti-field"); ap.add_argument("--rs-field")
+    ap.add_argument("--conn-field")   # back-compat alias for --dti-field
     a = ap.parse_args()
 
     out = os.path.join(BUNDLES, a.id); os.makedirs(out, exist_ok=True)
@@ -265,14 +276,19 @@ def main():
     with open(os.path.join(out,"samples.js"),"w") as fh:
         fh.write("window.ATLAS_SAMPLES="); json.dump(samples, fh); fh.write(";\n")
 
-    has_conn = False
-    if a.conn_mats and a.conn_field:
-        conn = build_conn(vol, a.conn_mats, a.conn_field)
+    has = {"dti": False, "rs": False}
+    if a.conn_mats:
+        conn = {}
+        dti_field = a.dti_field or a.conn_field
+        if dti_field:
+            c = build_conn(vol, a.conn_mats, dti_field, kind="dti")
+            if c: conn["dti"] = c; has["dti"] = True; print(f"[{a.id}] DTI: {len(c['edges'])} edges, {c['n_subjects']} subj")
+        if a.rs_field:
+            c = build_conn(vol, a.conn_mats, a.rs_field, kind="rs")
+            if c: conn["rs"] = c; has["rs"] = True; print(f"[{a.id}] RS: {len(c['edges'])} edges, {c['n_subjects']} subj")
         if conn:
             with open(os.path.join(out,"conn.js"),"w") as fh:
                 fh.write("window.ATLAS_CONN="); json.dump(conn, fh); fh.write(";\n")
-            has_conn = True; print(f"[{a.id}] conn: {len(conn['edges'])} edges, {conn['n_subjects']} subj")
-        else: print(f"[{a.id}] conn: no matching '{a.conn_field}' data")
 
     has_neuro = False
     if not a.no_neuro:
@@ -285,7 +301,7 @@ def main():
             print(f"[{a.id}] neuro skipped: {e}")
 
     update_registry({"id":a.id,"name":a.name,"nroi":len(meta),
-                     "has":{"conn":has_conn,"neuro":has_neuro}})
+                     "has":{"dti":has["dti"],"rs":has["rs"],"neuro":has_neuro}})
     print(f"[{a.id}] done -> {out}")
 
 

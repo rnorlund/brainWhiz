@@ -337,7 +337,11 @@
     <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7">
   </div>
   <div class="ctl inline" style="border-left:1px solid var(--line);padding-left:16px">
-    <label class="toggle"><input type="checkbox" id="connOn"> 🧬 DTI connectivity</label>
+    <label class="toggle"><input type="checkbox" id="connOn"> 🧬 Connectivity</label>
+  </div>
+  <div class="ctl">
+    <div class="lab"><span>Modality</span></div>
+    <select id="connType"></select>
   </div>
   <div class="ctl">
     <div class="lab"><span>Min strength</span><span id="connThVal">40</span></div>
@@ -424,7 +428,7 @@ const BASE = `bundles/${ATLAS_ID}/`;
 document.querySelector('#loader div:last-child').textContent = 'Loading '+(ENTRY?ENTRY.name:ATLAS_ID)+' …';
 await loadScript(BASE+'data.js');
 await loadScript(BASE+'samples.js');
-if(ENTRY && ENTRY.has && ENTRY.has.conn)  await loadScript(BASE+'conn.js');
+if(ENTRY && ENTRY.has && (ENTRY.has.dti || ENTRY.has.rs)) await loadScript(BASE+'conn.js');
 if(ENTRY && ENTRY.has && ENTRY.has.neuro) await loadScript(BASE+'neuro.js');
 
 const META = window.ATLAS_LABELS;
@@ -771,7 +775,9 @@ $('bgWhite').addEventListener('click', ()=>{ $('bg').value='#ffffff'; scene.back
 $('bgBlack').addEventListener('click', ()=>{ $('bg').value='#0b0e14'; scene.background=new THREE.Color('#0b0e14'); });
 
 // ---------- DTI connectivity (avg of ABC participants) ----------
-const CONN = window.ATLAS_CONN;                 // {n_subjects, max, edges:[[i,j,w]...] desc}
+const CONN = window.ATLAS_CONN;   // { dti?:{max,edges}, rs?:{max,edges} }  (or undefined)
+function connData(){ if(!CONN) return null; const t=$('connType')?$('connType').value:null;
+  return (t&&CONN[t]) || CONN.dti || CONN.rs || null; }
 const cylGeo = new THREE.CylinderGeometry(1,1,1,8,1,true);
 const Y = new THREE.Vector3(0,1,0);
 let connMeshes = [];                          // {mesh, oi, oj, r}
@@ -793,35 +799,44 @@ function attachConnFX(mat){
     sh.fragmentShader=f;
   };
 }
-function connColor(w){
+function connColor(w, cmax){
   if($('connColorMode').value==='single') return new THREE.Color($('connColor').value);
-  const t = Math.min(1, w/Math.max(1e-6,CONN.max));
+  const t = Math.min(1, w/Math.max(1e-6,cmax));
   const c = sampleCmap($('connCmap').value, t); return new THREE.Color(c[0],c[1],c[2]);
 }
 function rebuildConn(){
   for(const c of connMeshes){ connGroup.remove(c.mesh); c.mesh.material.dispose(); }
   connMeshes = [];
-  if(!CONN || !$('connOn').checked){ updateConnInfo(0); return; }
+  const cd = connData();
+  if(!cd || !$('connOn').checked){ updateConnInfo(0); return; }
   const th = +$('connTh').value;
   const inclHidden = $('connAll').checked;
   const scale = +$('connScale').value;
   let n=0;
-  for(const [i,j,w] of CONN.edges){
+  for(const [i,j,w] of cd.edges){
     if(w < th) break;                         // edges are sorted descending
     const oi=byId.get(i), oj=byId.get(j);
     if(!oi||!oj) continue;
     if(!inclHidden && (!oi.mesh.visible || !oj.mesh.visible)) continue;
-    const mat=new THREE.MeshBasicMaterial({color:connColor(w), transparent:true, opacity:0.92});
+    const mat=new THREE.MeshBasicMaterial({color:connColor(w, cd.max), transparent:true, opacity:0.92});
     attachConnFX(mat);
     const mesh=new THREE.Mesh(cylGeo, mat);
     mesh.renderOrder=1;
     connGroup.add(mesh);
-    const r=(0.35 + 3.4*Math.sqrt(w/CONN.max))*scale;   // radius from avg strength
+    const r=(0.35 + 3.4*Math.sqrt(w/cd.max))*scale;   // radius from avg strength
     connMeshes.push({mesh, oi, oj, r});
     if(++n>=MAX_EDGES) break;
   }
   updateConnTransforms();
   updateConnInfo(connMeshes.length);
+}
+// adapt the Min-strength slider to the active modality (DTI streamline counts vs RS r)
+function setConnThreshRange(){
+  const cd = connData(); if(!cd) return;
+  const sl=$('connTh'), mx=cd.max;
+  sl.max = (mx<=1.5) ? (Math.ceil(mx*100)/100) : Math.ceil(mx);
+  sl.step = (mx<=1.5) ? 0.01 : 0.5;
+  sl.value = (mx<=1.5) ? (mx*0.4).toFixed(2) : Math.round(mx*0.25);
 }
 const _a=new THREE.Vector3(),_b=new THREE.Vector3(),_m=new THREE.Vector3(),_d=new THREE.Vector3();
 function roiPos(o,out){ return out.copy(o.base).multiplyScalar(1+curOffset()); }
@@ -837,9 +852,11 @@ function updateConnTransforms(){
 }
 function updateConnInfo(n){
   const el=$('connThVal');
-  el.textContent = $('connOn').checked ? `${(+$('connTh').value).toFixed(1)} · ${n} edges` : (+$('connTh').value).toFixed(1);
+  const mod = $('connType') && $('connType').value ? $('connType').value.toUpperCase() : '';
+  el.textContent = $('connOn').checked ? `${(+$('connTh').value).toFixed(2)} · ${n} ${mod} edges` : (+$('connTh').value).toFixed(2);
 }
-$('connOn').addEventListener('change', rebuildConn);
+$('connOn').addEventListener('change', ()=>{ if($('connOn').checked) setConnThreshRange(); rebuildConn(); });
+$('connType').addEventListener('change', ()=>{ setConnThreshRange(); rebuildConn(); });
 $('connAll').addEventListener('change', rebuildConn);
 $('connTh').addEventListener('input', rebuildConn);
 $('connScale').addEventListener('input', e=>{ $('connScaleVal').textContent=(+e.target.value).toFixed(1)+'×'; rebuildConn(); });
@@ -1021,11 +1038,19 @@ $('axisWVal').textContent=(+$('axisWidth').value).toFixed(1);
 // ================= ATLAS PICKER =================
 function initAtlasPicker(){
   const sel=$('atlasSel'); sel.innerHTML='';
-  for(const a of REG){ const o=document.createElement('option'); o.value=a.id; o.textContent=a.name; sel.appendChild(o); }
+  for(const a of REG){ const o=document.createElement('option'); o.value=a.id;
+    const tags=[]; if(a.has&&a.has.dti)tags.push('DTI'); if(a.has&&a.has.rs)tags.push('RS');
+    o.textContent = a.name + (tags.length?'  ('+tags.join('·')+')':''); sel.appendChild(o); }
   sel.value=ATLAS_ID;
   sel.addEventListener('change', e=>{ location.href = location.pathname+'?atlas='+encodeURIComponent(e.target.value); });
-  if(!window.ATLAS_CONN){ const c=$('connOn'); c.checked=false; c.disabled=true;
-    c.parentElement.style.opacity=0.45; c.parentElement.title='No connectivity data for this atlas'; }
+  // populate connectivity modality selector from what this bundle actually has
+  const ct=$('connType'); ct.innerHTML='';
+  if(CONN && CONN.dti){ const o=document.createElement('option'); o.value='dti'; o.textContent='DTI (structural)'; ct.appendChild(o); }
+  if(CONN && CONN.rs){ const o=document.createElement('option'); o.value='rs'; o.textContent='rsfMRI (functional)'; ct.appendChild(o); }
+  if(!CONN){ const c=$('connOn'); c.checked=false; c.disabled=true;
+    c.parentElement.style.opacity=0.45; c.parentElement.title='No connectivity data for this atlas';
+    $('connType').disabled=true; }
+  else setConnThreshRange();
 }
 
 // ================= SETTINGS PRESETS =================
@@ -1033,7 +1058,7 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
-  'zoomSpeed','connOn','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
+  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs',
   'coloredOp','grayOp','satCut'];
 function capturePreset(){
@@ -1314,7 +1339,7 @@ window.brainAPI = {
   atlas: ATLAS_ID,
   atlases: REG.map(a=>({id:a.id,name:a.name,nroi:a.nroi})),
   views: Object.keys(VIEWS),
-  hasConn: !!window.ATLAS_CONN,
+  hasConn: !!window.ATLAS_CONN, connModalities: window.ATLAS_CONN?Object.keys(window.ATLAS_CONN):[],
   tasks: (window.ATLAS_NEURO&&window.ATLAS_NEURO.order)||[],
   async applyConfig(cfg={}){
     cfg = cfg||{};

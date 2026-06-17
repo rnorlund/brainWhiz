@@ -16,9 +16,12 @@ for d in sorted(glob.glob(B+"/*/")):
     name=NAMES.get(idd, idd.upper()+f" ({nroi})")
     # keep declared count in name accurate
     name=re.sub(r"\(\d+\)$", f"({nroi})", name) if "(" in name else f"{name} ({nroi})"
+    dti=rs=False
+    if os.path.exists(d+"conn.js"):
+        ct=open(d+"conn.js").read(); dti='"dti"' in ct; rs='"rs"' in ct
     reg.append({"id":idd,"name":name,"nroi":nroi,
-                "has":{"conn":os.path.exists(d+"conn.js"),"neuro":os.path.exists(d+"neuro.js")}})
+                "has":{"dti":dti,"rs":rs,"neuro":os.path.exists(d+"neuro.js")}})
 reg.sort(key=lambda r:r["name"])
 open(B+"/registry.js","w").write("window.ATLAS_REGISTRY = "+json.dumps(reg)+";\n")
 print(f"{len(reg)} atlases:")
-for r in reg: print(f"  {r['id']:11s} {r['name']:24s} conn={r['has']['conn']} neuro={r['has']['neuro']}")
+for r in reg: print(f"  {r['id']:11s} {r['name']:26s} dti={r['has']['dti']} rs={r['has']['rs']} neuro={r['has']['neuro']}")
