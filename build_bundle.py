@@ -131,13 +131,15 @@ def build_meshes(vol, affine, labels):
         v = np.column_stack([v[:,0], v[:,2], -v[:,1]])   # RAS -> three.js (x=R,y=Sup,z=-Ant)
         mesh = trimesh.Trimesh(vertices=v, faces=f, process=True)
         if len(mesh.faces) == 0: continue
-        # keep ALL substantial connected components (thin strips / tracts fragment
-        # into several) and drop only tiny specks — keeping just the largest cut
-        # multi-part regions (e.g. Brodmann areas) down to a floating sliver.
+        # Keep only components that are a substantial sub-part of the region
+        # (>=15% of the largest). This preserves genuinely multi-part regions
+        # (e.g. Brodmann strips fragment into ~half-size pieces) while dropping
+        # the small marching-cubes specks that otherwise float just outside the
+        # surface as little nubs.
         comps = mesh.split(only_watertight=False)
         if len(comps) > 1:
-            biggest = max(c.area for c in comps)
-            keep = [c for c in comps if c.area >= 0.05 * biggest]
+            big = max(c.area for c in comps)
+            keep = [c for c in comps if c.area >= 0.15 * big]
             mesh = trimesh.util.concatenate(keep) if len(keep) > 1 else keep[0]
         if LAPLACIAN: trimesh.smoothing.filter_laplacian(mesh, iterations=LAPLACIAN)
         if TARGET_FACE and len(mesh.faces) > TARGET_FACE:
