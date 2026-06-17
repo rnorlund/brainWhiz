@@ -60,8 +60,9 @@ if (isBwz) {
   labelSize = spec.labelSize ?? 24; labelColor = spec.labelColor || "#111";
   cbarSize = spec.cbarSize ?? 38; titleFont = spec.titleFont || "system-ui";
 }
-const out = path.resolve(path.dirname(specPath),
-  argVal("--out") || spec.out || (isBwz ? path.basename(specPath).replace(/\.bwz$/i,"")+".png" : "figure.png"));
+const outArg = argVal("--out");
+const out = outArg ? path.resolve(process.cwd(), outArg)   // --out is relative to CWD
+  : path.resolve(path.dirname(specPath), spec.out || (isBwz ? path.basename(specPath).replace(/\.bwz$/i,"")+".png" : "figure.png"));
 
 // colormaps (for the shared colorbar) parsed from colormaps.js
 function loadCmaps() {
@@ -76,7 +77,7 @@ const port = 9400 + Math.floor((spec.panels.length * 7) % 500);
 async function cdp() {
   const chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`,
     "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-    "--no-first-run", "--user-data-dir=" + path.join(HERE, ".chrome-figtmp"),
+    "--no-first-run", "--user-data-dir=" + path.join(HERE, ".chrome-figtmp-" + port),
     "--window-size=1400,1000", "about:blank"], { stdio: "ignore" });
   const getJSON = p => new Promise((res, rej) => http.get({ host: "127.0.0.1", port, path: p },
     r => { let d = ""; r.on("data", c => d += c); r.on("end", () => res(JSON.parse(d))); }).on("error", rej));

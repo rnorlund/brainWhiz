@@ -1,0 +1,8 @@
+{ "bwz":1, "app":"brainWhiz", "grid":"2x2",
+  "figure":{ "brain":480,"titleSize":24,"titleFont":"system-ui","titleColor":"#111111","colorbarSize":42,"gap":16,"bg":"#ffffff" },
+  "panels":[
+    {"label":"Motor","atlas":"jhu","vals":{"taskMap":"motor","ovCombine":"none","ovStyle":"solid","ovColor":"#d62728","scheme":"lobe","vivid":"1.5","cthresh":"0.12","axisLines":true,"axisLetters":true}},
+    {"label":"Language","atlas":"jhu","vals":{"taskMap":"language","ovCombine":"none","ovStyle":"solid","ovColor":"#1f77b4","vivid":"1.5","cthresh":"0.12","axisLines":true,"axisLetters":true}},
+    {"label":"Motor ∧ Language","atlas":"jhu","vals":{"taskMap":"motor","taskMapB":"language","ovCombine":"conj","ovColor":"#d62728","ovColorB":"#1f77b4","vivid":"1.5","cthresh":"0.15","axisLines":true,"axisLetters":true}},
+    {"label":"Working memory (AAL)","atlas":"aal","vals":{"taskMap":"working memory","ovCombine":"none","ovStyle":"cmap","cmap":"viridis","vivid":"1.4","cthresh":"0","axisLines":true,"axisLetters":true}}
+  ]}

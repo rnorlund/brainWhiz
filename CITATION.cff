@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+title: "brainWhiz: interactive multi-atlas exploding-brain viewer and figure tooling"
+message: "If you use this software, please cite it and the original atlas / NeuroQuery sources."
+type: software
+authors:
+  - family-names: Newman-Norlund
+    given-names: Roger
+repository-code: "https://github.com/rnorlund/brainWhiz"
+license: CC-BY-NC-4.0
+version: "1.0"
+date-released: "2026-06-17"
+keywords:
+  - neuroimaging
+  - brain atlas
+  - visualization
+  - three.js
+  - connectivity

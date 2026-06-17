@@ -159,6 +159,47 @@ figure_example.json   example figure spec
 
 ---
 
+## Examples (included)
+
+Ready-to-run recipes in [`examples/`](examples/) + shareable sample stat maps:
+
+| file | what it makes |
+|------|----------------|
+| [`example.bwz`](example.bwz) | 1×2: motor + motor−language |
+| [`examples/fig_tasks_2x2.bwz`](examples/fig_tasks_2x2.bwz) | 2×2 of task maps & a conjunction (no files needed) |
+| [`examples/fig_files.bwz`](examples/fig_files.bwz) | loads `examples/neuroquery_*.nii.gz` (run with `--root examples`) |
+| `examples/neuroquery_{motor,language,working_memory}.nii.gz` | sample MNI stat maps to drag into the **Stat .nii** loader |
+
+```bash
+node make_figure.mjs examples/fig_tasks_2x2.bwz --out tasks.png
+node make_figure.mjs examples/fig_files.bwz --root examples --out files.png
+```
+
+| `fig_tasks_2x2.bwz` | `fig_files.bwz` (file overlays) |
+|---|---|
+| ![tasks](docs/img/sample_tasks.png) | ![files](docs/img/sample_files.png) |
+
+## Requirements
+- **Viewer:** any modern browser (Chrome/Safari/Firefox) with internet (Three.js loads from a CDN).
+  Loading your own `.nii/.nii.gz` overlay works offline via the file picker.
+- **Figure tool (`make_figure.mjs`):** Node.js + `npm install ws` + Chrome/Chromium installed.
+- **Building atlas bundles (`build_bundle.py`):** Python with `nibabel numpy scikit-image trimesh
+  fast_simplification scipy` (+ `neuroquery nilearn` for task maps). Overlays/atlases must be **MNI152**.
+
+## Editing the project (Claude Code friendly)
+Clone the repo and open it in **Claude Code** — [`CLAUDE.md`](CLAUDE.md) orients the assistant on
+the architecture and common edits, and [`BWZ_FORMAT.md`](BWZ_FORMAT.md) documents every figure option.
+You can literally say *"add an atlas / new colormap / a 3×2 figure of these contrasts"* and it has the
+context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or have Claude generate.
+
+## Data sources & citation
+- **Atlases** (JHU, AAL, AICHA, Brodmann, Harvard-Oxford, Neuromorphometrics, Hammers, LPBA40, COBRA,
+  Anatomy v3, AAL3, Catani, XTRACT, Fox, arterial) — © their respective authors; cite the original atlas.
+- **Task maps** — [NeuroQuery](https://neuroquery.org) (open).
+- **DTI/rsfMRI connectivity** — averaged from ABC-study participant data.
+- Please cite the original atlas/NeuroQuery sources in any publication. To cite the tool, see
+  [`CITATION.cff`](CITATION.cff).
+
 ## License
 
 **Noncommercial use only** — licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).

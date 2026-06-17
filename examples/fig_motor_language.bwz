@@ -1,0 +1,25 @@
+{
+  "bwz": 1,
+  "app": "brainWhiz",
+  "grid": "1x2",
+  "figure": { "brain": 520, "titleSize": 26, "titleFont": "system-ui",
+              "titleColor": "#111111", "colorbarSize": 44, "gap": 18, "bg": "#ffffff" },
+  "panels": [
+    {
+      "label": "Motor",
+      "atlas": "jhu",
+      "vals": { "taskMap": "motor", "ovCombine": "none",
+                "ovStyle": "solid", "ovColor": "#d62728",
+                "scheme": "lobe", "vivid": "1.5", "cthresh": "0.12",
+                "axisLines": true, "axisLetters": true }
+    },
+    {
+      "label": "Motor − Language",
+      "atlas": "jhu",
+      "vals": { "taskMap": "motor", "taskMapB": "language", "ovCombine": "sub",
+                "ovColor": "#d62728", "ovColorB": "#1f77b4",
+                "vivid": "1.5", "cthresh": "0.1",
+                "axisLines": true, "axisLetters": true }
+    }
+  ]
+}
