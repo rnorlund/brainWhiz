@@ -339,8 +339,8 @@
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
     <!-- axis options first -->
     <div class="row" style="gap:14px">
-      <label class="toggle"><input type="checkbox" id="axisLines" checked> Axis lines</label>
-      <label class="toggle"><input type="checkbox" id="axisLetters" checked> Axis letters</label></div>
+      <label class="toggle"><input type="checkbox" id="axisLines"> Axis lines</label>
+      <label class="toggle"><input type="checkbox" id="axisLetters"> Axis letters</label></div>
     <div class="row"><label>Axis color</label><input type="color" id="axisColor" value="#9fb3c8"></div>
     <div class="ctl"><div class="lab"><span>Axis width</span><span id="axisWVal"></span></div>
       <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7"></div>
@@ -1155,6 +1155,7 @@ function buildAxisLabels(box, r){
 }
 $('axisLines').addEventListener('change', e=>axisLineGroup.visible=e.target.checked);
 $('axisLetters').addEventListener('change', e=>axisLetterGroup.visible=e.target.checked);
+axisLineGroup.visible=$('axisLines').checked; axisLetterGroup.visible=$('axisLetters').checked;   // off by default
 function rebuildAxes(){ if(_axisBox) buildAxisLabels(_axisBox,_axisR); }
 $('axisColor').addEventListener('input', rebuildAxes);
 $('axisWidth').addEventListener('input', e=>{ $('axisWVal').textContent=(+e.target.value).toFixed(1); rebuildAxes(); });
