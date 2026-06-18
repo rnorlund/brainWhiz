@@ -155,10 +155,17 @@
     <div id="sliceCtl">
       <div class="row"><label>Map</label><span id="slMapName" style="color:var(--txt)">—</span>
         <span style="flex:1"></span><span id="slCoord" style="color:var(--muted)"></span></div>
-      <div class="row seg"><label>Statistic</label>
+      <div class="row seg"><label>Render</label>
+        <button id="slKindVox" class="sm on">Voxel heatmap</button>
+        <button id="slKindMesh" class="sm">Mesh regions</button></div>
+      <div class="row"><label>Slice</label>
+        <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
+        <span style="color:var(--muted)">Y</span><input type="range" id="slPosY" min="-126" max="90" step="1" value="0" style="flex:1">
+        <span style="color:var(--muted)">Z</span><input type="range" id="slPosZ" min="-72" max="108" step="1" value="0" style="flex:1"></div>
+      <div class="row seg" id="slStatRow"><label>Statistic</label>
         <button id="slRaw" class="sm on">Raw threshold</button>
         <button id="slTfce" class="sm">TFCE clusters</button></div>
-      <div class="row"><label id="slThLab">Threshold</label><input type="range" id="slThresh" min="0" max="1" step="0.005" value="0.25">
+      <div class="row" id="slThRow"><label id="slThLab">Threshold</label><input type="range" id="slThresh" min="0" max="1" step="0.005" value="0.25">
         <span id="slThV" style="color:var(--txt);min-width:34px;text-align:right">—</span></div>
       <div class="row"><label>Colormap</label>
         <select id="slCmap" class="tbsel" style="font-size:11px"></select>
@@ -1907,7 +1914,55 @@ $('panelBuilder').style.display='none';
 
 // ================= VOXEL SLICE VIEW (ortho heatmap + TFCE) =================
 let sliceStat='raw';   // 'raw' | 'tfce'
+let sliceKind='voxel'; // 'voxel' | 'mesh'
+let sliceOrtho=null;
 const _clampI=(v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
+// MNI(x,y,z = R,A,S)  ->  three.js mesh axes (+X=R, +Y=Sup, -Z=Ant)
+const mniToTjs = mm => new THREE.Vector3(mm[0], mm[2], -mm[1]);
+// per-plane: clip plane (keep one side) + camera dir/up + in-plane right/up axes for the crosshair
+function meshPlaneSpec(plane, P){
+  if(plane==='sag') return { clip:new THREE.Plane(new THREE.Vector3(-1,0,0), P.x), dir:new THREE.Vector3(1,0,0),  up:new THREE.Vector3(0,1,0),  right:new THREE.Vector3(0,0,-1), vup:new THREE.Vector3(0,1,0) };
+  if(plane==='cor') return { clip:new THREE.Plane(new THREE.Vector3(0,0,1),  -P.z), dir:new THREE.Vector3(0,0,-1), up:new THREE.Vector3(0,1,0),  right:new THREE.Vector3(-1,0,0),vup:new THREE.Vector3(0,1,0) };
+  return                  { clip:new THREE.Plane(new THREE.Vector3(0,-1,0), P.y), dir:new THREE.Vector3(0,1,0),  up:new THREE.Vector3(0,0,-1), right:new THREE.Vector3(1,0,0), vup:new THREE.Vector3(0,0,-1) };
+}
+function renderMeshSlices(){
+  if(!meshes.length) return;
+  if(!sliceOrtho) sliceOrtho=new THREE.OrthographicCamera(-1,1,1,-1,0.01,10);
+  const P=mniToTjs(sliceMM), half=modelRadius*1.06, d=modelRadius*3;
+  // snapshot scene state we temporarily change
+  const prevRot=group.rotation.clone(), prevEx=explodeAmt, prevBG=scene.background;
+  const prevClip=renderer.clippingPlanes, prevLocal=renderer.localClippingEnabled;
+  const axV=axisLineGroup.visible, alV=axisLetterGroup.visible, cgV=connGroup.visible;
+  const matState=meshes.map(o=>{ const m=o.mesh.material; return {side:m.side,opacity:m.opacity,transparent:m.transparent,depthWrite:m.depthWrite}; });
+  group.rotation.set(0,0,0); setExplode(0);
+  axisLineGroup.visible=axisLetterGroup.visible=connGroup.visible=false;
+  meshes.forEach(o=>{ const m=o.mesh.material; m.side=THREE.DoubleSide; m.opacity=1; m.transparent=false; m.depthWrite=true; });
+  scene.background=null; renderer.localClippingEnabled=true;
+  sliceOrtho.left=-half; sliceOrtho.right=half; sliceOrtho.top=half; sliceOrtho.bottom=-half;
+  sliceOrtho.near=0.01; sliceOrtho.far=d*3; sliceOrtho.updateProjectionMatrix();
+  const planes=[['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]];
+  for(const [plane,cv] of planes){
+    const sp=meshPlaneSpec(plane,P);
+    renderer.clippingPlanes=[sp.clip];
+    sliceOrtho.position.copy(sceneCenter).addScaledVector(sp.dir, d);
+    sliceOrtho.up.copy(sp.up); sliceOrtho.lookAt(sceneCenter); sliceOrtho.updateMatrixWorld();
+    const W=cv.clientWidth||300, H=cv.clientHeight||300;
+    renderer.setSize(W,H); renderer.render(scene, sliceOrtho);
+    const ctx=cv.getContext('2d'); cv.width=W; cv.height=H;
+    ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); ctx.drawImage(renderer.domElement,0,0,W,H);
+    // crosshair: project P relative to brain center onto screen
+    if($('slCross').checked){ const off=P.clone().sub(sceneCenter);
+      const cx=W/2 + off.dot(sp.right)/(2*half)*W, cy=H/2 - off.dot(sp.vup)/(2*half)*H;
+      ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.stroke(); }
+    cv._plane={plane,mesh:true,W,H,half,right:sp.right,vup:sp.vup};
+  }
+  // restore
+  renderer.clippingPlanes=prevClip; renderer.localClippingEnabled=prevLocal;
+  meshes.forEach((o,i)=>{ const m=o.mesh.material, s=matState[i]; m.side=s.side; m.opacity=s.opacity; m.transparent=s.transparent; m.depthWrite=s.depthWrite; });
+  axisLineGroup.visible=axV; axisLetterGroup.visible=alV; connGroup.visible=cgV;
+  scene.background=prevBG; group.rotation.copy(prevRot); setExplode(prevEx); resize();
+}
 function ensureMNI(){
   if(MNIVOL || !window.MNI152) return MNIVOL;
   const m=window.MNI152, bin=atob(m.data), u=new Uint8Array(bin.length);
@@ -1980,13 +2035,18 @@ function renderPlane(cv, plane){
     ctx.beginPath(); ctx.moveTo(cx+.5,0); ctx.lineTo(cx+.5,H); ctx.moveTo(0,cy+.5); ctx.lineTo(W,cy+.5); ctx.stroke(); }
   cv._plane={plane,ic,jc,kc,W,H,nx,ny,nz,mni};
 }
+function syncPosSliders(){ $('slPosX').value=Math.round(sliceMM[0]); $('slPosY').value=Math.round(sliceMM[1]); $('slPosZ').value=Math.round(sliceMM[2]); }
 function sliceRenderAll(){
   if(!sliceMode) return;
-  renderPlane($('slSag'),'sag'); renderPlane($('slCor'),'cor'); renderPlane($('slAxi'),'axi');
+  if(sliceKind==='mesh') renderMeshSlices();
+  else { renderPlane($('slSag'),'sag'); renderPlane($('slCor'),'cor'); renderPlane($('slAxi'),'axi'); }
+  syncPosSliders();
   $('slCoord').textContent=`MNI ${sliceMM.map(v=>Math.round(v)).join(', ')} mm`;
-  $('slMapName').textContent=overlay.volA?(overlay.fileA||'loaded map'):'— load a stat .nii —';
-  const vmax=sliceVmax();
-  $('slThV').textContent = overlay.volA ? (sliceThreshAbs()).toFixed(sliceStat==='tfce'?0:2) : '—';
+  $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
+    : (overlay.volA?(overlay.fileA||'loaded map'):'— load a stat .nii —');
+  const statOn = sliceKind==='voxel';
+  $('slStatRow').style.opacity=$('slThRow').style.opacity = statOn?'1':'0.4';
+  $('slThV').textContent = (statOn && overlay.volA) ? (sliceThreshAbs()).toFixed(sliceStat==='tfce'?0:2) : '—';
   $('slThLab').textContent = sliceStat==='tfce' ? 'TFCE cutoff' : 'Threshold';
   try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true); }catch(e){}
 }
@@ -2026,6 +2086,9 @@ function sliceClick(cv, ev){
   $('slCross').addEventListener('change', sliceRenderAll);
   $('modeMesh').addEventListener('click', ()=>setSliceMode(false));
   $('modeSlice').addEventListener('click', ()=>setSliceMode(true));
+  $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); sliceRenderAll(); });
+  $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); sliceRenderAll(); });
+  ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
   $('slRaw').addEventListener('click', ()=>{ sliceStat='raw'; $('slRaw').classList.add('on'); $('slTfce').classList.remove('on'); sliceRenderAll(); });
   $('slTfce').addEventListener('click', ()=>{
     if(!overlay.volA){ alert('Load a stat .nii first (Overlay panel) to compute TFCE.'); return; }
