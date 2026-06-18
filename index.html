@@ -224,6 +224,7 @@
       <input type="range" id="grayOp" min="0" max="1" step="0.02" value="1"></div>
     <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
       <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
+    <div class="row"><label class="toggle"><input type="checkbox" id="glass"> 🪟 Glass brain (fade uncolored to a shell)</label></div>
     <div class="row"><label>Surface</label>
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
@@ -291,6 +292,10 @@
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
+    <div class="row" style="flex-wrap:wrap;gap:5px"><label style="min-width:auto">View</label>
+      <button class="sm vbtn" data-v="left">Left</button><button class="sm vbtn" data-v="right">Right</button>
+      <button class="sm vbtn" data-v="superior">Top</button><button class="sm vbtn" data-v="inferior">Bottom</button>
+      <button class="sm vbtn" data-v="anterior">Front</button><button class="sm vbtn" data-v="posterior">Back</button></div>
     <div class="ctl"><div class="lab"><span>💥 Explosion</span><span id="expVal">0%</span></div>
       <input type="range" id="explode" min="0" max="1" step="0.005" value="0"></div>
     <div class="ctl"><div class="lab"><span>Explosion distance</span><span id="distVal">1.5×</span></div>
@@ -360,9 +365,14 @@
         <button class="sm" id="pbBgW" title="white bg">▢</button>
         <button class="sm" id="pbBgB" title="black bg">▣</button>
       </span></label>
+    <label>Export scale (DPI)
+      <select id="pbScale"><option value="1">1× (screen)</option><option value="2" selected>2× (print)</option><option value="3">3×</option><option value="4">4× (max)</option></select></label>
+    <label>Format
+      <select id="pbFormat"><option value="png">PNG</option><option value="pdf">PDF (300 dpi)</option><option value="svg">SVG (vector labels)</option></select></label>
   </div>
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-    <button class="sm" id="pbExport">⬇ PNG</button>
+    <button class="sm" id="pbExport">⬇ Export</button>
+    <button class="sm" id="pb6view" title="fill a 2×3 grid with 6 standard views of the current brain">⊞ 6-view</button>
     <button class="sm" id="pbSaveBwz">💾 .bwz</button>
     <button class="sm" id="pbLoadBwz">📂 .bwz</button>
     <button class="sm" id="pbClear">Clear</button>
@@ -379,6 +389,7 @@
 <script src="colormaps.js"></script>
 <script src="bundles/registry.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -691,13 +702,18 @@ const _hsl={};
 function isColored(o){ new THREE.Color(o.meta.color||'#888').getHSL(_hsl); return _hsl.s >= (+$('satCut').value); }
 function setOpacities(){
   const all=+$('opacity').value, colO=+$('coloredOp').value, grO=+$('grayOp').value;
+  const glass=$('glass').checked;
   const cutout = (patternUniforms.uPatMode.value===1 && patternUniforms.uPattern.value>0)
               || (patternUniforms.uWire.value>0 && patternUniforms.uWireFill.value<1);
   for(const o of meshes){
-    const op = (isColored(o) ? colO : grO) * all;
+    const colored=isColored(o);
+    let op = (colored ? colO : grO) * all;
+    if(glass && !colored) op = Math.min(op, 0.09);   // uncolored regions -> faint glass shell
     o.mesh.material.opacity = op; o.mesh.material.transparent = op < 1 || cutout;
+    o.mesh.material.depthWrite = !(glass && !colored);
   }
 }
+$('glass').addEventListener('change', setOpacities);
 $('opacity').addEventListener('input', e=>{ $('opVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
 $('coloredOp').addEventListener('input', e=>{ $('coloredOpVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
 $('grayOp').addEventListener('input', e=>{ $('grayOpVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
@@ -855,6 +871,10 @@ function view(pos){ // pos = direction the camera sits from center
 $('vTop').onclick   = ()=>view([0,1,0.0001]);   // superior
 $('vSide').onclick  = ()=>view([-1,0,0]);        // left sagittal
 $('vFront').onclick = ()=>view([0,0,-1]);        // anterior (face)
+// extra standard-view buttons (View & motion section)
+document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{
+  const V={left:[-1,0,0],right:[1,0,0],superior:[0,1,0.0001],inferior:[0,-1,0.0001],anterior:[0,0,-1],posterior:[0,0,1]};
+  view(V[b.dataset.v]||V.left); }));
 $('snap').onclick = ()=>{ const a=document.createElement('a');
   a.download='jhu_brain.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); };
 
@@ -1040,7 +1060,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
-  'coloredOp','grayOp','satCut','ovCombine','ovColorB','ovAndOnly'];
+  'coloredOp','grayOp','satCut','glass','ovCombine','ovColorB','ovAndOnly'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
@@ -1344,24 +1364,34 @@ function parseNifti(buf){
     if(i<0||j<0||k<0||i>=nx||j>=ny||k>=nz) return null;
     return read(i + j*nx + k*nx*ny)*slope+inter;
   }
-  return {sampleMM, dim:[nx,ny,nz]};
+  const vox=[Math.hypot(M[0],M[3],M[6]), Math.hypot(M[1],M[4],M[7]), Math.hypot(M[2],M[5],M[8])];
+  return {sampleMM, dim:[nx,ny,nz], vox};
 }
-// sample a parsed NIfTI buffer into per-ROI mean values
+// sample a parsed NIfTI buffer into per-ROI mean values + an MNI-plausibility report
 function statBufferToVals(buf, name){
   if(/\.gz$/i.test(name)){ buf=window.pako.ungzip(new Uint8Array(buf)).buffer; }
-  const nii=parseNifti(buf); const vals={};
+  const nii=parseNifti(buf); const vals={}; let covered=0, total=0;
   for(const o of meshes){
     const pts=SAMPLES[o.meta.id]; if(!pts){ vals[o.meta.id]=NaN; continue; }
-    let s=0,n=0;
+    total++; let s=0,n=0;
     for(let p=0;p<pts.length;p+=3){ const v=nii.sampleMM(pts[p],pts[p+1],pts[p+2]);
       if(v!==null && isFinite(v)){ s+=v; n++; } }
-    vals[o.meta.id]= n? s/n : NaN;
+    vals[o.meta.id]= n? s/n : NaN; if(n) covered++;
   }
-  return vals;
+  return { vals, coverage: total?covered/total:0, vox:nii.vox, dim:nii.dim };
 }
-function applyStatVals(vals, name, which){
-  if(which==='B'){ overlay.fileB=name; $('taskMapB').value=''; applyOverlayB(vals, name); }
-  else { overlay.fileA=name; $('taskMap').value=''; applyOverlay(vals, name); }
+function mniWarning(r){
+  const w=[];
+  if(r.coverage < 0.5) w.push(`only ${Math.round(r.coverage*100)}% of regions overlap the image`);
+  const vmx=Math.max(...r.vox), vmn=Math.min(...r.vox);
+  if(vmx>5 || vmn<0.4) w.push(`unusual voxel size (${r.vox.map(v=>v.toFixed(1)).join('×')} mm)`);
+  return w;
+}
+function applyStatVals(r, name, which){
+  if(which==='B'){ overlay.fileB=name; $('taskMapB').value=''; applyOverlayB(r.vals, name); }
+  else { overlay.fileA=name; $('taskMap').value=''; applyOverlay(r.vals, name); }
+  const w=mniWarning(r);
+  if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
 }
 function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
@@ -1544,7 +1574,7 @@ async function pbResolveTile(i){
     const file=await pickFile(); if(!file) return;
     applyStatVals(statBufferToVals(await file.arrayBuffer(), file.name), file.name, slot); await _raf2();
   }
-  it.dataURL=window.brainAPI.renderTo(640,480,true); it.cbar=window.brainAPI.colorbar();
+  it.dataURL=window.brainAPI.renderTo(900,680,true); it.cbar=window.brainAPI.colorbar();
   it.needsFile=false; pbRender();
 }
 function pbCapture(i, keepLabel){
@@ -1556,7 +1586,7 @@ function pbCapture(i, keepLabel){
   else if(A && combine==='conj') auto=`${A} ∧ ${B}`;
   else if(A)                     auto=`${atlasName} · ${A}`;
   else                           auto=`${atlasName} · ${$('scheme').value}`;
-  pbItems[i] = { dataURL: window.brainAPI.renderTo(640,480,true),   // transparent -> figure BG shows through
+  pbItems[i] = { dataURL: window.brainAPI.renderTo(900,680,true),   // transparent -> figure BG shows through
     label: keepLabel!==undefined ? keepLabel : auto,
     cbar: window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
@@ -1614,36 +1644,67 @@ function drawCbar(x, cb, bx, by, W, H, txt){
   x.textAlign='left';  x.fillText((cb.min).toFixed(1), bx, by-3);
   x.textAlign='right'; x.fillText((cb.max).toFixed(1), bx+W, by-3);
 }
-async function pbExport(){
+async function pbExport(){ try{
   const items=pbItems; if(!items.some(Boolean)){ alert('Click tiles to add views first.'); return; }
+  const scale=+$('pbScale').value, format=$('pbFormat').value;
   const [rows,cols]=pbDims();
-  const cw=+$('pbBrain').value, ch=Math.round(cw*0.78);
-  const titleH=+$('pbTitle').value, cbarH=+$('pbCbar').value, gap=+$('pbGap').value;
+  const cw=Math.round((+$('pbBrain').value)*scale), ch=Math.round(cw*0.78);
+  const titleH=Math.round((+$('pbTitle').value)*scale), cbarH=Math.round((+$('pbCbar').value)*scale), gap=Math.round((+$('pbGap').value)*scale);
   const bgc=$('pbBg').value, font=$('pbFont').value, titleColor=$('pbTitleColor').value;
-  // a tile only reserves title space if it actually has a label
   const anyTitle = titleH>0 && items.some(it=>it&&it.label);
-  const titRes = anyTitle ? titleH+6 : 0;
+  const titRes = anyTitle ? titleH+Math.round(6*scale) : 0;
   const anyCbar = cbarH>0 && items.some(it=>it&&it.cbar);
-  const cbRes = anyCbar ? cbarH+18 : 0;        // reserved per-cell so the grid stays aligned
+  const cbRes = anyCbar ? cbarH+Math.round(18*scale) : 0;
   const blockH = titRes + cbRes + ch;
+  // re-render same-atlas tiles at the target resolution for crisp (high-DPI) output
+  const snap = captureViewerCfg(); const imgs={};
+  for(let i=0;i<items.length;i++){ const it=items[i]; if(!it) continue;
+    if(it.cfg && it.cfg.atlas===ATLAS_ID && !it.needsFile){ applyViewerCfg(it.cfg); await _raf2();
+      imgs[i]=window.brainAPI.renderTo(cw,ch,true); } else imgs[i]=it.dataURL; }
+  applyViewerCfg(snap);
   const cvs=document.createElement('canvas');
   cvs.width = cols*cw+(cols+1)*gap; cvs.height = rows*blockH+(rows+1)*gap;
   const x=cvs.getContext('2d'); x.fillStyle=bgc; x.fillRect(0,0,cvs.width,cvs.height);
   const dark = new THREE.Color(bgc).getHSL({}).l<0.5; const txt=dark?'#fff':'#111';
+  const titles=[];   // collected for vector SVG text
   await Promise.all(items.map((it,i)=> it? new Promise(res=>{
     const c=i%cols, r=Math.floor(i/cols);
     const px=gap+c*(cw+gap), py=gap+r*(blockH+gap);
-    // 1) title on top (custom text + font + color; empty label = no title)
-    if(titleH>0 && it.label){ x.fillStyle=titleColor; x.font='bold '+Math.round(titleH*0.78)+'px '+font;
-      x.textAlign='center'; x.fillText(it.label, px+cw/2, py+titleH*0.82); }
-    // 2) this panel's own colorbar (below title, above brain)
-    if(cbarH>0 && it.cbar){ const W=Math.min(cw*0.8, cw-20), bx=px+(cw-W)/2, by=py+titRes+14;
+    if(titleH>0 && it.label){ const fs=Math.round(titleH*0.78), ty=py+titleH*0.82;
+      titles.push({t:it.label, x:px+cw/2, y:ty, fs});
+      if(format!=='svg'){ x.fillStyle=titleColor; x.font='bold '+fs+'px '+font; x.textAlign='center'; x.fillText(it.label, px+cw/2, ty); } }
+    if(cbarH>0 && it.cbar){ const W=Math.min(cw*0.8, cw-20*scale), bx=px+(cw-W)/2, by=py+titRes+Math.round(14*scale);
       drawCbar(x, it.cbar, bx, by, W, cbarH, txt); }
-    // 3) brain
     const img=new Image(); img.onload=()=>{ x.drawImage(img, px, py+titRes+cbRes, cw, ch); res(); };
-    img.onerror=res; img.src=it.dataURL;
+    img.onerror=res; img.src=imgs[i];
   }) : Promise.resolve()));
+  if(format==='pdf' && window.jspdf){
+    const { jsPDF }=window.jspdf; const wpt=cvs.width*72/300, hpt=cvs.height*72/300;   // 300 dpi physical size
+    const pdf=new jsPDF({orientation: wpt>=hpt?'l':'p', unit:'pt', format:[wpt,hpt]});
+    pdf.addImage(cvs.toDataURL('image/png'),'PNG',0,0,wpt,hpt); pdf.save('brain_figure.pdf'); return;
+  }
+  if(format==='svg'){
+    const png=cvs.toDataURL('image/png');
+    let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${cvs.width}" height="${cvs.height}" viewBox="0 0 ${cvs.width} ${cvs.height}">`
+      +`<image x="0" y="0" width="${cvs.width}" height="${cvs.height}" href="${png}"/>`;
+    for(const t of titles) svg+=`<text x="${t.x}" y="${t.y}" font-family="${font.replace(/['"]/g,'')}" font-weight="bold" font-size="${t.fs}" fill="${titleColor}" text-anchor="middle">${t.t.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text>`;
+    svg+=`</svg>`;
+    const a=document.createElement('a'); a.download='brain_figure.svg';
+    a.href='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg); a.click(); return;
+  }
   const a=document.createElement('a'); a.download='brain_figure.png'; a.href=cvs.toDataURL('image/png'); a.click();
+  }catch(err){ alert('Export failed: '+err.message); console.error(err); }
+}
+// fill a 2×3 grid with the 6 standard anatomical views of the current brain
+async function pb6view(){ try{
+  const views=[['left','Left'],['right','Right'],['superior','Top'],['inferior','Bottom'],['anterior','Front'],['posterior','Back']];
+  $('pbGrid').value='2x3'; pbItems=new Array(6).fill(null); pbRender();
+  $('pb6view').textContent='⏳ rendering…';
+  for(let i=0;i<6;i++){ window.brainAPI.setView(views[i][0]); await _raf2();
+    pbItems[i]={ dataURL:window.brainAPI.renderTo(900,680,true), label:views[i][1],
+      cbar:window.brainAPI.colorbar(), cfg:captureViewerCfg() }; pbRender(); }
+  $('pb6view').textContent='⊞ 6-view';
+  }catch(err){ $('pb6view').textContent='⊞ 6-view'; alert('6-view failed: '+err.message); }
 }
 function pbFigureSettings(){ return { brain:+$('pbBrain').value, titleSize:+$('pbTitle').value,
   titleFont:$('pbFont').value, titleColor:$('pbTitleColor').value, colorbarSize:+$('pbCbar').value,
@@ -1675,7 +1736,7 @@ async function bwzImport(file){
   for(let i=0;i<pbItems.length;i++){ const it=pbItems[i]; if(!it) continue;
     if(it.cfg.atlas===ATLAS_ID && !it.needsFile){
       applyViewerCfg(it.cfg); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      it.dataURL=window.brainAPI.renderTo(640,480,true); it.cbar=window.brainAPI.colorbar(); }
+      it.dataURL=window.brainAPI.renderTo(900,680,true); it.cbar=window.brainAPI.colorbar(); }
   }
   pbRender();
 }
@@ -1685,6 +1746,7 @@ $('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none'
 $('pbGrid').addEventListener('change',pbRender);
 $('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
 $('pbExport').addEventListener('click',pbExport);
+$('pb6view').addEventListener('click',pb6view);
 $('pbBgW').addEventListener('click',()=>{ $('pbBg').value='#ffffff'; $('pbTitleColor').value='#111111'; });
 $('pbBgB').addEventListener('click',()=>{ $('pbBg').value='#000000'; $('pbTitleColor').value='#ffffff'; });
 $('pbSaveBwz').addEventListener('click',bwzExport);
