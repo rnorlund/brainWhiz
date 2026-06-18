@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate viewer JS (syntax-check the ES module)
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          html = open('index.html', encoding='utf-8').read()
+          m = re.search(r'<script type="module">(.*?)</script>', html, re.S)
+          if not m:
+              print('No ES module block found in index.html'); sys.exit(1)
+          # rewrite bare/CDN imports to harmless paths so node --check parses syntax only
+          js = m.group(1)
+          js = re.sub(r"from\s+['\"][^'\"]+['\"]", "from './x.js'", js)
+          js = re.sub(r"import\s+['\"][^'\"]+['\"]", "import './x.js'", js)
+          open('/tmp/viewer.mjs', 'w', encoding='utf-8').write(js)
+          print(f'extracted {len(js)} chars')
+          PY
+          node --check /tmp/viewer.mjs
+          node --check make_figure.mjs
+
+      - name: Validate registry + .bwz / figure JSON
+        run: |
+          node -e "global.window={};require('./bundles/registry.js');if(!Array.isArray(window.ATLAS_REGISTRY)||!window.ATLAS_REGISTRY.length)throw new Error('bad registry');console.log('registry ok:',window.ATLAS_REGISTRY.length,'atlases')"
+          for f in example.bwz examples/*.bwz figure_example.json; do
+            node -e "const o=require('fs').readFileSync('$f','utf8');JSON.parse(o);console.log('json ok: $f')"
+          done
+
+      - name: Headless render smoke test
+        run: |
+          npm install ws --no-save
+          node make_figure.mjs examples/fig_tasks_2x2.bwz --out /tmp/ci.png
+          test -s /tmp/ci.png && echo "render ok: $(wc -c </tmp/ci.png) bytes"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-figure
+          path: /tmp/ci.png
+          if-no-files-found: ignore
