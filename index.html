@@ -388,13 +388,22 @@
 
 <script src="colormaps.js"></script>
 <script src="bundles/registry.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script type="importmap">
-{ "imports": {
-  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-}}
+<!-- Library loader: when SERVED (GitHub Pages or a local server) use the vendored
+     copies in vendor/ → works fully OFFLINE and with no CDN. When opened directly
+     from a file:// path (double-click), local ES modules are blocked by CORS, so
+     fall back to the CDN (needs internet). Either way it just works. -->
+<script>
+(function(){
+  var served = location.protocol !== 'file:';
+  var three  = served ? './vendor/three.module.js' : 'https://unpkg.com/three@0.160.0/build/three.module.js';
+  var addons = served ? './vendor/jsm/' : 'https://unpkg.com/three@0.160.0/examples/jsm/';
+  var im = document.createElement('script'); im.type='importmap';
+  im.textContent = JSON.stringify({ imports: { 'three': three, 'three/addons/': addons } });
+  document.head.appendChild(im);
+  document.write('<scr'+'ipt src="'+(served?'vendor/pako.min.js':'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js')+'"><\/scr'+'ipt>');
+  document.write('<scr'+'ipt src="'+(served?'vendor/jspdf.umd.min.js':'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')+'"><\/scr'+'ipt>');
+  window.__served = served;
+})();
 </script>
 <script type="module">
 import * as THREE from 'three';
@@ -1460,9 +1469,16 @@ setTimeout(resize, 200);
 // hamburger: collapse the controls for a full-screen brain
 $('navToggle').addEventListener('click',()=>{ document.body.classList.toggle('navhidden'); resize(); });
 // online / offline indicator (turns reddish when offline — CDN libs may be unavailable)
-function updateNet(){ const b=$('netBadge'), on=navigator.onLine;
-  b.textContent = on ? '● online' : '● offline'; b.classList.toggle('off', !on);
-  b.title = on ? 'online — CDN libraries reachable' : 'offline — needs the bundled/CDN Three.js; some features may not load'; }
+function updateNet(){ const b=$('netBadge'), on=navigator.onLine, served=window.__served;
+  if(served){  // vendored libs -> fully functional regardless of network
+    b.textContent = on ? '● online' : '● offline · local libs';
+    b.classList.toggle('off', !on);   // reddish offline, but app still works
+    b.title = on ? 'online (running on bundled libraries)' : 'offline — running on bundled libraries, fully functional';
+  } else {     // file:// double-click -> depends on the CDN
+    b.textContent = on ? '● online' : '● offline';
+    b.classList.toggle('off', !on);
+    b.title = on ? 'online — libraries loaded from CDN' : 'offline & opened from a file — CDN libraries unavailable. Serve the folder (e.g. python -m http.server) to run offline.';
+  } }
 window.addEventListener('online',updateNet); window.addEventListener('offline',updateNet); updateNet();
 
 // ================= SCRIPTING API (for headless figure panels) =================

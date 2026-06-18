@@ -179,9 +179,16 @@ node make_figure.mjs examples/fig_files.bwz --root examples --out files.png
 |---|---|
 | ![tasks](docs/img/sample_tasks.png) | ![files](docs/img/sample_files.png) |
 
+## Offline / firewalled use
+brainWhiz works **fully offline** with no CDN: the libraries are vendored in `vendor/`.
+- **Served** (GitHub Pages, or run `python -m http.server` in the folder and open `localhost:8000`) →
+  it loads the bundled libraries and needs **no internet** (the toolbar badge shows the mode).
+- **Double-clicking `index.html`** (a `file://` path) uses the CDN instead (local ES modules are
+  blocked by browser CORS on `file://`), so that route needs internet. To run offline, serve the folder.
+
 ## Requirements
-- **Viewer:** any modern browser (Chrome/Safari/Firefox) with internet (Three.js loads from a CDN).
-  Loading your own `.nii/.nii.gz` overlay works offline via the file picker.
+- **Viewer:** any modern browser (Chrome/Safari/Firefox). Served → no internet needed; `file://` double-click → needs internet (CDN).
+  Loading your own `.nii/.nii.gz` overlay works either way via the file picker.
 - **Figure tool (`make_figure.mjs`):** Node.js + `npm install ws` + Chrome/Chromium installed.
 - **Building atlas bundles (`build_bundle.py`):** Python with `nibabel numpy scikit-image trimesh
   fast_simplification scipy` (+ `neuroquery nilearn` for task maps). Overlays/atlases must be **MNI152**.
