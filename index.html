@@ -1938,24 +1938,23 @@ function renderMeshSlices(){
   axisLineGroup.visible=axisLetterGroup.visible=connGroup.visible=false;
   meshes.forEach(o=>{ const m=o.mesh.material; m.side=THREE.DoubleSide; m.opacity=1; m.transparent=false; m.depthWrite=true; });
   scene.background=null; renderer.localClippingEnabled=true;
-  sliceOrtho.left=-half; sliceOrtho.right=half; sliceOrtho.top=half; sliceOrtho.bottom=-half;
-  sliceOrtho.near=0.01; sliceOrtho.far=d*3; sliceOrtho.updateProjectionMatrix();
+  sliceOrtho.near=0.01; sliceOrtho.far=d*3;
   const planes=[['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]];
   for(const [plane,cv] of planes){
     const sp=meshPlaneSpec(plane,P);
+    const W=cv.clientWidth||300, H=cv.clientHeight||300, asp=W/H;
+    sliceOrtho.left=-half*asp; sliceOrtho.right=half*asp; sliceOrtho.top=half; sliceOrtho.bottom=-half; sliceOrtho.updateProjectionMatrix();
     renderer.clippingPlanes=[sp.clip];
     sliceOrtho.position.copy(sceneCenter).addScaledVector(sp.dir, d);
     sliceOrtho.up.copy(sp.up); sliceOrtho.lookAt(sceneCenter); sliceOrtho.updateMatrixWorld();
-    const W=cv.clientWidth||300, H=cv.clientHeight||300;
     renderer.setSize(W,H); renderer.render(scene, sliceOrtho);
     const ctx=cv.getContext('2d'); cv.width=W; cv.height=H;
     ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); ctx.drawImage(renderer.domElement,0,0,W,H);
-    // crosshair: project P relative to brain center onto screen
     if($('slCross').checked){ const off=P.clone().sub(sceneCenter);
-      const cx=W/2 + off.dot(sp.right)/(2*half)*W, cy=H/2 - off.dot(sp.vup)/(2*half)*H;
+      const cx=W/2 + off.dot(sp.right)/(2*half*asp)*W, cy=H/2 - off.dot(sp.vup)/(2*half)*H;
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.stroke(); }
-    cv._plane={plane,mesh:true,W,H,half,right:sp.right,vup:sp.vup};
+    cv._plane={plane,mesh:true};
   }
   // restore
   renderer.clippingPlanes=prevClip; renderer.localClippingEnabled=prevLocal;
@@ -2009,31 +2008,46 @@ function computeTFCE(){
   return { vol: makeVol(out, vol.dim, vol.M, vol.T), max: omx };
 }
 
+function templBounds(mni){
+  if(mni._b) return mni._b;
+  const [nx,ny,nz]=mni.dim, b={xmin:1e9,xmax:-1e9,ymin:1e9,ymax:-1e9,zmin:1e9,zmax:-1e9};
+  for(const c of [[0,0,0],[nx-1,0,0],[0,ny-1,0],[0,0,nz-1],[nx-1,ny-1,0],[nx-1,0,nz-1],[0,ny-1,nz-1],[nx-1,ny-1,nz-1]]){
+    const w=mni.worldOf(c[0],c[1],c[2]);
+    b.xmin=Math.min(b.xmin,w[0]);b.xmax=Math.max(b.xmax,w[0]); b.ymin=Math.min(b.ymin,w[1]);b.ymax=Math.max(b.ymax,w[1]); b.zmin=Math.min(b.zmin,w[2]);b.zmax=Math.max(b.zmax,w[2]); }
+  return (mni._b=b);
+}
+// render one ortho plane at the cell's real pixel resolution (no CSS upscaling),
+// aspect-correct (letterboxed), sampling the template+overlay in world mm.
 function renderPlane(cv, plane){
   const mni=ensureMNI(); if(!mni) return;
-  const [nx,ny,nz]=mni.dim, md=mni.data, nxy=nx*ny;
-  const c=mni.Minv, mm=sliceMM, dx=mm[0]-mni.T[0],dy=mm[1]-mni.T[1],dz=mm[2]-mni.T[2];
-  const ic=_clampI(Math.round(c[0]*dx+c[1]*dy+c[2]*dz),0,nx-1);
-  const jc=_clampI(Math.round(c[3]*dx+c[4]*dy+c[5]*dz),0,ny-1);
-  const kc=_clampI(Math.round(c[6]*dx+c[7]*dy+c[8]*dz),0,nz-1);
-  let W,H,getIJK,cx,cy;
-  if(plane==='sag'){ W=ny;H=nz; getIJK=(a,b)=>[ic,a,nz-1-b]; cx=jc; cy=nz-1-kc; }
-  else if(plane==='cor'){ W=nx;H=nz; getIJK=(a,b)=>[a,jc,nz-1-b]; cx=ic; cy=nz-1-kc; }
-  else { W=nx;H=ny; getIJK=(a,b)=>[a,ny-1-b,kc]; cx=ic; cy=ny-1-jc; }
-  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); const img=ctx.createImageData(W,H), D=img.data;
-  const src=sliceSrc(), cmap=$('slCmap').value||'hot', thr=sliceThreshAbs(), vmax=sliceVmax();
-  for(let b=0;b<H;b++) for(let a=0;a<W;a++){
-    const ijk=getIJK(a,b), g=md[ijk[0]+ijk[1]*nx+ijk[2]*nxy]||0;
-    let r=g,gg=g,bb=g;
-    if(src){ const w=mni.worldOf(ijk[0],ijk[1],ijk[2]); const v=src.sampleMM(w[0],w[1],w[2]);
-      if(v!==null && isFinite(v) && v>thr && vmax>thr){ const col=sampleCmap(cmap,(v-thr)/(vmax-thr));
-        r=col[0]*255; gg=col[1]*255; bb=col[2]*255; } }
-    const o=(b*W+a)*4; D[o]=r; D[o+1]=gg; D[o+2]=bb; D[o+3]=255;
-  }
-  ctx.putImageData(img,0,0);
-  if($('slCross').checked){ ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(cx+.5,0); ctx.lineTo(cx+.5,H); ctx.moveTo(0,cy+.5); ctx.lineTo(W,cy+.5); ctx.stroke(); }
-  cv._plane={plane,ic,jc,kc,W,H,nx,ny,nz,mni};
+  const b=templBounds(mni), mm=sliceMM;
+  let hmin,hmax,vmin,vmax,toWorld;
+  if(plane==='sag'){ hmin=b.ymin;hmax=b.ymax; vmin=b.zmin;vmax=b.zmax; toWorld=(h,v)=>[mm[0],h,v]; }      // Y horiz (ant→right), Z up
+  else if(plane==='cor'){ hmin=b.xmin;hmax=b.xmax; vmin=b.zmin;vmax=b.zmax; toWorld=(h,v)=>[h,mm[1],v]; }  // X horiz (R→right), Z up
+  else { hmin=b.xmin;hmax=b.xmax; vmin=b.ymin;vmax=b.ymax; toWorld=(h,v)=>[h,v,mm[2]]; }                    // X horiz, Y up (ant up)
+  const hr=hmax-hmin, vr=vmax-vmin;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
+  cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
+  ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+  const sc=Math.min(W/hr,H/vr), dw=Math.max(1,Math.round(hr*sc)), dh=Math.max(1,Math.round(vr*sc));
+  const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
+  const img=ctx.createImageData(dw,dh), D=img.data;
+  const src=sliceSrc(), cmap=$('slCmap').value||'hot', thr=sliceThreshAbs(), vmx=sliceVmax();
+  for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
+    for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=toWorld(hW,vW);
+      const g=mni.sampleMM(w[0],w[1],w[2]); let r=g||0,gg=g||0,bb=g||0;
+      if(src){ const v=src.sampleMM(w[0],w[1],w[2]);
+        if(v!==null&&isFinite(v)&&v>thr&&vmx>thr){ const col=sampleCmap(cmap,(v-thr)/(vmx-thr)); r=col[0]*255;gg=col[1]*255;bb=col[2]*255; } }
+      const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
+  }}
+  ctx.putImageData(img,ox,oy);
+  if($('slCross').checked){ let hC,vC;
+    if(plane==='sag'){hC=mm[1];vC=mm[2];} else if(plane==='cor'){hC=mm[0];vC=mm[2];} else {hC=mm[0];vC=mm[1];}
+    const cx=ox+((hC-hmin)/hr)*dw, cy=oy+((vmax-vC)/vr)*dh;
+    ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
+  cv._plane={plane,ox,oy,dw,dh,hmin,hr,vmax,vr};
 }
 function syncPosSliders(){ $('slPosX').value=Math.round(sliceMM[0]); $('slPosY').value=Math.round(sliceMM[1]); $('slPosZ').value=Math.round(sliceMM[2]); }
 function sliceRenderAll(){
@@ -2062,18 +2076,19 @@ function setSliceMode(on){
       const v=overlay.volA, d=v.data; let bi=0,bv=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]>bv){bv=d[i];bi=i;} }
       const [nx,ny]=v.dim, nxy=nx*ny, k=(bi/nxy)|0, rr=bi-k*nxy, j=(rr/nx)|0, i=rr-j*nx; sliceMM=v.worldOf(i,j,k);
     }
-    sliceRenderAll();
+    requestAnimationFrame(sliceRenderAll);   // wait one frame so cells have layout dims
   }
 }
-// click a slice -> move the crosshair (set the two in-plane coords)
+// click a slice -> move the crosshair (set the two in-plane coords, world mm)
 function sliceClick(cv, ev){
-  const p=cv._plane; if(!p) return; const rect=cv.getBoundingClientRect();
-  const a=Math.round((ev.clientX-rect.left)/rect.width*p.W), b=Math.round((ev.clientY-rect.top)/rect.height*p.H);
-  let i,j,k;
-  if(p.plane==='sag'){ i=p.ic; j=_clampI(a,0,p.ny-1); k=_clampI(p.nz-1-b,0,p.nz-1); }
-  else if(p.plane==='cor'){ i=_clampI(a,0,p.nx-1); j=p.jc; k=_clampI(p.nz-1-b,0,p.nz-1); }
-  else { i=_clampI(a,0,p.nx-1); j=_clampI(p.ny-1-b,0,p.ny-1); k=p.kc; }
-  sliceMM=p.mni.worldOf(i,j,k); sliceRenderAll();
+  const p=cv._plane; if(!p||p.mesh) return; const rect=cv.getBoundingClientRect();
+  const sx=(ev.clientX-rect.left)/rect.width*cv.width, sy=(ev.clientY-rect.top)/rect.height*cv.height;
+  const hf=(sx-p.ox)/p.dw, vf=(sy-p.oy)/p.dh; if(hf<0||hf>1||vf<0||vf>1) return;
+  const hW=p.hmin+hf*p.hr, vW=p.vmax-vf*p.vr;
+  if(p.plane==='sag'){ sliceMM[1]=hW; sliceMM[2]=vW; }
+  else if(p.plane==='cor'){ sliceMM[0]=hW; sliceMM[2]=vW; }
+  else { sliceMM[0]=hW; sliceMM[1]=vW; }
+  sliceRenderAll();
 }
 // populate slice colormap, defaulting to a hot-style map
 (function initSliceUI(){
@@ -2089,6 +2104,7 @@ function sliceClick(cv, ev){
   $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); sliceRenderAll(); });
   $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); sliceRenderAll(); });
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
+  let _slrz; window.addEventListener('resize', ()=>{ if(sliceMode){ clearTimeout(_slrz); _slrz=setTimeout(sliceRenderAll,120); } });
   $('slRaw').addEventListener('click', ()=>{ sliceStat='raw'; $('slRaw').classList.add('on'); $('slTfce').classList.remove('on'); sliceRenderAll(); });
   $('slTfce').addEventListener('click', ()=>{
     if(!overlay.volA){ alert('Load a stat .nii first (Overlay panel) to compute TFCE.'); return; }
