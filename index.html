@@ -28,7 +28,7 @@
   #sliceView{position:absolute;display:none;background:#05070b;z-index:8}
   #sliceView.on{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px}
   #sliceView .sl{position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
-  #sliceView .sl canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:auto;cursor:crosshair}
+  #sliceView .sl canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:auto;cursor:crosshair;touch-action:none}
   #sliceView .sl .tag{position:absolute;top:4px;left:6px;font-size:10px;color:#9fb3c8;background:#0008;padding:1px 5px;border-radius:4px;pointer-events:none;z-index:2}
   #sliceCtl{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;
     background:#0b0e14e6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--txt);z-index:3}
@@ -1925,20 +1925,38 @@ $('panelBuilder').style.display='none';
 let sliceStat='raw';   // 'raw' | 'tfce'
 let sliceKind='voxel'; // 'voxel' | 'mesh'
 let sliceOrtho=null;
+const sliceVP={ sag:{z:1,px:0,py:0}, cor:{z:1,px:0,py:0}, axi:{z:1,px:0,py:0} };   // per-plane zoom + pan(mm)
 const _clampI=(v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
 // MNI(x,y,z = R,A,S)  ->  three.js mesh axes (+X=R, +Y=Sup, -Z=Ant)
 const mniToTjs = mm => new THREE.Vector3(mm[0], mm[2], -mm[1]);
 // per-plane: clip plane (keep one side) + camera dir/up + in-plane right/up axes for the crosshair
-function meshPlaneSpec(plane, P){
-  if(plane==='sag') return { clip:new THREE.Plane(new THREE.Vector3(-1,0,0), P.x), dir:new THREE.Vector3(1,0,0),  up:new THREE.Vector3(0,1,0),  right:new THREE.Vector3(0,0,-1), vup:new THREE.Vector3(0,1,0) };
-  if(plane==='cor') return { clip:new THREE.Plane(new THREE.Vector3(0,0,1),  -P.z), dir:new THREE.Vector3(0,0,-1), up:new THREE.Vector3(0,1,0),  right:new THREE.Vector3(-1,0,0),vup:new THREE.Vector3(0,1,0) };
-  return                  { clip:new THREE.Plane(new THREE.Vector3(0,-1,0), P.y), dir:new THREE.Vector3(0,1,0),  up:new THREE.Vector3(0,0,-1), right:new THREE.Vector3(1,0,0), vup:new THREE.Vector3(0,0,-1) };
+// per-plane in-plane geometry. hAxisT/vAxisT/nAxisT = three.js-axis unit vectors for
+// +MNI-horizontal / +MNI-vertical / +MNI-fixed; `side` orients the camera so screen-right=+h.
+function planeSpec(plane){
+  if(plane==='sag') return { side:1,  hAxisT:new THREE.Vector3(0,0,-1), vAxisT:new THREE.Vector3(0,1,0),  nAxisT:new THREE.Vector3(1,0,0) };
+  if(plane==='cor') return { side:-1, hAxisT:new THREE.Vector3(1,0,0),  vAxisT:new THREE.Vector3(0,1,0),  nAxisT:new THREE.Vector3(0,0,-1) };
+  return                  { side:1,  hAxisT:new THREE.Vector3(1,0,0),  vAxisT:new THREE.Vector3(0,0,-1), nAxisT:new THREE.Vector3(0,1,0) };
 }
+function baseInplane(plane){ const b=templBounds(ensureMNI());
+  if(plane==='sag') return {hmin:b.ymin,hmax:b.ymax,vmin:b.zmin,vmax:b.zmax};
+  if(plane==='cor') return {hmin:b.xmin,hmax:b.xmax,vmin:b.zmin,vmax:b.zmax};
+  return {hmin:b.xmin,hmax:b.xmax,vmin:b.ymin,vmax:b.ymax};
+}
+// current visible in-plane window (applies per-plane zoom + pan)
+function windowOf(plane){ const b=baseInplane(plane), vp=sliceVP[plane];
+  const bhc=(b.hmin+b.hmax)/2, bvc=(b.vmin+b.vmax)/2, hHalf=(b.hmax-b.hmin)/2/vp.z, vHalf=(b.vmax-b.vmin)/2/vp.z;
+  const cH=bhc+vp.px, cV=bvc+vp.py;
+  return { cH, cV, hHalf, vHalf, bhc, bvc, hmin:cH-hHalf, hr:2*hHalf, vmax:cV+vHalf, vr:2*vHalf };
+}
+function inplaneToMNI(plane,h,v){ const mm=sliceMM;
+  if(plane==='sag') return [mm[0],h,v]; if(plane==='cor') return [h,mm[1],v]; return [h,v,mm[2]]; }
+function crossInplane(plane){ const mm=sliceMM;
+  if(plane==='sag') return [mm[1],mm[2]]; if(plane==='cor') return [mm[0],mm[2]]; return [mm[0],mm[1]]; }
+
 function renderMeshSlices(){
   if(!meshes.length) return;
   if(!sliceOrtho) sliceOrtho=new THREE.OrthographicCamera(-1,1,1,-1,0.01,10);
-  const P=mniToTjs(sliceMM), half=modelRadius*1.06, d=modelRadius*3;
-  // snapshot scene state we temporarily change
+  const d=modelRadius*3, SLAB=1.6;   // ±mm slab -> thin true cross-section (only that slice shows)
   const prevRot=group.rotation.clone(), prevEx=explodeAmt, prevBG=scene.background;
   const prevClip=renderer.clippingPlanes, prevLocal=renderer.localClippingEnabled;
   const axV=axisLineGroup.visible, alV=axisLetterGroup.visible, cgV=connGroup.visible;
@@ -1946,26 +1964,26 @@ function renderMeshSlices(){
   group.rotation.set(0,0,0); setExplode(0);
   axisLineGroup.visible=axisLetterGroup.visible=connGroup.visible=false;
   meshes.forEach(o=>{ const m=o.mesh.material; m.side=THREE.DoubleSide; m.opacity=1; m.transparent=false; m.depthWrite=true; });
-  scene.background=null; renderer.localClippingEnabled=true;
-  sliceOrtho.near=0.01; sliceOrtho.far=d*3;
-  const planes=[['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]];
-  for(const [plane,cv] of planes){
-    const sp=meshPlaneSpec(plane,P);
+  scene.background=null; renderer.localClippingEnabled=true; sliceOrtho.near=0.01; sliceOrtho.far=d*3;
+  for(const [plane,cv] of [['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]]){
+    const sp=planeSpec(plane), win=windowOf(plane);
     const W=cv.clientWidth||300, H=cv.clientHeight||300, asp=W/H;
-    sliceOrtho.left=-half*asp; sliceOrtho.right=half*asp; sliceOrtho.top=half; sliceOrtho.bottom=-half; sliceOrtho.updateProjectionMatrix();
-    renderer.clippingPlanes=[sp.clip];
-    sliceOrtho.position.copy(sceneCenter).addScaledVector(sp.dir, d);
-    sliceOrtho.up.copy(sp.up); sliceOrtho.lookAt(sceneCenter); sliceOrtho.updateMatrixWorld();
+    let fh=win.hHalf, fv=win.vHalf; if(fh/fv>asp) fv=fh/asp; else fh=fv*asp;   // fit window into cell, no distortion
+    sliceOrtho.left=-fh; sliceOrtho.right=fh; sliceOrtho.top=fv; sliceOrtho.bottom=-fv; sliceOrtho.updateProjectionMatrix();
+    const tgt=mniToTjs(inplaneToMNI(plane,win.cH,win.cV));
+    sliceOrtho.position.copy(tgt).addScaledVector(sp.nAxisT, sp.side*d);
+    sliceOrtho.up.copy(sp.vAxisT); sliceOrtho.lookAt(tgt); sliceOrtho.updateMatrixWorld();
+    const fixedC=tgt.dot(sp.nAxisT);   // thin slab around the slice plane
+    renderer.clippingPlanes=[ new THREE.Plane(sp.nAxisT.clone(), -(fixedC-SLAB)), new THREE.Plane(sp.nAxisT.clone().negate(), fixedC+SLAB) ];
     renderer.setSize(W,H); renderer.render(scene, sliceOrtho);
     const ctx=cv.getContext('2d'); cv.width=W; cv.height=H;
     ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); ctx.drawImage(renderer.domElement,0,0,W,H);
-    if($('slCross').checked){ const off=P.clone().sub(sceneCenter);
-      const cx=W/2 + off.dot(sp.right)/(2*half*asp)*W, cy=H/2 - off.dot(sp.vup)/(2*half)*H;
+    cv._plane={plane,mesh:true,ox:0,oy:0,dw:W,dh:H, hmin:win.cH-fh, hr:2*fh, vmax:win.cV+fv, vr:2*fv};
+    if($('slCross').checked){ const c=crossInplane(plane);
+      const cx=((c[0]-(win.cH-fh))/(2*fh))*W, cy=((win.cV+fv-c[1])/(2*fv))*H;
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.stroke(); }
-    cv._plane={plane,mesh:true};
   }
-  // restore
   renderer.clippingPlanes=prevClip; renderer.localClippingEnabled=prevLocal;
   meshes.forEach((o,i)=>{ const m=o.mesh.material, s=matState[i]; m.side=s.side; m.opacity=s.opacity; m.transparent=s.transparent; m.depthWrite=s.depthWrite; });
   axisLineGroup.visible=axV; axisLetterGroup.visible=alV; connGroup.visible=cgV;
@@ -2040,12 +2058,7 @@ function templBounds(mni){
 // aspect-correct (letterboxed), sampling the template+overlay in world mm.
 function renderPlane(cv, plane){
   const mni=ensureMNI(); if(!mni) return;
-  const b=templBounds(mni), mm=sliceMM;
-  let hmin,hmax,vmin,vmax,toWorld;
-  if(plane==='sag'){ hmin=b.ymin;hmax=b.ymax; vmin=b.zmin;vmax=b.zmax; toWorld=(h,v)=>[mm[0],h,v]; }      // Y horiz (ant→right), Z up
-  else if(plane==='cor'){ hmin=b.xmin;hmax=b.xmax; vmin=b.zmin;vmax=b.zmax; toWorld=(h,v)=>[h,mm[1],v]; }  // X horiz (R→right), Z up
-  else { hmin=b.xmin;hmax=b.xmax; vmin=b.ymin;vmax=b.ymax; toWorld=(h,v)=>[h,v,mm[2]]; }                    // X horiz, Y up (ant up)
-  const hr=hmax-hmin, vr=vmax-vmin;
+  const win=windowOf(plane), hmin=win.hmin, hr=win.hr, vmax=win.vmax, vr=win.vr;
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
@@ -2055,19 +2068,18 @@ function renderPlane(cv, plane){
   const img=ctx.createImageData(dw,dh), D=img.data;
   const src=sliceSrc(), cmap=$('slCmap').value||'hot', thr=sliceThreshAbs(), vmx=sliceVmax();
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
-    for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=toWorld(hW,vW);
+    for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
       const g=mni.sampleMM(w[0],w[1],w[2]); let r=g||0,gg=g||0,bb=g||0;
       if(src){ const v=src.sampleMM(w[0],w[1],w[2]);
         if(v!==null&&isFinite(v)&&v>thr&&vmx>thr){ const col=sampleCmap(cmap,(v-thr)/(vmx-thr)); r=col[0]*255;gg=col[1]*255;bb=col[2]*255; } }
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
   }}
   ctx.putImageData(img,ox,oy);
-  if($('slCross').checked){ let hC,vC;
-    if(plane==='sag'){hC=mm[1];vC=mm[2];} else if(plane==='cor'){hC=mm[0];vC=mm[2];} else {hC=mm[0];vC=mm[1];}
-    const cx=ox+((hC-hmin)/hr)*dw, cy=oy+((vmax-vC)/vr)*dh;
+  if($('slCross').checked){ const c=crossInplane(plane);
+    const cx=ox+((c[0]-hmin)/hr)*dw, cy=oy+((vmax-c[1])/vr)*dh;
     ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
-  cv._plane={plane,ox,oy,dw,dh,hmin,hr,vmax,vr};
+  cv._plane={plane,ox,oy,dw,dh,hmin,hr,vmax,vr,mesh:false};
 }
 function syncPosSliders(){ $('slPosX').value=Math.round(sliceMM[0]); $('slPosY').value=Math.round(sliceMM[1]); $('slPosZ').value=Math.round(sliceMM[2]); }
 function sliceRenderAll(){
@@ -2092,6 +2104,7 @@ function setSliceMode(on){
   if(hint) hint.style.display=on?'none':''; if(zw) zw.style.display=on?'none':'';
   resize();
   if(on){ ensureMNI();
+    for(const k in sliceVP){ sliceVP[k].z=1; sliceVP[k].px=0; sliceVP[k].py=0; }   // start at full view
     if(overlay.volA && (sliceMM[0]===0&&sliceMM[1]===0&&sliceMM[2]===0)){   // jump to peak of the map
       const v=overlay.volA, d=v.data; let bi=0,bv=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]>bv){bv=d[i];bi=i;} }
       const [nx,ny]=v.dim, nxy=nx*ny, k=(bi/nxy)|0, rr=bi-k*nxy, j=(rr/nx)|0, i=rr-j*nx; sliceMM=v.worldOf(i,j,k);
@@ -2099,17 +2112,22 @@ function setSliceMode(on){
     requestAnimationFrame(sliceRenderAll);   // wait one frame so cells have layout dims
   }
 }
-// click a slice -> move the crosshair (set the two in-plane coords, world mm)
-function sliceClick(cv, ev){
-  const p=cv._plane; if(!p||p.mesh) return; const rect=cv.getBoundingClientRect();
+// map a pointer event on a slice cell -> in-plane (h,v) world mm (works for both modes)
+function cellToInplane(cv,ev){ const p=cv._plane; if(!p) return null;
+  const rect=cv.getBoundingClientRect();
   const sx=(ev.clientX-rect.left)/rect.width*cv.width, sy=(ev.clientY-rect.top)/rect.height*cv.height;
-  const hf=(sx-p.ox)/p.dw, vf=(sy-p.oy)/p.dh; if(hf<0||hf>1||vf<0||vf>1) return;
-  const hW=p.hmin+hf*p.hr, vW=p.vmax-vf*p.vr;
-  if(p.plane==='sag'){ sliceMM[1]=hW; sliceMM[2]=vW; }
-  else if(p.plane==='cor'){ sliceMM[0]=hW; sliceMM[2]=vW; }
-  else { sliceMM[0]=hW; sliceMM[1]=vW; }
-  sliceRenderAll();
-}
+  const hf=(sx-p.ox)/p.dw, vf=(sy-p.oy)/p.dh;
+  return { h:p.hmin+hf*p.hr, v:p.vmax-vf*p.vr, inside: hf>=0&&hf<=1&&vf>=0&&vf<=1 }; }
+function setCrossInplane(plane,h,v){
+  if(plane==='sag'){ sliceMM[1]=h; sliceMM[2]=v; } else if(plane==='cor'){ sliceMM[0]=h; sliceMM[2]=v; } else { sliceMM[0]=h; sliceMM[1]=v; } }
+function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane];
+  const m=cellToInplane(cv,ev); if(!m) return;
+  const nz=Math.min(8,Math.max(1, vp.z*Math.exp(-ev.deltaY*0.0015)));
+  const b=baseInplane(p.plane), bhc=(b.hmin+b.hmax)/2, bvc=(b.vmin+b.vmax)/2;
+  const cH=bhc+vp.px, cV=bvc+vp.py, ratio=vp.z/nz;       // keep the point under the cursor fixed
+  vp.z=nz; vp.px=(m.h-(m.h-cH)*ratio)-bhc; vp.py=(m.v-(m.v-cV)*ratio)-bvc;
+  if(vp.z<=1.001){ vp.z=1; vp.px=0; vp.py=0; }           // snap back to full view
+  sliceRenderAll(); }
 // populate slice colormap, defaulting to a hot-style map
 (function initSliceUI(){
   const sel=$('slCmap'); ['hot','fire','turbo','jet','viridis','inferno','plasma','magma','cividis']
@@ -2133,7 +2151,23 @@ function sliceClick(cv, ev){
       if(!tfceCache){ alert('No positive values to enhance.'); return; }
       sliceStat='tfce'; $('slTfce').classList.add('on'); $('slRaw').classList.remove('on'); sliceRenderAll(); }, 30);
   });
-  ['slSag','slCor','slAxi'].forEach(id=>$(id).addEventListener('click', e=>sliceClick($(id),e)));
+  ['slSag','slCor','slAxi'].forEach(id=>{ const cv=$(id);
+    cv.addEventListener('wheel', e=>sliceWheel(cv,e), {passive:false});
+    let drag=null;
+    cv.addEventListener('pointerdown', e=>{ const p=cv._plane; if(!p) return; try{cv.setPointerCapture(e.pointerId);}catch(_){}
+      drag={sx:e.clientX,sy:e.clientY,px:sliceVP[p.plane].px,py:sliceVP[p.plane].py,moved:false}; });
+    cv.addEventListener('pointermove', e=>{ if(!drag) return; const p=cv._plane; if(!p) return;
+      const rect=cv.getBoundingClientRect();
+      if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy)>3) drag.moved=true;
+      const vp=sliceVP[p.plane];
+      vp.px=drag.px - (e.clientX-drag.sx)/rect.width*cv.width/p.dw*p.hr;   // pan: content follows cursor
+      vp.py=drag.py + (e.clientY-drag.sy)/rect.height*cv.height/p.dh*p.vr;
+      sliceRenderAll(); });
+    const end=e=>{ if(!drag) return; const p=cv._plane, wasMoved=drag.moved; drag=null; try{cv.releasePointerCapture(e.pointerId);}catch(_){}
+      if(!wasMoved && p){ const m=cellToInplane(cv,e); if(m&&m.inside){ setCrossInplane(p.plane,m.h,m.v); sliceRenderAll(); } } };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
+  });
 })();
 
 const clock=new THREE.Clock();
