@@ -27,6 +27,8 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 ## Quick start
 
+![quickstart](docs/img/quickstart.gif)
+
 **Online:** just open the **[live demo](https://rnorlund.github.io/brainWhiz/)**.
 
 **Local:** open `index.html` in Chrome/Safari (needs internet for the Three.js CDN).
@@ -154,6 +156,7 @@ bundles/
 build_bundle.py       atlas -> bundle converter
 build_colormaps.py    regenerate colormaps.js
 make_figure.mjs       headless multi-panel figure montage
+make_gif.mjs          headless rotating Quickstart GIF (needs ffmpeg)
 figure_example.json   example figure spec
 ```
 
@@ -209,10 +212,11 @@ context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or h
 
 ## License
 
-**Noncommercial use only** — licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+© 2026 Roger Newman-Norlund. **Noncommercial use only** — licensed under
+[Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](LICENSE).
 Free for research, education, personal, and other noncommercial purposes (including academic
-papers and figures). Commercial use is **not** permitted under this license — contact the author
-for commercial licensing.
+papers and figures), with attribution. Commercial use is **not** permitted under this license —
+contact the author for commercial licensing.
 
 Note that the bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are
 third-party data with their own terms; they are included here for noncommercial research use —
