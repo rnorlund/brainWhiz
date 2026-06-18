@@ -225,6 +225,8 @@
     <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
       <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
     <div class="row"><label class="toggle"><input type="checkbox" id="glass"> 🪟 Glass brain (fade uncolored to a shell)</label></div>
+    <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">0</span></div>
+      <input type="range" id="smooth" min="0" max="12" step="1" value="0"></div>
     <div class="row"><label>Surface</label>
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
@@ -292,6 +294,13 @@
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
+    <!-- axis options first -->
+    <div class="row" style="gap:14px">
+      <label class="toggle"><input type="checkbox" id="axisLines" checked> Axis lines</label>
+      <label class="toggle"><input type="checkbox" id="axisLetters" checked> Axis letters</label></div>
+    <div class="row"><label>Axis color</label><input type="color" id="axisColor" value="#9fb3c8"></div>
+    <div class="ctl"><div class="lab"><span>Axis width</span><span id="axisWVal"></span></div>
+      <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7"></div>
     <div class="row" style="flex-wrap:wrap;gap:5px"><label style="min-width:auto">View</label>
       <button class="sm vbtn" data-v="left">Left</button><button class="sm vbtn" data-v="right">Right</button>
       <button class="sm vbtn" data-v="superior">Top</button><button class="sm vbtn" data-v="inferior">Bottom</button>
@@ -300,9 +309,6 @@
       <input type="range" id="explode" min="0" max="1" step="0.005" value="0"></div>
     <div class="ctl"><div class="lab"><span>Explosion distance</span><span id="distVal">1.5×</span></div>
       <input type="range" id="distance" min="0" max="5" step="0.05" value="1.5"></div>
-    <div class="row"><button id="play" class="sm">▶ Animate</button></div>
-    <div class="ctl"><div class="lab"><span>Explosion speed</span><span id="spdVal">1.0×</span></div>
-      <input type="range" id="animSpeed" min="0.1" max="3" step="0.1" value="1"></div>
     <div class="ctl"><div class="lab"><span>🔍 Zoom</span></div>
       <input type="range" id="zoomSlider" min="0" max="1" step="0.004" value="0.45"></div>
     <div class="ctl"><div class="lab"><span>Mouse zoom</span><span id="zoomSpdV">1.0×</span></div>
@@ -311,12 +317,10 @@
     <div class="ctl"><div class="lab"><span>Rotate speed</span><span id="rotVal">1.0×</span></div>
       <input type="range" id="rotSpeed" min="-4" max="4" step="0.1" value="1"></div>
     <div class="row"><label class="toggle"><input type="checkbox" id="spin"> Slow spin idle</label></div>
-    <div class="row" style="gap:14px">
-      <label class="toggle"><input type="checkbox" id="axisLines" checked> Axis lines</label>
-      <label class="toggle"><input type="checkbox" id="axisLetters" checked> Axis letters</label></div>
-    <div class="row"><label>Axis color</label><input type="color" id="axisColor" value="#9fb3c8"></div>
-    <div class="ctl"><div class="lab"><span>Axis width</span><span id="axisWVal"></span></div>
-      <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7"></div>
+    <!-- animate at the bottom -->
+    <div class="row"><button id="play" class="sm">▶ Animate</button></div>
+    <div class="ctl"><div class="lab"><span>Explosion speed</span><span id="spdVal">1.0×</span></div>
+      <input type="range" id="animSpeed" min="0.1" max="3" step="0.1" value="1"></div>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🖼 Figure</summary><div class="accb">
@@ -619,7 +623,9 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
     o.material = buildMaterial('Standard', '#ffffff');
     o.castShadow = false;
     const base = new THREE.Vector3(meta.centroid[0], meta.centroid[1], meta.centroid[2]);
-    const rec = {mesh:o, base, meta};
+    const rec = {mesh:o, base, meta,
+      origPos: Float32Array.from(g.attributes.position.array),     // pristine verts for re-smoothing
+      origNrm: Float32Array.from(g.attributes.normal.array) };
     meshes.push(rec);
     byId.set(meta.id, rec);
     o.userData.meta = meta;
@@ -775,6 +781,58 @@ function applySurfStyle(){
   });
 }
 $('surfStyle').addEventListener('change', ()=>{ applySurfStyle(); setOpacities(); });
+
+// ---------- runtime mesh smoothing (Taubin λ|μ — smooths shape without shrinking) ----------
+// Atlas meshes come from marching-cubes at voxel resolution, so some look faceted.
+// We weld duplicated verts back together (geometry is non-indexed for wireframe),
+// run N Taubin passes, then rebuild smooth (area-weighted) normals. Re-smoothing
+// always starts from the pristine origPos so the slider is non-cumulative.
+function buildWeld(rec){
+  if(rec.weld) return rec.weld;
+  const pos=rec.origPos, n=pos.length/3, map=new Map(), vertToGroup=new Int32Array(n), gx=[],gy=[],gz=[];
+  for(let i=0;i<n;i++){ const x=pos[3*i],y=pos[3*i+1],z=pos[3*i+2], k=x+','+y+','+z;
+    let g=map.get(k); if(g===undefined){ g=gx.length; map.set(k,g); gx.push(x);gy.push(y);gz.push(z); }
+    vertToGroup[i]=g; }
+  const G=gx.length, nbr=Array.from({length:G},()=>new Set());
+  for(let t=0;t<n;t+=3){ const a=vertToGroup[t],b=vertToGroup[t+1],c=vertToGroup[t+2];
+    if(a!==b){nbr[a].add(b);nbr[b].add(a);} if(b!==c){nbr[b].add(c);nbr[c].add(b);} if(c!==a){nbr[c].add(a);nbr[a].add(c);} }
+  const base=new Float32Array(G*3);
+  for(let g=0;g<G;g++){ base[3*g]=gx[g];base[3*g+1]=gy[g];base[3*g+2]=gz[g]; }
+  rec.weld={ G, vertToGroup, nbrArr:nbr.map(s=>Int32Array.from(s)), base };
+  return rec.weld;
+}
+const _fn=new THREE.Vector3(),_e1=new THREE.Vector3(),_e2=new THREE.Vector3();
+function rebuildSmoothNormals(rec){
+  const geo=rec.mesh.geometry, pos=geo.attributes.position.array, nrm=geo.attributes.normal.array;
+  const w=rec.weld; if(!w){ geo.computeVertexNormals(); return; }
+  const n=pos.length/3, acc=new Float32Array(w.G*3), vg=w.vertToGroup;
+  for(let t=0;t<n;t+=3){
+    _e1.set(pos[3*(t+1)]-pos[3*t],pos[3*(t+1)+1]-pos[3*t+1],pos[3*(t+1)+2]-pos[3*t+2]);
+    _e2.set(pos[3*(t+2)]-pos[3*t],pos[3*(t+2)+1]-pos[3*t+1],pos[3*(t+2)+2]-pos[3*t+2]);
+    _fn.crossVectors(_e1,_e2);   // area-weighted face normal
+    for(const v of [t,t+1,t+2]){ const g=vg[v]; acc[3*g]+=_fn.x;acc[3*g+1]+=_fn.y;acc[3*g+2]+=_fn.z; } }
+  for(let g=0;g<w.G;g++){ const x=acc[3*g],y=acc[3*g+1],z=acc[3*g+2], l=Math.hypot(x,y,z)||1; acc[3*g]/=l;acc[3*g+1]/=l;acc[3*g+2]/=l; }
+  for(let i=0;i<n;i++){ const g=vg[i]; nrm[3*i]=acc[3*g];nrm[3*i+1]=acc[3*g+1];nrm[3*i+2]=acc[3*g+2]; }
+  geo.attributes.normal.needsUpdate=true;
+}
+function smoothMesh(rec, iters){
+  const geo=rec.mesh.geometry, posAttr=geo.attributes.position;
+  if(iters<=0){ posAttr.array.set(rec.origPos); posAttr.needsUpdate=true;
+    geo.attributes.normal.array.set(rec.origNrm); geo.attributes.normal.needsUpdate=true; return; }
+  const w=buildWeld(rec); let P=Float32Array.from(w.base), T=new Float32Array(P.length);
+  const taubin=(src,dst,f)=>{ for(let g=0;g<w.G;g++){ const ns=w.nbrArr[g], m=ns.length;
+      if(!m){ dst[3*g]=src[3*g];dst[3*g+1]=src[3*g+1];dst[3*g+2]=src[3*g+2]; continue; }
+      let ax=0,ay=0,az=0; for(let j=0;j<m;j++){ const k=ns[j]; ax+=src[3*k];ay+=src[3*k+1];az+=src[3*k+2]; }
+      ax/=m;ay/=m;az/=m;
+      dst[3*g]=src[3*g]+f*(ax-src[3*g]); dst[3*g+1]=src[3*g+1]+f*(ay-src[3*g+1]); dst[3*g+2]=src[3*g+2]+f*(az-src[3*g+2]); } };
+  for(let it=0;it<iters;it++){ taubin(P,T,0.5); taubin(T,P,-0.53); }   // λ then μ (anti-shrink)
+  const arr=posAttr.array, vg=w.vertToGroup, nv=arr.length/3;
+  for(let i=0;i<nv;i++){ const g=vg[i]; arr[3*i]=P[3*g];arr[3*i+1]=P[3*g+1];arr[3*i+2]=P[3*g+2]; }
+  posAttr.needsUpdate=true; rebuildSmoothNormals(rec);
+}
+function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); }
+$('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
+$('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
 patternUniforms.uWireWidth.value=+$('wireWidth').value; $('wireWVal').textContent=(+$('wireWidth').value).toFixed(1);
 $('patMode').addEventListener('change', e=>{ patternUniforms.uPatMode.value=+e.target.value; setOpacities(); });
@@ -1084,7 +1142,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
-  'coloredOp','grayOp','satCut','glass','ovCombine','ovColorB','ovAndOnly'];
+  'coloredOp','grayOp','satCut','glass','smooth','ovCombine','ovColorB','ovAndOnly'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;

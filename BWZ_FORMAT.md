@@ -90,6 +90,7 @@ Values are strings for sliders/inputs and booleans for checkboxes (both are acce
 ### Render / appearance
 | id | values | meaning |
 |----|--------|---------|
+| `smooth` | 0–12 | mesh smoothing (Taubin passes) — rounds faceted marching-cubes meshes without shrinking; 0 = original |
 | `surfStyle` | `Solid` `Flat shaded` `Wireframe` `Wireframe + fill` `Checkerboard` `Stripes` `Grid lines` `Dots` `Hatch` | surface render style |
 | `patScale` | number | pattern cell size |
 | `patStr` | 0–1 | pattern strength |
