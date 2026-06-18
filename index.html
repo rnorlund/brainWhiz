@@ -438,7 +438,7 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
 camera.position.set(0, 0, 320);
 
 const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true, alpha:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.98;
 app.appendChild(renderer.domElement);
@@ -460,6 +460,20 @@ const matcapTex = makeMatcap();
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
+
+// --- RENDER-ON-DEMAND ---
+// The scene is static most of the time, so we only call renderer.render() when
+// something actually changed (camera moved / a control changed / an animation is
+// running) instead of every frame. This keeps idle GPU usage at ~0%.
+let renderRequested = true;
+function requestRender(){ renderRequested = true; }
+// camera movement (drag, wheel, damping settle, auto-rotate) all fire 'change'
+controls.addEventListener('change', requestRender);
+// any UI interaction (sliders, selects, checkboxes, color pickers, buttons, canvas
+// pick) — capture phase so the flag is set before the specific handler mutates state,
+// and the next animation frame renders the updated scene.
+['input','change','click','dblclick','pointerdown'].forEach(ev =>
+  document.addEventListener(ev, requestRender, true));
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x202028, 0.9); scene.add(hemi);
@@ -640,6 +654,7 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   view([-1,0,0]);           // DEFAULT: left-hemisphere sagittal view
   home.copy(camera.position); homeTarget.copy(controls.target);
   document.getElementById('loader').style.display='none';
+  requestRender();   // meshes loaded async — render the initial scene
   if(window.__brainReady) window.__brainReady();   // signal scripting API
 }, (err)=>{
   document.getElementById('loader').innerHTML='<b>Failed to load model.</b><br>'+err;
@@ -1401,6 +1416,7 @@ function applyStatVals(r, name, which){
   else { overlay.fileA=name; $('taskMap').value=''; applyOverlay(r.vals, name); }
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
+  requestRender();   // overlay arrived async (FileReader / headless) — force a frame
 }
 function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
@@ -1462,6 +1478,7 @@ function resize(){
   const h = Math.max(10, window.innerHeight - top);
   cv.style.left = sb+'px'; cv.style.top = top+'px';
   renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+  requestRender();
 }
 window.addEventListener('resize',resize); resize();
 setTimeout(resize, 200);
@@ -1632,6 +1649,7 @@ function applyViewerCfg(cfg){
   last.forEach(id=>{ if(id in v) setControl(id,v[id]); });
   if(cfg.vis) showOnly(cfg.vis);
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
+  requestRender();
 }
 // draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)
 function drawCbar(x, cb, bx, by, W, H, txt){
@@ -1776,16 +1794,24 @@ const clock=new THREE.Clock();
 function tick(){
   requestAnimationFrame(tick);
   const dt=clock.getDelta();
+  const spinOn = $('spin').checked && !controls.autoRotate;
+  const pulseOn = connUniforms.uPulse.value>0.5;
+  // ongoing animations must keep rendering every frame
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
     setExplode(v);
   }
-  if($('spin').checked && !controls.autoRotate){ group.rotation.y += dt*0.12; }
-  if(connUniforms.uPulse.value>0.5) connUniforms.uTime.value += dt;
-  headlight.position.copy(camera.position);
-  controls.update();
-  renderer.render(scene,camera);
+  if(spinOn){ group.rotation.y += dt*0.12; }
+  if(pulseOn){ connUniforms.uTime.value += dt; }
+  if(continuous) renderRequested=true;
+  controls.update();   // cheap; emits 'change' -> requestRender while damping/auto-rotating
+  if(renderRequested){
+    renderRequested=false;
+    headlight.position.copy(camera.position);
+    renderer.render(scene,camera);
+  }
 }
 tick();
 </script>
