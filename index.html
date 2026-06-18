@@ -562,7 +562,7 @@ function colorFor(scheme, m, idx){
   }
 }
 let activeScheme = 'lobe';
-const overlay = {on:false, vals:null, name:'', valsB:null, nameB:'', combine:'none', volA:null, volB:null};   // value-based coloring state
+const overlay = {on:false, vals:null, name:'', valsB:null, nameB:'', combine:'none', volA:null, volB:null, volA_grid:null};   // value-based coloring state
 // ---- voxel slice-view state ----
 let sliceMode=false, sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
 function setSwatch(node, hex){
@@ -1292,7 +1292,9 @@ function initOverlayUI(){
   $('autoRange').addEventListener('click', ()=>{ autoRange(); recolorOverlay(); updateColorbar(); });
   $('clearOverlay').addEventListener('click', ()=>{ $('taskMap').value=''; $('statFile').value='';
     $('taskMapB').value=''; $('statFileB').value=''; $('ovCombine').value='none';
-    overlay.valsB=null; overlay.nameB=''; overlay.combine='none'; syncStyleRows(); applyScheme(activeScheme); });
+    overlay.valsB=null; overlay.nameB=''; overlay.combine='none';
+    overlay.volA=null; overlay.volB=null; overlay.volA_grid=null; tfceCache=null;
+    syncStyleRows(); applyScheme(activeScheme); if(sliceMode) sliceRenderAll(); });
   $('statFile').addEventListener('change', e=>loadStatFile(e,'A'));
   $('statFileB').addEventListener('change', e=>loadStatFile(e,'B'));
   window.updateColorbar=updateColorbar;
@@ -1530,7 +1532,13 @@ function mniWarning(r){
 }
 function applyStatVals(r, name, which){
   if(which==='B'){ overlay.fileB=name; overlay.volB=r.nii||null; $('taskMapB').value=''; applyOverlayB(r.vals, name); }
-  else { overlay.fileA=name; overlay.volA=r.nii||null; tfceCache=null; $('taskMap').value=''; applyOverlay(r.vals, name); }
+  else { overlay.fileA=name; overlay.volA=r.nii||null; tfceCache=null;
+    // keep the FINER grid: reslice up to the background grid only when the overlay is
+    // COARSER than it (never downsample a finer overlay — keep its native resolution).
+    const tvox = window.MNI152 ? Math.abs(window.MNI152.affine[0][0]) : 2;
+    const ovmin = r.nii ? Math.min(...r.nii.vox) : tvox;
+    overlay.volA_grid = (r.nii && window.MNI152 && ovmin >= tvox-0.1) ? resliceToTemplate(r.nii) : (r.nii||null);
+    $('taskMap').value=''; applyOverlay(r.vals, name); }
   if(sliceMode) sliceRenderAll();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
@@ -1972,14 +1980,25 @@ function ensureMNI(){
 }
 function statMax(vol){ if(!vol) return 0; if(vol._mx!=null) return vol._mx;
   let mx=0; const d=vol.data; for(let i=0;i<d.length;i++){ if(d[i]>mx) mx=d[i]; } return (vol._mx=mx); }
-function sliceSrc(){ return (sliceStat==='tfce' && tfceCache) ? tfceCache.vol : overlay.volA; }
+// reslice a loaded overlay onto the background (MNI template) grid, nearest-neighbor
+// (value-preserving, no smoothing). Gives a common grid for display + isotropic TFCE.
+function resliceToTemplate(vol){
+  const mni=ensureMNI(); if(!mni||!vol) return vol;
+  const [nx,ny,nz]=mni.dim, nxy=nx*ny, out=new Float32Array(nx*ny*nz);
+  for(let k=0;k<nz;k++) for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){
+    const w=mni.worldOf(i,j,k), v=vol.sampleMM(w[0],w[1],w[2]);
+    out[i+j*nx+k*nxy]=(v!==null&&isFinite(v))?v:0;
+  }
+  return makeVol(out, mni.dim.slice(), mni.M.slice(), mni.T.slice());
+}
+function sliceSrc(){ return (sliceStat==='tfce' && tfceCache) ? tfceCache.vol : (overlay.volA_grid||overlay.volA); }
 function sliceVmax(){ const s=sliceSrc(); return (sliceStat==='tfce' && tfceCache) ? tfceCache.max : statMax(s); }
 function sliceThreshAbs(){ return (+$('slThresh').value) * sliceVmax(); }
 
 // Threshold-Free Cluster Enhancement on the loaded volume's own grid (positive side).
 // out(v) = Σ_h  extent(v,h)^E · h^H · dh   (E=0.5, H=2) — enhances spatially-supported clusters.
 function computeTFCE(){
-  const vol=overlay.volA; if(!vol) return null;
+  const vol=overlay.volA_grid||overlay.volA; if(!vol) return null;   // TFCE in standard 2mm isotropic space
   const [nx,ny,nz]=vol.dim, n=nx*ny*nz, src=vol.data, nxy=nx*ny;
   let mx=0; for(let i=0;i<n;i++){ if(src[i]>mx) mx=src[i]; }
   if(mx<=0) return null;
