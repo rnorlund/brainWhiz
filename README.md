@@ -210,6 +210,11 @@ context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or h
 - Please cite the original atlas/NeuroQuery sources in any publication. To cite the tool, see
   [`CITATION.cff`](CITATION.cff).
 
+**DOI / archiving (Zenodo).** Tagged releases (e.g. [`v1.0`](https://github.com/rnorlund/brainWhiz/releases/tag/v1.0))
+are citable archives. To mint a permanent DOI, enable the repo in [Zenodo](https://zenodo.org/account/settings/github/)
+(GitHub login → flip the switch for `brainWhiz`), then publish/re-publish a release — Zenodo archives it and
+issues a DOI. Add that DOI to `CITATION.cff` (`doi:` field) and the badge here once issued.
+
 ## License
 
 © 2026 Roger Newman-Norlund. **Noncommercial use only** — licensed under
