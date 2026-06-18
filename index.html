@@ -115,7 +115,8 @@
   .pbCell .pbBtns button:hover{color:var(--accent)}
   .pbCell .pbLab{position:absolute;bottom:0;left:0;right:0;background:#000b;color:#fff;border:none;
     font-size:10px;padding:2px 4px;width:100%;text-align:center;outline:none}
-  .pbCell .pbLab::placeholder{color:#ffffff66}
+  .pbCell .pbLab::placeholder{color:#ffffff99}
+  .pbCell .pbLab:focus{background:var(--accent);color:#001; box-shadow:0 0 0 2px var(--accent)}
   .pbSliders{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px;color:var(--muted)}
   .pbSliders label{display:flex;flex-direction:column;gap:1px}
   .pbSliders input[type=range]{width:100%}
@@ -1627,14 +1628,17 @@ function pbRender(){
     const cell=document.createElement('div'); cell.className='pbCell';
     if(it && it.dataURL){
       cell.innerHTML=`<img src="${it.dataURL}">
-        <div class="pbBtns"><button class="pbEdit" title="restore these settings to the viewer">✎</button>
+        <div class="pbBtns"><button class="pbEdit" title="edit label">✎</button>
+        <button class="pbRestore" title="restore these settings to the viewer">⚙</button>
         <button class="pbRecap" title="recapture current view here">⟳</button>
         <button class="pbRm" title="remove">✕</button></div>
-        <input class="pbLab" value="${(it.label||'').replace(/"/g,'&quot;')}" placeholder="(no label)">`;
+        <input class="pbLab" value="${(it.label||'').replace(/"/g,'&quot;')}" placeholder="✎ click to add a label">`;
       cell.querySelector('.pbLab').addEventListener('input',e=>{ pbItems[i].label=e.target.value; });
       cell.querySelector('.pbLab').addEventListener('click',e=>e.stopPropagation());
       cell.querySelector('.pbRm').addEventListener('click',e=>{ e.stopPropagation(); pbItems[i]=null; pbRender(); });
-      cell.querySelector('.pbEdit').addEventListener('click',e=>{ e.stopPropagation(); if(it.cfg) applyViewerCfg(it.cfg); });
+      cell.querySelector('.pbEdit').addEventListener('click',e=>{ e.stopPropagation();
+        const inp=cell.querySelector('.pbLab'); inp.focus(); inp.select(); });   // pencil = edit the label text
+      cell.querySelector('.pbRestore').addEventListener('click',e=>{ e.stopPropagation(); if(it.cfg) applyViewerCfg(it.cfg); });
       cell.querySelector('.pbRecap').addEventListener('click',e=>{ e.stopPropagation(); pbCapture(i, it.label); });
     } else if(it){   // imported panel without a thumbnail yet (cross-atlas or needs a file)
       const otherAtlas = it.cfg && it.cfg.atlas!==ATLAS_ID;
