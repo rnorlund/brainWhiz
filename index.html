@@ -1114,20 +1114,31 @@ $('search').addEventListener('input',e=>{
 const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
 const hud=$('hud');
 let selected=null;
+function hudShow(m){ hud.querySelector('.t').textContent=m.name;
+  hud.querySelector('.s').textContent=`${m.abbr} · ${m.lobe} · ${m.hemi==='L'?'left':m.hemi==='R'?'right':'midline'} hemisphere`;
+  hud.style.opacity=1; }
 function setSelected(o){
   if(selected) selected.mesh.material.emissive.setHex(0x000000);
   selected=o;
+  document.querySelectorAll('.roi.sel').forEach(r=>r.classList.remove('sel'));
   if(o){ o.mesh.material.emissive.setHex(0x3366aa);
-    document.querySelectorAll('.roi.sel').forEach(r=>r.classList.remove('sel'));
     const r=document.querySelector(`.roi[data-node="${o.meta.node}"]`);
     if(r){ r.classList.add('sel'); r.scrollIntoView({block:'nearest'}); }
-  }
+    hudShow(o.meta);
+  } else hud.style.opacity=0;
+  requestRender();
 }
+// click the same region again (or empty space) to deselect
+function toggleSelect(o){ setSelected(o && o===selected ? null : o); }
 function focusROI(o){
-  setSelected(o);
-  const wp=new THREE.Vector3(); o.mesh.getWorldPosition(wp);
-  // include explosion offset
-  controls.target.copy(wp); controls.update();
+  toggleSelect(o);
+  if(selected){ const wp=new THREE.Vector3(); o.mesh.getWorldPosition(wp); controls.target.copy(wp); controls.update(); }
+}
+// find the region at an MNI-mm point (nearest sample within ~10mm), for slice clicks
+function regionAtMNI(mm){ let best=null, bd=110;
+  for(const o of meshes){ if(!o.mesh.visible) continue; const pts=SAMPLES[o.meta.id]; if(!pts) continue;
+    for(let p=0;p<pts.length;p+=3){ const dx=pts[p]-mm[0],dy=pts[p+1]-mm[1],dz=pts[p+2]-mm[2], d=dx*dx+dy*dy+dz*dz; if(d<bd){ bd=d; best=o; } } }
+  return best;
 }
 renderer.domElement.addEventListener('pointermove',ev=>{
   const r=renderer.domElement.getBoundingClientRect();
@@ -1135,12 +1146,9 @@ renderer.domElement.addEventListener('pointermove',ev=>{
   mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(mouse,camera);
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
-  if(hits.length){
-    const m=hits[0].object.userData.meta;
-    hud.querySelector('.t').textContent=m.name;
-    hud.querySelector('.s').textContent=`${m.abbr} · ${m.lobe} · ${m.hemi==='L'?'left':m.hemi==='R'?'right':'midline'} hemisphere`;
-    hud.style.opacity=1;
-  } else hud.style.opacity=0;
+  if(hits.length) hudShow(hits[0].object.userData.meta);
+  else if(selected) hudShow(selected.meta);          // keep showing the selected region
+  else hud.style.opacity=0;
 });
 renderer.domElement.addEventListener('click',ev=>{
   const r=renderer.domElement.getBoundingClientRect();
@@ -1148,7 +1156,7 @@ renderer.domElement.addEventListener('click',ev=>{
   mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(mouse,camera);
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
-  if(hits.length) setSelected(meshes.find(o=>o.mesh===hits[0].object));
+  toggleSelect(hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null);
 });
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
@@ -2355,7 +2363,8 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
       vp.py=drag.py + (e.clientY-drag.sy)/rect.height*cv.height/p.dh*p.vr;
       sliceRenderAll(); });
     const end=e=>{ if(!drag) return; const p=cv._plane, wasMoved=drag.moved; drag=null; try{cv.releasePointerCapture(e.pointerId);}catch(_){}
-      if(!wasMoved && p){ const m=cellToInplane(cv,e); if(m&&m.inside){ setCrossInplane(p.plane,m.h,m.v); sliceRenderAll(); } } };
+      if(!wasMoved && p){ const m=cellToInplane(cv,e); if(m&&m.inside){ setCrossInplane(p.plane,m.h,m.v); sliceRenderAll();
+        toggleSelect(regionAtMNI(sliceMM)); } } };   // name the region under the click (click again / elsewhere to clear)
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
   });
