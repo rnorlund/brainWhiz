@@ -47,6 +47,10 @@
   #sidebar{position:absolute;top:46px;left:0;bottom:0;width:316px;background:var(--panel);
     border-right:1px solid var(--line);overflow-y:auto;z-index:10}
   body.navhidden #sidebar{display:none}
+  #sidebarR{position:absolute;top:46px;right:0;bottom:0;width:300px;background:var(--panel);
+    border-left:1px solid var(--line);overflow-y:auto;z-index:10}
+  body.navhiddenR #sidebarR{display:none}
+  #sidebarR .sideRtitle{padding:10px 12px;font-weight:600;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line)}
   .acc{border-bottom:1px solid var(--line)}
   .acc>summary{cursor:pointer;padding:10px 12px;list-style:none;font-weight:600;font-size:12.5px;
     display:flex;align-items:center;gap:7px;position:sticky;top:0;background:var(--panel);z-index:1}
@@ -195,6 +199,8 @@
   <select id="presetSel" class="tbsel" style="width:118px"><option value="">—</option></select>
   <button id="savePreset" class="tbtn">💾</button>
   <button id="delPreset" class="tbtn">🗑</button>
+  <span class="tbsep"></span>
+  <button id="navToggleR" class="tbtn tbon" title="show / hide Look &amp; feel panel">🎨</button>
 </div>
 
 <!-- ===== LEFT ACCORDION (task-grouped; only Overlay open) ===== -->
@@ -248,7 +254,7 @@
     <div id="ovInfo" class="muted" style="font-size:11px"></div>
   </div></details>
 
-  <details class="acc"><summary><span class="chev">▸</span>✨ Appearance</summary><div class="accb">
+  <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance</summary><div class="accb">
     <div class="row"><label>Color scheme</label>
       <select id="scheme">
         <option value="lobe">By lobe / structure</option>
@@ -373,6 +379,8 @@
     </div>
   </div></details>
 </div>
+
+<div id="sidebarR"><div class="sideRtitle">🎨 Look &amp; feel</div></div>
 
 <div id="hud"><div class="t"></div><div class="s"></div></div>
 
@@ -1599,20 +1607,26 @@ const cv = renderer.domElement;
 cv.style.position='absolute';
 function resize(){
   const top = document.getElementById('topbar').getBoundingClientRect().height;   // toolbar
-  const navHidden = document.body.classList.contains('navhidden');
-  const sb = navHidden ? 0 : document.getElementById('sidebar').getBoundingClientRect().width;
-  const w = Math.max(10, window.innerWidth - sb);
+  const sbL = document.body.classList.contains('navhidden')  ? 0 : document.getElementById('sidebar').getBoundingClientRect().width;
+  const sbR = document.body.classList.contains('navhiddenR') ? 0 : document.getElementById('sidebarR').getBoundingClientRect().width;
+  const w = Math.max(10, window.innerWidth - sbL - sbR);
   const h = Math.max(10, window.innerHeight - top);
-  cv.style.left = sb+'px'; cv.style.top = top+'px';
+  cv.style.left = sbL+'px'; cv.style.top = top+'px';
   renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
-  const svq=$('sliceView'); if(svq){ svq.style.left=sb+'px'; svq.style.top=top+'px'; svq.style.width=w+'px'; svq.style.height=h+'px'; }
+  const svq=$('sliceView'); if(svq){ svq.style.left=sbL+'px'; svq.style.top=top+'px'; svq.style.width=w+'px'; svq.style.height=h+'px'; }
+  const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+16)+'px';                       // keep widgets clear of the right panel
+  const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+12)+'px';
   requestRender();
 }
+// move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
+document.getElementById('sidebarR').appendChild(document.getElementById('accAppearance'));
 window.addEventListener('resize',resize); resize();
 setTimeout(resize, 200);
 
-// hamburger: collapse the controls for a full-screen brain
-$('navToggle').addEventListener('click',()=>{ document.body.classList.toggle('navhidden'); resize(); });
+// hamburgers: collapse either side for a wider brain (both independent)
+$('navToggle').addEventListener('click',()=>{ document.body.classList.toggle('navhidden'); $('navToggle').classList.toggle('tbon'); resize(); if(sliceMode) sliceRenderAll(); });
+$('navToggleR').addEventListener('click',()=>{ document.body.classList.toggle('navhiddenR'); $('navToggleR').classList.toggle('tbon'); resize(); if(sliceMode) sliceRenderAll(); });
+$('navToggle').classList.add('tbon');
 // online / offline indicator (turns reddish when offline — CDN libs may be unavailable)
 function updateNet(){ const b=$('netBadge'), on=navigator.onLine, served=window.__served;
   if(served){  // vendored libs -> fully functional regardless of network
