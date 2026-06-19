@@ -178,14 +178,8 @@
         <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
         <span style="color:var(--muted)">Y</span><input type="range" id="slPosY" min="-126" max="90" step="1" value="0" style="flex:1">
         <span style="color:var(--muted)">Z</span><input type="range" id="slPosZ" min="-72" max="108" step="1" value="0" style="flex:1"></div>
-      <div class="row seg" id="slStatRow"><label>Statistic</label>
-        <button id="slRaw" class="sm on">Raw threshold</button>
-        <button id="slTfce" class="sm">TFCE clusters</button></div>
-      <div class="row" id="slThRow"><label id="slThLab">Threshold</label><input type="range" id="slThresh" min="0" max="1" step="0.005" value="0.25">
-        <span id="slThV" style="color:var(--txt);min-width:34px;text-align:right">—</span></div>
-      <div class="row"><label>Colormap</label>
-        <select id="slCmap" class="tbsel" style="font-size:11px"></select>
-        <label class="toggle" style="margin-left:6px"><input type="checkbox" id="slCross" checked> crosshair</label></div>
+      <div class="row"><span class="muted" style="font-size:10px;flex:1">Each 👁 overlay is drawn with its own color / colormap / threshold (set per overlay in the Overlays panel).</span>
+        <label class="toggle"><input type="checkbox" id="slCross" checked> crosshair</label></div>
     </div></div>
 </div>
 
@@ -250,7 +244,8 @@
         <select id="cthreshMode"><option value="frac">fraction of range</option><option value="raw">raw value (z, etc.)</option></select></div>
       <div class="row" style="gap:14px">
         <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
-        <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label></div>
+        <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
+        <label class="toggle" title="Threshold-Free Cluster Enhancement in the slice view (file overlays)"><input type="checkbox" id="ovTfce"> TFCE</label></div>
       <div class="ctl"><div class="lab"><span title="Overlay opacity when blended in the slice view">Slice opacity</span><span id="ovOpacityV">1.0</span></div>
         <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="1"></div>
     </div>
@@ -1265,7 +1260,7 @@ function syncStyleRows(){
   $('cmapInvert').parentElement.style.display = cm?'flex':'none';
 }
 // ---- overlay stack management ----
-function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'viridis',cmin:'0',cmax:'1',cthresh:'0',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1'}; }
+function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1'}; }
 function ovRender(){
   const L=$('ovList'); if(!L) return; L.innerHTML='';
   overlays.forEach((o,i)=>{ const d=document.createElement('div'); d.className='ovItem'+(i===selOv?' sel':'');
@@ -1286,6 +1281,7 @@ function ovApplySettings(o){ const s=o.s;
   $('cmin').value=s.cmin; $('cmax').value=s.cmax; $('cthreshMode').value=s.cthreshMode; $('cthresh').value=s.cthresh;
   $('cmapInvert').checked=s.cmapInvert; $('cmapAbs').checked=s.cmapAbs;
   $('ovOpacity').value=s.opacity; $('ovOpacityV').textContent=(+s.opacity).toFixed(1);
+  $('ovTfce').checked = !!o.tfce;
   $('taskMap').value = o.kind==='task'?(o.term||''):'';
 }
 function ovReadEditor(){ if(selOv<0) return; const o=overlays[selOv];
@@ -1339,6 +1335,10 @@ function initOverlayUI(){
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
   $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
+  $('ovTfce').addEventListener('change', ()=>{ if(selOv<0) return; const o=overlays[selOv]; o.tfce=$('ovTfce').checked;
+    if(o.tfce && !o.tfceCache && (o.volGrid||o.vol)){ $('ovInfo').textContent='computing TFCE…';
+      setTimeout(()=>{ o.tfceCache=computeTFCE(o.volGrid||o.vol); $('ovInfo').textContent=o.tfceCache?(o.name+' · TFCE'):'no positive values to enhance'; if(sliceMode) sliceRenderAll(); },20);
+    } else if(sliceMode) sliceRenderAll(); });
   $('autoRange').addEventListener('click', ()=>edited(autoRange));
   $('ovAddTask').addEventListener('click', ()=>{ ovAdd('task'); ovSelect(selOv); $('taskMap').focus(); });
   $('ovAddFile').addEventListener('click', ()=>{ ovAdd('file'); ovSelect(selOv); $('statFile').value=''; $('statFile').click(); });
@@ -1358,9 +1358,9 @@ function applyOverlay(valsObj, name){   // a task map chosen for the selected ov
   if(selOv<0) ovAdd('task');
   const o=overlays[selOv]; o.kind='task'; o.term=name; o.vals=valsObj; o.vol=null; o.volGrid=null;
   if(/^Overlay \d+$/.test(o.name)) o.name=name;              // adopt the term as the name until renamed
-  $('ovTaskRow').style.display='flex'; $('ovName').value=o.name;
+  ovApplySettings(o); $('ovTaskRow').style.display='flex';
   overlay.on=true; overlay.vals=valsObj; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
-  autoRange(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
+  autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
 }
 const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
 const _gray=new THREE.Color(NEUTRAL);
@@ -1534,9 +1534,9 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   // keep the FINER grid: reslice up to the background grid only when the overlay is COARSER (never downsample)
   const tvox = window.MNI152 ? Math.abs(window.MNI152.affine[0][0]) : 2, ovmin = r.nii ? Math.min(...r.nii.vox) : tvox;
   o.volGrid = (r.nii && window.MNI152 && ovmin >= tvox-0.1) ? resliceToTemplate(r.nii) : (r.nii||null);
-  overlay.on=true; overlay.vals=o.vals; overlay.name=o.name; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; tfceCache=null;
-  $('ovTaskRow').style.display='none'; $('ovName').value=o.name; $('taskMap').value='';
-  autoRange(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
+  overlay.on=true; overlay.vals=o.vals; overlay.name=o.name; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; tfceCache=null; o.tfceCache=null; o.volStats=null;
+  ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
+  autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
   if(sliceMode) sliceRenderAll();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
@@ -2045,14 +2045,31 @@ function resliceToTemplate(vol){
   }
   return makeVol(out, mni.dim.slice(), mni.M.slice(), mni.T.slice());
 }
-function sliceSrc(){ return (sliceStat==='tfce' && tfceCache) ? tfceCache.vol : (overlay.volA_grid||overlay.volA); }
-function sliceVmax(){ const s=sliceSrc(); return (sliceStat==='tfce' && tfceCache) ? tfceCache.max : statMax(s); }
-function sliceThreshAbs(){ return (+$('slThresh').value) * sliceVmax(); }
+function hex2rgb(h){ h=(h||'#888888').replace('#',''); return [parseInt(h.slice(0,2),16)||0,parseInt(h.slice(2,4),16)||0,parseInt(h.slice(4,6),16)||0]; }
+// overlays drawn in the slice view: visible + has a sampleable volume (file overlays)
+function sliceOverlays(){ return overlays.filter(o=>o.visible && (o.volGrid||o.vol)); }
+// robust positive-side max of an overlay's VOXEL values (99th pct), cached — slice
+// thresholding/scaling must use voxel stats, not the per-ROI means used for the 3D mesh.
+function ovVolStats(o){ if(o.volStats) return o.volStats;
+  const vol=o.volGrid||o.vol; if(!vol) return {hi:1};
+  const d=vol.data, arr=[]; for(let i=0;i<d.length;i++){ const v=d[i]; if(v>0&&isFinite(v)) arr.push(v); }
+  if(!arr.length) return (o.volStats={hi:1});
+  arr.sort((a,b)=>a-b); return (o.volStats={ hi: arr[Math.floor(arr.length*0.99)]||arr[arr.length-1]||1 });
+}
+// per-overlay slice draw parameters (its own colormap/color/threshold/TFCE), range based on voxels
+function ovSliceParams(o){ const s=o.s, raw=(s.cthreshMode==='raw');
+  let src, hi;
+  if(o.tfce){ if(!o.tfceCache) o.tfceCache=computeTFCE(o.volGrid||o.vol);
+    src=o.tfceCache?o.tfceCache.vol:(o.volGrid||o.vol); hi=o.tfceCache?o.tfceCache.max:1; }
+  else { src=o.volGrid||o.vol; hi=ovVolStats(o).hi; }
+  hi=hi||1e-6; const thr = raw ? +s.cthresh : (+s.cthresh)*hi;   // threshold = fraction of robust max (base 0)
+  return { src, lo:0, span:hi, thr, abs:s.cmapAbs, invert:s.cmapInvert, style:s.style, color:hex2rgb(s.color), cmap:s.cmap, opacity:+s.opacity };
+}
 
-// Threshold-Free Cluster Enhancement on the loaded volume's own grid (positive side).
+// Threshold-Free Cluster Enhancement on a volume's grid (positive side).
 // out(v) = Σ_h  extent(v,h)^E · h^H · dh   (E=0.5, H=2) — enhances spatially-supported clusters.
-function computeTFCE(){
-  const vol=overlay.volA_grid||overlay.volA; if(!vol) return null;   // TFCE in standard 2mm isotropic space
+function computeTFCE(vol){
+  if(!vol) return null;   // TFCE in standard 2mm isotropic space (the resliced grid)
   const [nx,ny,nz]=vol.dim, n=nx*ny*nz, src=vol.data, nxy=nx*ny;
   let mx=0; for(let i=0;i<n;i++){ if(src[i]>mx) mx=src[i]; }
   if(mx<=0) return null;
@@ -2101,12 +2118,21 @@ function renderPlane(cv, plane){
   const sc=Math.min(W/hr,H/vr), dw=Math.max(1,Math.round(hr*sc)), dh=Math.max(1,Math.round(vr*sc));
   const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
   const img=ctx.createImageData(dw,dh), D=img.data;
-  const src=sliceSrc(), cmap=$('slCmap').value||'hot', thr=sliceThreshAbs(), vmx=sliceVmax();
+  const ovs=sliceOverlays().map(ovSliceParams);   // each blended in its own color/threshold
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
-      const g=mni.sampleMM(w[0],w[1],w[2]); let r=g||0,gg=g||0,bb=g||0;
-      if(src){ const v=src.sampleMM(w[0],w[1],w[2]);
-        if(v!==null&&isFinite(v)&&v>thr&&vmx>thr){ const col=sampleCmap(cmap,(v-thr)/(vmx-thr)); r=col[0]*255;gg=col[1]*255;bb=col[2]*255; } }
+      const g=mni.sampleMM(w[0],w[1],w[2])||0; let r=g,gg=g,bb=g;
+      for(const p of ovs){ const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
+        const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue;
+        let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
+        let cr,cg,cb;
+        if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; }
+        else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
+        // alpha ramps from the threshold up: weak voxels stay translucent (anatomy shows), strong = opaque
+        let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp;
+        const a=p.opacity*(0.2+0.8*ramp);
+        r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
+      }
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
   }}
   ctx.putImageData(img,ox,oy);
@@ -2123,12 +2149,9 @@ function sliceRenderAll(){
   else { renderPlane($('slSag'),'sag'); renderPlane($('slCor'),'cor'); renderPlane($('slAxi'),'axi'); }
   syncPosSliders();
   $('slCoord').textContent=`MNI ${sliceMM.map(v=>Math.round(v)).join(', ')} mm`;
+  const nvis = sliceOverlays().length;
   $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
-    : (overlay.volA?(overlay.name||'loaded map'):'— load a stat .nii —');
-  const statOn = sliceKind==='voxel';
-  $('slStatRow').style.opacity=$('slThRow').style.opacity = statOn?'1':'0.4';
-  $('slThV').textContent = (statOn && overlay.volA) ? (sliceThreshAbs()).toFixed(sliceStat==='tfce'?0:2) : '—';
-  $('slThLab').textContent = sliceStat==='tfce' ? 'TFCE cutoff' : 'Threshold';
+    : (nvis ? nvis+' overlay'+(nvis>1?'s':'') : '— add/show a .nii overlay —');
   try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true); }catch(e){}
 }
 function setSliceMode(on){
@@ -2164,14 +2187,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   vp.z=nz; vp.px=(m.h-(m.h-cH)*ratio)-bhc; vp.py=(m.v-(m.v-cV)*ratio)-bvc;
   if(vp.z<=1.001){ vp.z=1; vp.px=0; vp.py=0; }           // snap back to full view
   sliceRenderAll(); }
-// populate slice colormap, defaulting to a hot-style map
 (function initSliceUI(){
-  const sel=$('slCmap'); ['hot','fire','turbo','jet','viridis','inferno','plasma','magma','cividis']
-    .forEach(k=>{ if(CMAPS[k]){ const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o); } });
-  for(const k of Object.keys(CMAPS)){ if([...sel.options].some(o=>o.value===k)) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o); }
-  sel.value = CMAPS.hot?'hot':sel.options[0]?.value;
-  sel.addEventListener('change', sliceRenderAll);
-  $('slThresh').addEventListener('input', sliceRenderAll);
   $('slCross').addEventListener('change', sliceRenderAll);
   $('modeMesh').addEventListener('click', ()=>setSliceMode(false));
   $('modeSlice').addEventListener('click', ()=>setSliceMode(true));
@@ -2179,14 +2195,6 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); sliceRenderAll(); });
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
   let _slrz; window.addEventListener('resize', ()=>{ if(sliceMode){ clearTimeout(_slrz); _slrz=setTimeout(sliceRenderAll,120); } });
-  $('slRaw').addEventListener('click', ()=>{ sliceStat='raw'; $('slRaw').classList.add('on'); $('slTfce').classList.remove('on'); sliceRenderAll(); });
-  $('slTfce').addEventListener('click', ()=>{
-    if(!overlay.volA){ alert('Load a stat .nii first (Overlay panel) to compute TFCE.'); return; }
-    $('slTfce').textContent='⏳ TFCE…';
-    setTimeout(()=>{ try{ if(!tfceCache) tfceCache=computeTFCE(); }finally{ $('slTfce').textContent='TFCE clusters'; }
-      if(!tfceCache){ alert('No positive values to enhance.'); return; }
-      sliceStat='tfce'; $('slTfce').classList.add('on'); $('slRaw').classList.remove('on'); sliceRenderAll(); }, 30);
-  });
   ['slSag','slCor','slAxi'].forEach(id=>{ const cv=$(id);
     cv.addEventListener('wheel', e=>sliceWheel(cv,e), {passive:false});
     let drag=null;
