@@ -14,7 +14,8 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 - **6 bundled atlases**, switchable from a dropdown — JHU, AAL, Brodmann, AICHA, Catani, Fox.
 - **Every ROI is its own 3D object** — explode, rotate, isolate, recolor, fade.
-- **Functional / statistical overlays** — 20 baked NeuroQuery task maps *or* load your own MNI `.nii/.nii.gz`; regions colored by their mean value.
+- **Multiple overlays at once** — a renameable overlay stack (task maps *and* your own MNI `.nii/.nii.gz`), each with its own color / colormap / threshold; one drives the 3D brain, all blend in the slice/mosaic views.
+- **Three view modes** — **3D mesh**, **ortho slices** (axial · sagittal · coronal + 3D, voxel heatmap *or* solid mesh cross-sections), and **mosaic / lightbox** (evenly-spaced slices tiled like a journal figure), with **TFCE** cluster enhancement.
 - **28 colormaps** (perceptual + colorblind-safe + diverging) and a "gray brain + one color" activation style.
 - **DTI structural connectivity** averaged across 293 ABC participants — cylinders sized by tract strength, colormapped, with optional **pulsing flow**.
 - **Figure tooling** — an in-app panel builder *and* a scriptable headless montage pipeline for reproducible multi-panel figures.
@@ -71,7 +72,9 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 
 **Coloring** — schemes: by lobe, hemisphere, rainbow, random, single; or **color by value** (overlay) with 28 colormaps. Atlases whose labels don't map to lobes (e.g. Brodmann) auto-default to a distinct per-ROI scheme.
 
-**Overlays** — pick a baked **NeuroQuery** task term, or load an MNI `.nii/.nii.gz`; each ROI is colored by its **mean value** (sampled from ~180 MNI points/ROI). Style = *gray brain + one color* (activation pops) or *full colormap*; editable range, threshold, invert, |abs|, live colorbar.
+**Overlays** — build a stack of renameable overlays (each a baked **NeuroQuery** term or your own MNI `.nii/.nii.gz`). On the 3D mesh, the **active** overlay colors each ROI by its **mean value** (style = *gray brain + one color* or *full colormap*; editable range, threshold, invert, |abs|, live colorbar). In **Slices** and **Mosaic**, every visible overlay is **blended** in its own color/colormap/threshold over the MNI152 template (voxel-accurate, anatomy shows through), with optional **TFCE** cluster enhancement per overlay.
+
+**Slices & Mosaic** — ortho viewer (axial/sagittal/coronal + 3D, click/drag to navigate, per-plane zoom; voxel heatmap or solid mesh cross-sections) and a publication-style **mosaic / lightbox** of evenly-spaced slices (choose plane, count, columns). Drop either into a figure panel.
 
 **Connectivity** — averaged DTI streamline strength; cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection.
 
@@ -168,10 +171,10 @@ Ready-to-run recipes in [`examples/`](examples/) + shareable sample stat maps:
 
 | file | what it makes |
 |------|----------------|
-| [`example.bwz`](example.bwz) | 1×2: motor + motor−language |
-| [`examples/fig_tasks_2x2.bwz`](examples/fig_tasks_2x2.bwz) | 2×2 of task maps & a conjunction (no files needed) |
-| [`examples/fig_files.bwz`](examples/fig_files.bwz) | loads `examples/neuroquery_*.nii.gz` (run with `--root examples`) |
-| `examples/neuroquery_{motor,language,working_memory}.nii.gz` | sample MNI stat maps to drag into the **Stat .nii** loader |
+| [`example.bwz`](example.bwz) | 1×2: motor + language (3D meshes) |
+| [`examples/fig_tasks_2x2.bwz`](examples/fig_tasks_2x2.bwz) | 2×2 of task maps (no files needed) |
+| [`examples/fig_files.bwz`](examples/fig_files.bwz) | multi-overlay slice blend — motor (red) + language (blue); run with `--root examples` |
+| `examples/neuroquery_{motor,language,working_memory}.nii.gz` | sample MNI stat maps to load as overlays |
 
 ```bash
 node make_figure.mjs examples/fig_tasks_2x2.bwz --out tasks.png
