@@ -27,6 +27,9 @@
   .tbtn:hover{border-color:var(--accent)}
   .tbtn.tbon{background:var(--accent);color:#001;border-color:var(--accent);font-weight:600}
   /* ---- voxel slice view ---- */
+  #mosaicView{position:absolute;display:none;background:#05070b;z-index:8}
+  #mosaicView.on{display:block}
+  #mosaicView canvas{width:100%;height:100%;display:block}
   #sliceView{position:absolute;display:none;background:#05070b;z-index:8}
   #sliceView.on{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px}
   #sliceView .sl{position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
@@ -163,6 +166,7 @@
 </head>
 <body>
 <div id="app"></div>
+<div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
   <div class="sl" data-plane="sag"><span class="tag">Sagittal</span><canvas id="slSag"></canvas></div>
   <div class="sl" data-plane="cor"><span class="tag">Coronal</span><canvas id="slCor"></canvas></div>
@@ -171,15 +175,26 @@
     <div id="sliceCtl">
       <div class="row"><label>Map</label><span id="slMapName" style="color:var(--txt)">—</span>
         <span style="flex:1"></span><span id="slCoord" style="color:var(--muted)"></span></div>
-      <div class="row seg"><label>Render</label>
+      <div class="row seg" id="slKindRow"><label>Render</label>
         <button id="slKindVox" class="sm on">Voxel heatmap</button>
         <button id="slKindMesh" class="sm">Mesh regions</button></div>
-      <div class="row"><label>Slice</label>
-        <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
-        <span style="color:var(--muted)">Y</span><input type="range" id="slPosY" min="-126" max="90" step="1" value="0" style="flex:1">
-        <span style="color:var(--muted)">Z</span><input type="range" id="slPosZ" min="-72" max="108" step="1" value="0" style="flex:1"></div>
-      <div class="row"><span class="muted" style="font-size:10px;flex:1">Each 👁 overlay is drawn with its own color / colormap / threshold (set per overlay in the Overlays panel).</span>
-        <label class="toggle"><input type="checkbox" id="slCross" checked> crosshair</label></div>
+      <div id="orthoCtl">
+        <div class="row"><label>Slice</label>
+          <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
+          <span style="color:var(--muted)">Y</span><input type="range" id="slPosY" min="-126" max="90" step="1" value="0" style="flex:1">
+          <span style="color:var(--muted)">Z</span><input type="range" id="slPosZ" min="-72" max="108" step="1" value="0" style="flex:1"></div>
+        <div class="row"><span class="muted" style="font-size:10px;flex:1">Each 👁 overlay uses its own color / colormap / threshold (set per overlay above).</span>
+          <label class="toggle"><input type="checkbox" id="slCross" checked> crosshair</label></div>
+      </div>
+      <div id="mosaicCtl" style="display:none">
+        <div class="row seg"><label>Plane</label>
+          <button class="sm mpbtn on" data-mp="axi">Axial</button>
+          <button class="sm mpbtn" data-mp="cor">Coronal</button>
+          <button class="sm mpbtn" data-mp="sag">Sagittal</button></div>
+        <div class="row"><label>Slices</label><input type="range" id="mosN" min="4" max="48" step="1" value="16" style="flex:1"><span id="mosNV" style="min-width:22px;text-align:right">16</span></div>
+        <div class="row"><label>Columns</label><input type="range" id="mosCols" min="1" max="10" step="1" value="6" style="flex:1"><span id="mosColsV" style="min-width:22px;text-align:right">6</span></div>
+        <div class="row"><label class="toggle"><input type="checkbox" id="mosLabels" checked> show coordinates</label></div>
+      </div>
     </div></div>
 </div>
 
@@ -191,7 +206,8 @@
   <span id="netBadge" class="netbadge" title="connection mode">● online</span>
   <span style="flex:1"></span>
   <button id="modeMesh" class="tbtn tbon" title="3D mesh view">🧠 Mesh</button>
-  <button id="modeSlice" class="tbtn" title="voxel ortho-slice view (needs a loaded stat .nii)">🔪 Slices</button>
+  <button id="modeSlice" class="tbtn" title="ortho slice view (axial · sagittal · coronal + 3D)">🔪 Slices</button>
+  <button id="modeMosaic" class="tbtn" title="mosaic / lightbox: evenly-spaced slices tiled in one figure">▦ Mosaic</button>
   <span class="tbsep"></span>
   <button id="vSide" class="tbtn">Left</button>
   <button id="vTop" class="tbtn">Top</button>
@@ -579,7 +595,8 @@ const overlay = {on:false, vals:null, name:'', volA:null, volA_grid:null};   // 
 let overlays=[], selOv=-1;          // overlay stack; selected = active in 3D
 const OVCOLORS=['#ff3b30','#1f77b4','#2ca02c','#ff7f0e','#9467bd','#17becf','#e377c2','#bcbd22'];
 // ---- voxel slice-view state ----
-let sliceMode=false, sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
+let sliceMode=false, mosaicMode=false, mosaicPlane='axi', sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
+function refreshSliceViews(){ if(sliceMode) sliceRenderAll(); else if(mosaicMode) renderMosaic(); }
 function setSwatch(node, hex){
   const sw = document.querySelector(`.swatch[data-node="${node}"]`);
   if(sw){ sw.style.background = hex; sw.querySelector('input').value = hex; }
@@ -1272,7 +1289,7 @@ function ovRender(){
     d.querySelector('.ovnm').addEventListener('click',()=>ovSelect(i));
     d.querySelector('.ovdot').addEventListener('click',()=>ovSelect(i));
     const cb=d.querySelector('input'); cb.addEventListener('click',e=>e.stopPropagation());
-    cb.addEventListener('change',e=>{ o.visible=e.target.checked; if(sliceMode) sliceRenderAll(); });
+    cb.addEventListener('change',e=>{ o.visible=e.target.checked; refreshSliceViews(); });
     d.querySelector('.ovx').addEventListener('click',e=>{ e.stopPropagation(); ovRemove(i); });
     L.appendChild(d); });
 }
@@ -1294,14 +1311,14 @@ function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overl
   ovApplySettings(o); syncStyleRows(); syncThreshRange();
   $('ovEditor').style.display='block'; $('ovTaskRow').style.display = o.kind==='task'?'flex':'none';
   if(o.vals) recolorOverlay(); else applyScheme(activeScheme);
-  updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
+  updateColorbar(); ovRender(); refreshSliceViews();
 }
 function ovAdd(kind){ const s=ovDefaults(); s.color=OVCOLORS[overlays.length%OVCOLORS.length];
   overlays.push({name:'Overlay '+(overlays.length+1), kind, term:'', fileName:'', vals:null, vol:null, volGrid:null, visible:true, s});
   selOv=overlays.length-1; return overlays[selOv]; }
 function ovRemove(i){ overlays.splice(i,1);
   if(!overlays.length){ selOv=-1; overlay.on=false; overlay.vals=null; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
-    $('ovEditor').style.display='none'; applyScheme(activeScheme); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); return; }
+    $('ovEditor').style.display='none'; applyScheme(activeScheme); updateColorbar(); ovRender(); refreshSliceViews(); return; }
   ovSelect(Math.min(i, overlays.length-1));
 }
 function initOverlayUI(){
@@ -1317,13 +1334,13 @@ function initOverlayUI(){
   const tm=$('taskMap');
   const applyTask=()=>{ const t=tm.value.trim();
     if(selOv<0) ovAdd('task');
-    if(!t){ const o=overlays[selOv]; o.vals=null; o.term=''; overlay.vals=null; overlay.on=false; applyScheme(activeScheme); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); return; }
+    if(!t){ const o=overlays[selOv]; o.vals=null; o.term=''; overlay.vals=null; overlay.on=false; applyScheme(activeScheme); updateColorbar(); ovRender(); refreshSliceViews(); return; }
     if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'".'; return; }
     applyOverlay(NEURO.terms[t], t);
   };
   tm.addEventListener('change', applyTask);
   // editor controls all edit the SELECTED overlay, then recolor 3D + slices
-  const edited=(extra)=>{ ovReadEditor(); if(extra) extra(); if(overlay.on) recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); };
+  const edited=(extra)=>{ ovReadEditor(); if(extra) extra(); if(overlay.on) recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews(); };
   $('ovName').addEventListener('input', ()=>{ if(selOv>=0){ overlays[selOv].name=$('ovName').value; overlay.name=$('ovName').value; ovRender(); } });
   $('ovStyle').addEventListener('change', ()=>{ syncStyleRows(); edited(); });
   $('ovColor').addEventListener('input', ()=>edited());
@@ -1337,8 +1354,8 @@ function initOverlayUI(){
   $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
   $('ovTfce').addEventListener('change', ()=>{ if(selOv<0) return; const o=overlays[selOv]; o.tfce=$('ovTfce').checked;
     if(o.tfce && !o.tfceCache && (o.volGrid||o.vol)){ $('ovInfo').textContent='computing TFCE…';
-      setTimeout(()=>{ o.tfceCache=computeTFCE(o.volGrid||o.vol); $('ovInfo').textContent=o.tfceCache?(o.name+' · TFCE'):'no positive values to enhance'; if(sliceMode) sliceRenderAll(); },20);
-    } else if(sliceMode) sliceRenderAll(); });
+      setTimeout(()=>{ o.tfceCache=computeTFCE(o.volGrid||o.vol); $('ovInfo').textContent=o.tfceCache?(o.name+' · TFCE'):'no positive values to enhance'; refreshSliceViews(); },20);
+    } else refreshSliceViews(); });
   $('autoRange').addEventListener('click', ()=>edited(autoRange));
   $('ovAddTask').addEventListener('click', ()=>{ ovAdd('task'); ovSelect(selOv); $('taskMap').focus(); });
   $('ovAddFile').addEventListener('click', ()=>{ ovAdd('file'); ovSelect(selOv); $('statFile').value=''; $('statFile').click(); });
@@ -1360,7 +1377,7 @@ function applyOverlay(valsObj, name){   // a task map chosen for the selected ov
   if(/^Overlay \d+$/.test(o.name)) o.name=name;              // adopt the term as the name until renamed
   ovApplySettings(o); $('ovTaskRow').style.display='flex';
   overlay.on=true; overlay.vals=valsObj; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
-  autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
+  autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
 }
 const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
 const _gray=new THREE.Color(NEUTRAL);
@@ -1537,7 +1554,7 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   overlay.on=true; overlay.vals=o.vals; overlay.name=o.name; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; tfceCache=null; o.tfceCache=null; o.volStats=null;
   ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
-  if(sliceMode) sliceRenderAll();
+  refreshSliceViews();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
   requestRender();   // overlay arrived async (FileReader / headless) — force a frame
@@ -1602,10 +1619,10 @@ function resize(){
   const h = Math.max(10, window.innerHeight - top);
   cv.style.left = sbL+'px'; cv.style.top = top+'px';
   renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
-  const svq=$('sliceView'); if(svq){ svq.style.left=sbL+'px'; svq.style.top=top+'px'; svq.style.width=w+'px'; svq.style.height=h+'px'; }
+  for(const vid of ['sliceView','mosaicView']){ const q=$(vid); if(q){ q.style.left=sbL+'px'; q.style.top=top+'px'; q.style.width=w+'px'; q.style.height=h+'px'; } }
   const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+16)+'px';                       // keep widgets clear of the right panel
   const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+12)+'px';
-  const pbq=$('panelBuilder'); if(pbq) pbq.style.right=(sbR+10)+'px';
+  const pbq=$('panelBuilder'); if(pbq && !window.pbMoved) pbq.style.right=(sbR+10)+'px';
   requestRender();
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
@@ -1616,8 +1633,8 @@ window.addEventListener('resize',resize); resize();
 setTimeout(resize, 200);
 
 // hamburgers: collapse either side for a wider brain (both independent)
-$('navToggle').addEventListener('click',()=>{ document.body.classList.toggle('navhidden'); $('navToggle').classList.toggle('tbon'); resize(); if(sliceMode) sliceRenderAll(); });
-$('navToggleR').addEventListener('click',()=>{ document.body.classList.toggle('navhiddenR'); $('navToggleR').classList.toggle('tbon'); resize(); if(sliceMode) sliceRenderAll(); });
+$('navToggle').addEventListener('click',()=>{ document.body.classList.toggle('navhidden'); $('navToggle').classList.toggle('tbon'); resize(); refreshSliceViews(); });
+$('navToggleR').addEventListener('click',()=>{ document.body.classList.toggle('navhiddenR'); $('navToggleR').classList.toggle('tbon'); resize(); refreshSliceViews(); });
 $('navToggle').classList.add('tbon');
 // online / offline indicator (turns reddish when offline — CDN libs may be unavailable)
 function updateNet(){ const b=$('netBadge'), on=navigator.onLine, served=window.__served;
@@ -1758,12 +1775,13 @@ function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
   const A = $('taskMap').value || (ov && ov.kind==='file' ? ov.fileName : '') || '';
-  const slice = sliceMode;
-  const auto = slice ? `${atlasName} · slices (MNI ${sliceMM.map(v=>Math.round(v)).join(', ')})`
+  const auto = mosaicMode ? `${atlasName} · ${mosaicPlane} mosaic`
+    : sliceMode ? `${atlasName} · slices (MNI ${sliceMM.map(v=>Math.round(v)).join(', ')})`
     : (A ? `${atlasName} · ${A.replace(/\.nii(\.gz)?$/i,'')}` : `${atlasName} · ${$('scheme').value}`);
-  pbItems[i] = { dataURL: slice ? captureSlices2x2() : window.brainAPI.renderTo(900,680,true),
-    label: keepLabel!==undefined ? keepLabel : auto,
-    cbar: slice ? null : window.brainAPI.colorbar(), cfg: captureViewerCfg() };
+  const dataURL = mosaicMode ? $('mosaicCanvas').toDataURL('image/png')
+    : sliceMode ? captureSlices2x2() : window.brainAPI.renderTo(900,680,true);
+  pbItems[i] = { dataURL, label: keepLabel!==undefined ? keepLabel : auto,
+    cbar: (sliceMode||mosaicMode) ? null : window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
 }
 // snapshot the full viewer state for a tile so it can be restored/edited later
@@ -1919,6 +1937,17 @@ async function bwzImport(file){
 $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
   p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender(); });
 $('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none');
+// drag the panel builder by its header so it doesn't cover the figure you're capturing
+(function(){ const pb=$('panelBuilder'); let d=null;
+  pb.querySelector('.pbHead').addEventListener('pointerdown',e=>{ if(e.target.closest('button,select,input')) return;
+    const r=pb.getBoundingClientRect(); d={dx:e.clientX-r.left, dy:e.clientY-r.top}; window.pbMoved=true; pb.style.right='auto';
+    try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}; e.preventDefault(); });
+  window.addEventListener('pointermove',e=>{ if(!d) return; const w=pb.offsetWidth, h=pb.offsetHeight;
+    pb.style.left=Math.max(0,Math.min(window.innerWidth-w, e.clientX-d.dx))+'px';
+    pb.style.top =Math.max(46,Math.min(window.innerHeight-40, e.clientY-d.dy))+'px'; });
+  window.addEventListener('pointerup',()=>{ d=null; });
+  pb.querySelector('.pbHead').style.cursor='move';
+})();
 $('pbGrid').addEventListener('change',e=>{ const [r,c]=e.target.value.split('x').map(Number); $('pbRows').value=r; $('pbCols').value=c; pbRender(); });
 $('pbRows').addEventListener('input',pbRender); $('pbCols').addEventListener('input',pbRender);
 $('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
@@ -2154,6 +2183,56 @@ function renderPlane(cv, plane){
     ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
   cv._plane={plane,ox,oy,dw,dh,hmin,hr,vmax,vr,mesh:false};
 }
+// ---- MOSAIC / lightbox: evenly-spaced slices along one axis tiled in one figure ----
+function templSignalRange(mni){ if(mni._sr) return mni._sr;
+  const [nx,ny,nz]=mni.dim,d=mni.data,nxy=nx*ny, L={i:[1e9,-1],j:[1e9,-1],k:[1e9,-1]};
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){ if(d[i+j*nx+k*nxy]>12){
+    if(i<L.i[0])L.i[0]=i; if(i>L.i[1])L.i[1]=i; if(j<L.j[0])L.j[0]=j; if(j>L.j[1])L.j[1]=j; if(k<L.k[0])L.k[0]=k; if(k>L.k[1])L.k[1]=k; } }
+  return (mni._sr=L);
+}
+// world-mm range along the fixed axis that contains brain (trimmed a little off the ends)
+function mosaicRange(plane){ const mni=ensureMNI(), L=templSignalRange(mni);
+  const ci=(L.i[0]+L.i[1])>>1, cj=(L.j[0]+L.j[1])>>1, ck=(L.k[0]+L.k[1])>>1, pad=2;
+  const get=(ax,a,b)=>{ const w0=mni.worldOf(...ax(a)), w1=mni.worldOf(...ax(b)); const c=plane==='axi'?2:plane==='cor'?1:0;
+    return [Math.min(w0[c],w1[c]), Math.max(w0[c],w1[c])]; };
+  if(plane==='axi') return get(t=>[ci,cj,t], L.k[0]+pad, L.k[1]-pad);
+  if(plane==='cor') return get(t=>[ci,t,ck], L.j[0]+pad, L.j[1]-pad);
+  return get(t=>[t,cj,ck], L.i[0]+pad, L.i[1]-pad);
+}
+function worldAt(plane,h,v,fixed){ if(plane==='sag') return [fixed,h,v]; if(plane==='cor') return [h,fixed,v]; return [h,v,fixed]; }
+function renderMosaic(){
+  if(!mosaicMode) return; const mni=ensureMNI(); if(!mni) return;
+  const cv=$('mosaicCanvas'), host=$('mosaicView'), dpr=Math.min(window.devicePixelRatio||1,2);
+  const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
+  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+  const plane=mosaicPlane, b=baseInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
+  const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round(3*dpr);
+  let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
+  if(rows*tileH+(rows+1)*gap>H){ tileH=(H-(rows+1)*gap)/rows; tileW=tileH*(hr/vr); }
+  const ovs=sliceOverlays().map(ovSliceParams);
+  const gridW=cols*tileW+(cols+1)*gap, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
+  const gridH=rows*tileH+(rows+1)*gap, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
+  for(let s=0;s<N;s++){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
+    const col=s%cols, row=(s/cols)|0, dw=Math.max(1,Math.round(tileW)), dh=Math.max(1,Math.round(tileH));
+    const dx=Math.round(startX+gap+col*(tileW+gap)), dy=Math.round(startY+gap+row*(tileH+gap));
+    const img=ctx.createImageData(dw,dh), D=img.data;
+    for(let py=0;py<dh;py++){ const vW=b.vmax-(py/(dh-1||1))*vr;
+      for(let px=0;px<dw;px++){ const hW=b.hmin+(px/(dw-1||1))*hr, w=worldAt(plane,hW,vW,fixed);
+        const g=mni.sampleMM(w[0],w[1],w[2])||0; let r=g,gg=g,bb=g;
+        for(const p of ovs){ const vv=p.src.sampleMM(w[0],w[1],w[2]); if(vv===null||!isFinite(vv)) continue;
+          const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue;
+          let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
+          let cr,cg,cb; if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; } else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
+          let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp; const a=p.opacity*(0.2+0.8*ramp);
+          r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
+        }
+        const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
+      }}
+    ctx.putImageData(img,dx,dy);
+    if(labels){ ctx.fillStyle='rgba(220,230,245,.9)'; ctx.font=`${Math.round(10.5*dpr)}px system-ui`; ctx.textAlign='left'; ctx.textBaseline='bottom';
+      ctx.fillText(`${axL}=${Math.round(fixed)}`, dx+3*dpr, dy+dh-2*dpr); }
+  }
+}
 function syncPosSliders(){ $('slPosX').value=Math.round(sliceMM[0]); $('slPosY').value=Math.round(sliceMM[1]); $('slPosZ').value=Math.round(sliceMM[2]); }
 function sliceRenderAll(){
   if(!sliceMode) return;
@@ -2166,22 +2245,27 @@ function sliceRenderAll(){
     : (nvis ? nvis+' overlay'+(nvis>1?'s':'') : '— add/show a .nii overlay —');
   try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true); }catch(e){}
 }
-function setSliceMode(on){
-  sliceMode=on;
-  $('modeMesh').classList.toggle('tbon',!on); $('modeSlice').classList.toggle('tbon',on);
-  $('sliceView').classList.toggle('on',on);
-  const hint=document.querySelector('.hint'), zw=$('zoomWidget');
-  if(hint) hint.style.display=on?'none':''; if(zw) zw.style.display=on?'none':'';
+function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
+  sliceMode=(m==='slice'); mosaicMode=(m==='mosaic');
+  $('modeMesh').classList.toggle('tbon',m==='mesh'); $('modeSlice').classList.toggle('tbon',m==='slice'); $('modeMosaic').classList.toggle('tbon',m==='mosaic');
+  $('sliceView').classList.toggle('on',sliceMode); $('mosaicView').classList.toggle('on',mosaicMode);
+  // slice panel: ortho controls for Slices, mosaic controls for Mosaic
+  $('orthoCtl').style.display = sliceMode?'block':'none';
+  $('slKindRow').style.display = sliceMode?'flex':'none';
+  $('mosaicCtl').style.display = mosaicMode?'block':'none';
+  const hint=document.querySelector('.hint'), zw=$('zoomWidget'), off=(m!=='mesh');
+  if(hint) hint.style.display=off?'none':''; if(zw) zw.style.display=off?'none':'';
   resize();
-  if(on){ ensureMNI();
-    const acc=$('accSlices'); if(acc){ acc.open=true; if(document.body.classList.contains('navhidden')){ document.body.classList.remove('navhidden'); $('navToggle').classList.add('tbon'); } }
-    for(const k in sliceVP){ sliceVP[k].z=1; sliceVP[k].px=0; sliceVP[k].py=0; }   // start at full view
-    if(overlay.volA && (sliceMM[0]===0&&sliceMM[1]===0&&sliceMM[2]===0)){   // jump to peak of the map
+  if(m!=='mesh'){ ensureMNI();
+    const acc=$('accSlices'); if(acc){ acc.open=true; if(document.body.classList.contains('navhidden')){ document.body.classList.remove('navhidden'); $('navToggle').classList.add('tbon'); resize(); } } }
+  if(sliceMode){
+    for(const k in sliceVP){ sliceVP[k].z=1; sliceVP[k].px=0; sliceVP[k].py=0; }
+    if(overlay.volA && (sliceMM[0]===0&&sliceMM[1]===0&&sliceMM[2]===0)){   // jump to peak of the active map
       const v=overlay.volA, d=v.data; let bi=0,bv=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]>bv){bv=d[i];bi=i;} }
       const [nx,ny]=v.dim, nxy=nx*ny, k=(bi/nxy)|0, rr=bi-k*nxy, j=(rr/nx)|0, i=rr-j*nx; sliceMM=v.worldOf(i,j,k);
     }
-    requestAnimationFrame(sliceRenderAll);   // wait one frame so cells have layout dims
-  }
+    requestAnimationFrame(sliceRenderAll);
+  } else if(mosaicMode){ requestAnimationFrame(renderMosaic); }
 }
 // map a pointer event on a slice cell -> in-plane (h,v) world mm (works for both modes)
 function cellToInplane(cv,ev){ const p=cv._plane; if(!p) return null;
@@ -2201,12 +2285,19 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   sliceRenderAll(); }
 (function initSliceUI(){
   $('slCross').addEventListener('change', sliceRenderAll);
-  $('modeMesh').addEventListener('click', ()=>setSliceMode(false));
-  $('modeSlice').addEventListener('click', ()=>setSliceMode(true));
+  $('modeMesh').addEventListener('click', ()=>setViewMode('mesh'));
+  $('modeSlice').addEventListener('click', ()=>setViewMode('slice'));
+  $('modeMosaic').addEventListener('click', ()=>setViewMode('mosaic'));
   $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); sliceRenderAll(); });
   $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); sliceRenderAll(); });
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
-  let _slrz; window.addEventListener('resize', ()=>{ if(sliceMode){ clearTimeout(_slrz); _slrz=setTimeout(sliceRenderAll,120); } });
+  // mosaic controls
+  document.querySelectorAll('.mpbtn').forEach(b=>b.addEventListener('click',()=>{ mosaicPlane=b.dataset.mp;
+    document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x===b)); renderMosaic(); }));
+  $('mosN').addEventListener('input',e=>{ $('mosNV').textContent=e.target.value; renderMosaic(); });
+  $('mosCols').addEventListener('input',e=>{ $('mosColsV').textContent=e.target.value; renderMosaic(); });
+  $('mosLabels').addEventListener('change', renderMosaic);
+  let _slrz; window.addEventListener('resize', ()=>{ if(sliceMode||mosaicMode){ clearTimeout(_slrz); _slrz=setTimeout(refreshSliceViews,120); } });
   ['slSag','slCor','slAxi'].forEach(id=>{ const cv=$(id);
     cv.addEventListener('wheel', e=>sliceWheel(cv,e), {passive:false});
     let drag=null;
