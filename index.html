@@ -395,9 +395,12 @@
 
 <div id="panelBuilder">
   <div class="pbHead">🗔 Figure panels
-    <select id="pbGrid">
+    <select id="pbGrid" title="grid presets">
       <option>1x2</option><option selected>2x2</option><option>2x3</option><option>3x3</option><option>1x3</option><option>3x2</option><option>1x1</option><option>4x4</option>
     </select>
+    <span style="opacity:.6">or</span>
+    <input id="pbRows" type="number" min="1" max="12" value="2" style="width:44px" title="rows"> ×
+    <input id="pbCols" type="number" min="1" max="12" value="2" style="width:44px" title="columns">
     <span style="flex:1"></span>
     <button class="sm" id="pbClose">✕</button>
   </div>
@@ -1707,7 +1710,7 @@ window.brainAPI = {
 
 // ================= IN-APP PANEL BUILDER =================
 let pbItems = [];  // per-cell {dataURL,label,cbar} | null
-function pbDims(){ const [r,c]=$('pbGrid').value.split('x').map(Number); return [r,c]; }
+function pbDims(){ return [Math.max(1,Math.min(12,+$('pbRows').value||1)), Math.max(1,Math.min(12,+$('pbCols').value||1))]; }
 function pbRender(){
   const [rows,cols]=pbDims(); const n=rows*cols;
   while(pbItems.length<n) pbItems.push(null); pbItems.length=n;
@@ -1882,7 +1885,7 @@ async function pbExport(){ try{
 // fill a 2×3 grid with the 6 standard anatomical views of the current brain
 async function pb6view(){ try{
   const views=[['left','Left'],['right','Right'],['superior','Top'],['inferior','Bottom'],['anterior','Front'],['posterior','Back']];
-  $('pbGrid').value='2x3'; pbItems=new Array(6).fill(null); pbRender();
+  $('pbRows').value=2; $('pbCols').value=3; pbItems=new Array(6).fill(null); pbRender();
   $('pb6view').textContent='⏳ rendering…';
   for(let i=0;i<6;i++){ window.brainAPI.setView(views[i][0]); await _raf2();
     pbItems[i]={ dataURL:window.brainAPI.renderTo(900,680,true), label:views[i][1],
@@ -1896,7 +1899,7 @@ function pbFigureSettings(){ return { brain:+$('pbBrain').value, titleSize:+$('p
 // ---- .bwz : portable figure recipe (settings + sources + camera + regions) ----
 function bwzExport(){
   if(!pbItems.some(Boolean)){ alert('Add at least one tile first.'); return; }
-  const data = { bwz:1, app:'brainWhiz', grid:$('pbGrid').value, figure:pbFigureSettings(),
+  const data = { bwz:1, app:'brainWhiz', grid:pbDims().join('x'), figure:pbFigureSettings(),
     panels: pbItems.map(it => it ? { label:it.label, ...it.cfg } : null) };
   const a=document.createElement('a');
   a.download='figure.bwz';
@@ -1907,7 +1910,7 @@ async function bwzImport(file){
   const text=await file.text(); let data;
   try{ data=JSON.parse(text); }catch(e){ alert('Not a valid .bwz/JSON file.'); return; }
   if(!data.panels){ alert('No panels in this .bwz.'); return; }
-  if(data.grid){ $('pbGrid').value=data.grid; }
+  if(data.grid){ const [r,c]=data.grid.split('x').map(Number); if(r) $('pbRows').value=r; if(c) $('pbCols').value=c; }
   const f=data.figure||{};
   const set=(id,v)=>{ if(v!==undefined){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
   set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
@@ -1927,7 +1930,8 @@ async function bwzImport(file){
 $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
   p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender(); });
 $('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none');
-$('pbGrid').addEventListener('change',pbRender);
+$('pbGrid').addEventListener('change',e=>{ const [r,c]=e.target.value.split('x').map(Number); $('pbRows').value=r; $('pbCols').value=c; pbRender(); });
+$('pbRows').addEventListener('input',pbRender); $('pbCols').addEventListener('input',pbRender);
 $('pbClear').addEventListener('click',()=>{ pbItems=pbItems.map(()=>null); pbRender(); });
 $('pbExport').addEventListener('click',pbExport);
 $('pb6view').addEventListener('click',pb6view);

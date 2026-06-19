@@ -15,7 +15,7 @@ A `.bwz` + the referenced `.nii` files = a fully reproducible figure.
 {
   "bwz": 1,                       // format version (required)
   "app": "brainWhiz",             // optional tag
-  "grid": "2x2",                  // "ROWSxCOLS" (e.g. "1x2", "2x2", "3x2", "4x4")
+  "grid": "2x2",                  // "ROWSxCOLS" — any dimensions up to 12×12 (e.g. "1x2", "3x5", "4x4")
   "figure": { ... },              // figure-wide layout/style (see below)
   "panels": [ panel, panel, ... ] // one entry per grid cell; use null for an empty cell
 }
