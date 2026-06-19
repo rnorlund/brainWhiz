@@ -30,9 +30,8 @@
   #sliceView .sl{position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
   #sliceView .sl canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:auto;cursor:crosshair;touch-action:none}
   #sliceView .sl .tag{position:absolute;top:4px;left:6px;font-size:10px;color:#9fb3c8;background:#0008;padding:1px 5px;border-radius:4px;pointer-events:none;z-index:2}
-  #sliceCtl{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;
-    background:#0b0e14e6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--txt);z-index:3}
-  #sliceCtl .row{display:flex;align-items:center;gap:8px}
+  #sliceCtl{display:flex;flex-direction:column;gap:8px;font-size:11px;color:var(--txt)}
+  #sliceCtl .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   #sliceCtl label{min-width:auto;color:var(--muted)}
   #sliceCtl input[type=range]{flex:1;accent-color:var(--accent)}
   #sliceCtl .seg button{font-size:10px;padding:2px 7px}
@@ -155,7 +154,7 @@
   <div class="sl" data-plane="sag"><span class="tag">Sagittal</span><canvas id="slSag"></canvas></div>
   <div class="sl" data-plane="cor"><span class="tag">Coronal</span><canvas id="slCor"></canvas></div>
   <div class="sl" data-plane="axi"><span class="tag">Axial</span><canvas id="slAxi"></canvas></div>
-  <div class="sl"><img id="sl3d" style="max-width:100%;max-height:100%;object-fit:contain" alt="">
+  <div class="sl"><span class="tag">3D</span><img id="sl3d" style="max-width:100%;max-height:100%;object-fit:contain" alt="">
     <div id="sliceCtl">
       <div class="row"><label>Map</label><span id="slMapName" style="color:var(--txt)">—</span>
         <span style="flex:1"></span><span id="slCoord" style="color:var(--muted)"></span></div>
@@ -252,6 +251,10 @@
       <button class="sm" id="clearOverlay">clear</button>
     </div>
     <div id="ovInfo" class="muted" style="font-size:11px"></div>
+  </div></details>
+
+  <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
+    <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:6px">Controls the <b>🔪 Slices</b> view (top bar). Load a stat <b>.nii</b> in Overlay to see a heatmap; click a slice or drag the X/Y/Z sliders to navigate.</div>
   </div></details>
 
   <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance</summary><div class="accb">
@@ -1620,6 +1623,8 @@ function resize(){
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
 document.getElementById('sidebarR').appendChild(document.getElementById('accAppearance'));
+// move the slice controls out of the 2x2 grid into the left sidebar (no overlap on the render)
+document.getElementById('sliceCtlHost').appendChild(document.getElementById('sliceCtl'));
 window.addEventListener('resize',resize); resize();
 setTimeout(resize, 200);
 
@@ -2118,6 +2123,7 @@ function setSliceMode(on){
   if(hint) hint.style.display=on?'none':''; if(zw) zw.style.display=on?'none':'';
   resize();
   if(on){ ensureMNI();
+    const acc=$('accSlices'); if(acc){ acc.open=true; if(document.body.classList.contains('navhidden')){ document.body.classList.remove('navhidden'); $('navToggle').classList.add('tbon'); } }
     for(const k in sliceVP){ sliceVP[k].z=1; sliceVP[k].px=0; sliceVP[k].py=0; }   // start at full view
     if(overlay.volA && (sliceMM[0]===0&&sliceMM[1]===0&&sliceMM[2]===0)){   // jump to peak of the map
       const v=overlay.volA, d=v.data; let bi=0,bv=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]>bv){bv=d[i];bi=i;} }
