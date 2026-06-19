@@ -394,15 +394,15 @@
 </div>
 
 <div id="panelBuilder">
-  <div class="pbHead">🗔 Figure panels
+  <div class="pbHead">🗔 Figure panels<span style="flex:1"></span><button class="sm" id="pbClose">✕</button></div>
+  <div class="pbHead" style="font-weight:400;flex-wrap:wrap">
+    <span style="color:var(--muted)">Grid</span>
     <select id="pbGrid" title="grid presets">
       <option>1x2</option><option selected>2x2</option><option>2x3</option><option>3x3</option><option>1x3</option><option>3x2</option><option>1x1</option><option>4x4</option>
     </select>
     <span style="opacity:.6">or</span>
-    <input id="pbRows" type="number" min="1" max="12" value="2" style="width:44px" title="rows"> ×
-    <input id="pbCols" type="number" min="1" max="12" value="2" style="width:44px" title="columns">
-    <span style="flex:1"></span>
-    <button class="sm" id="pbClose">✕</button>
+    <input id="pbRows" type="number" min="1" max="12" value="2" style="width:46px" title="rows"> ×
+    <input id="pbCols" type="number" min="1" max="12" value="2" style="width:46px" title="columns">
   </div>
   <div id="pbCells"></div>
   <div class="pbSliders">
@@ -717,7 +717,7 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   refreshPresets();
   initAtlasPicker();
   window.__DBG={meshes,scene,camera,renderer,group};
-  view([-1,0,0]);           // DEFAULT: left-hemisphere sagittal view
+  view([-1,0,0], camDist);  // DEFAULT: left-hemisphere sagittal view, default framing
   home.copy(camera.position); homeTarget.copy(controls.target);
   document.getElementById('loader').style.display='none';
   requestRender();   // meshes loaded async — render the initial scene
@@ -1005,9 +1005,10 @@ $('connPulseColor').addEventListener('input', e=>connUniforms.uPulseColor.value.
 const home=new THREE.Vector3(), homeTarget=new THREE.Vector3();
 const sceneCenter=new THREE.Vector3(); let camDist=320;
 $('reset').addEventListener('click', ()=>{ camera.position.copy(home); controls.target.copy(homeTarget); controls.update(); });
-function view(pos){ // pos = direction the camera sits from center
+function view(pos, dist){ // pos = direction the camera sits from center; dist defaults to CURRENT zoom
   const c=sceneCenter; controls.target.copy(c);
-  camera.position.set(c.x+pos[0]*camDist, c.y+pos[1]*camDist, c.z+pos[2]*camDist);
+  const d = (dist!=null) ? dist : camDistance();   // preserve the user's current zoom (so 6-view matches it)
+  camera.position.set(c.x+pos[0]*d, c.y+pos[1]*d, c.z+pos[2]*d);
   camera.up.set(0,1,0); controls.update();
 }
 $('vTop').onclick   = ()=>view([0,1,0.0001]);   // superior
@@ -1051,9 +1052,9 @@ function buildList(){
     groups[g].sort((a,b)=>a.meta.abbr.localeCompare(b.meta.abbr));
     for(const o of groups[g]){
       const row=document.createElement('div'); row.className='roi'; row.dataset.node=o.meta.node;
-      row.innerHTML=`<input type="checkbox" checked>
-        <span class="swatch" data-node="${o.meta.node}" style="background:${o.meta.color}">
-          <input type="color" value="${o.meta.color||'#888888'}"></span>
+      row.innerHTML=`<input type="checkbox" checked title="Show / hide ${o.meta.name}">
+        <span class="swatch" data-node="${o.meta.node}" style="background:${o.meta.color}" title="${o.meta.name} — pick color">
+          <input type="color" value="${o.meta.color||'#888888'}" title="${o.meta.name} — pick color"></span>
         <span class="nm" title="${o.meta.name}">${o.meta.name}</span>
         <span class="abbr">${o.meta.abbr}</span>`;
       row.querySelector('input[type=checkbox]').addEventListener('change',e=>setVisible(o,e.target.checked));
@@ -1622,6 +1623,7 @@ function resize(){
   const svq=$('sliceView'); if(svq){ svq.style.left=sbL+'px'; svq.style.top=top+'px'; svq.style.width=w+'px'; svq.style.height=h+'px'; }
   const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+16)+'px';                       // keep widgets clear of the right panel
   const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+12)+'px';
+  const pbq=$('panelBuilder'); if(pbq) pbq.style.right=(sbR+10)+'px';
   requestRender();
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
@@ -2191,6 +2193,61 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
       if(!wasMoved && p){ const m=cellToInplane(cv,e); if(m&&m.inside){ setCrossInplane(p.plane,m.h,m.v); sliceRenderAll(); } } };
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
+  });
+})();
+
+// ================= TOOLTIPS =================
+// Native title= tooltips (normal hover delay). Curated text for the non-obvious controls;
+// everything else auto-derives a tooltip from its label so nothing is left unexplained.
+(function addTooltips(){
+  const TIPS = {
+    navToggle:'Show / hide the left (data) sidebar', navToggleR:'Show / hide the right (Look & feel) sidebar',
+    atlasSel:'Choose which brain atlas / parcellation to display', netBadge:'Online / offline status',
+    modeMesh:'3D mesh view', modeSlice:'Voxel ortho-slice view (axial / sagittal / coronal). Load a stat .nii to overlay',
+    vSide:'View from the left', vTop:'View from above', vFront:'View from the front', reset:'Reset the camera to the default view',
+    snap:'Save a PNG screenshot of the current view', pbToggle:'Open the figure-panel builder (grids of brains)',
+    presetSel:'Apply a saved look/settings preset', savePreset:'Save the current look as a reusable preset', delPreset:'Delete the selected preset',
+    taskMap:'Color regions by a baked NeuroQuery task map (motor, language, …)', taskMapB:'Second task map, for conjunction / subtraction',
+    statFile:'Load your own MNI-space stat map (.nii/.nii.gz) as an overlay', statFileB:'Load a second stat map (for combine modes)',
+    ovCombine:'Single map, or combine two: conjunction (A∧B) or subtraction (A−B)',
+    ovStyle:'Gray brain + one activation color, or a full colormap', ovColor:'Activation / Map-A color', ovColorB:'Map-B color',
+    cmap:'Colormap used in "full colormap" style', cmin:'Value mapped to the bottom of the colormap', cmax:'Value mapped to the top of the colormap',
+    cthresh:'Hide values weaker than this threshold', cthreshMode:'Threshold as a fraction of range, or in raw map units',
+    cmapInvert:'Reverse the colormap direction', cmapAbs:'Use |value| so negatives map like positives', ovAndOnly:'Conjunction: show only where BOTH maps pass threshold',
+    scheme:'How to color regions when no data overlay is active', singleColor:'Color for the "single color" scheme',
+    opacity:'Master opacity of all regions', coloredOp:'Opacity of colored (active) regions', grayOp:'Opacity of gray / inactive regions',
+    satCut:'Saturation cutoff that defines "colored" vs "gray" regions', glass:'Fade uncolored regions to a translucent glass shell',
+    smooth:'Smooth the region meshes (Taubin) — rounds faceted marching-cubes surfaces without shrinking',
+    surfStyle:'Surface render style (solid, wireframe, checkerboard, …)', wireWidth:'Wireframe line thickness',
+    patScale:'Pattern cell size', patStr:'Pattern strength', patMode:'Pattern fill: darken cells or cut them out (transparent)',
+    shading:'Lit (Standard) vs studio Matcap shading', vivid:'Color vividness / saturation boost', rim:'Fresnel rim-glow strength', rimColor:'Rim glow color',
+    bg:'Viewer background color',
+    explode:'Explosion amount — push regions apart', distance:'How far regions spread when exploded', play:'Play / pause the explosion animation', animSpeed:'Explosion animation speed',
+    zoomSlider:'Zoom the camera', zoomSpeed:'Mouse-wheel zoom sensitivity', autoRotate:'Continuously rotate the brain', rotSpeed:'Auto-rotate speed', spin:'Slow idle spin',
+    axisLines:'Show L/R · A/P · D/V axis lines', axisLetters:'Show axis direction letters', axisColor:'Axis color', axisWidth:'Axis line thickness',
+    connOn:'Show structural/functional connectivity edges (atlases with data)', connType:'Connectivity modality (DTI / resting-state)', connTh:'Minimum edge strength to draw',
+    connScale:'Edge thickness scale', connAll:'Also connect hidden regions', connColorMode:'Color edges by strength, or one fixed color', connCmap:'Connectivity colormap', connColor:'Single edge color',
+    connPulse:'Animate a pulse of light along each edge', connPulseSpeed:'Pulse speed', connPulseColor:'Pulse color',
+    slKindVox:'Slice view: voxel heatmap of the loaded stat map on the MNI template', slKindMesh:'Slice view: thin cross-section of the colored 3D regions',
+    slPosX:'Move the slice along left↔right (X)', slPosY:'Move the slice along front↔back (Y)', slPosZ:'Move the slice along bottom↔top (Z)',
+    slRaw:'Threshold the raw stat values', slTfce:'Threshold-Free Cluster Enhancement — highlights spatially-supported clusters', slThresh:'Slice overlay threshold (drag to hide weaker values)',
+    slCmap:'Slice heatmap colormap', slCross:'Show the crosshair on the slices',
+    pbGrid:'Quick grid presets', pbRows:'Number of panel rows (1–12)', pbCols:'Number of panel columns (1–12)', pbClose:'Close the panel builder',
+    pb6view:'Auto-fill a 2×3 of the six standard views', pbExport:'Export the figure (PNG / PDF / SVG)', pbScale:'Export resolution multiplier (higher = sharper)', pbFormat:'Export file format',
+    pbSaveBwz:'Save this figure as a portable .bwz recipe', pbLoadBwz:'Load a .bwz figure recipe', pbClear:'Clear all tiles',
+    pbBrain:'Size of each brain image', pbTitle:'Panel title font size (0 = none)', pbCbar:'Per-panel colorbar height (0 = none)', pbGap:'Spacing between panels',
+    pbFont:'Panel title font', pbTitleColor:'Panel title color', pbBgW:'White figure background', pbBgB:'Black figure background',
+  };
+  document.querySelectorAll('button, input, select').forEach(el=>{
+    if(el.id && TIPS[el.id]){ el.title = TIPS[el.id]; return; }
+    if(el.title) return;                                    // keep existing tooltips
+    let t='';
+    const host = el.closest('.row, .ctl, .toggle');
+    if(host){ const lab = host.querySelector('.lab span, label'); if(lab && !lab.contains(el)) t = lab.textContent.trim();
+      if(!t){ const tog=el.closest('label.toggle'); if(tog) t=tog.textContent.trim(); } }
+    if(!t && el.tagName==='BUTTON') t = el.textContent.trim();
+    if(!t && el.placeholder) t = el.placeholder;
+    if(t) el.title = t;
   });
 })();
 
