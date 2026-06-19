@@ -1978,41 +1978,76 @@ function inplaneToMNI(plane,h,v){ const mm=sliceMM;
 function crossInplane(plane){ const mm=sliceMM;
   if(plane==='sag') return [mm[1],mm[2]]; if(plane==='cor') return [mm[0],mm[2]]; return [mm[0],mm[1]]; }
 
+// SOLID capped mesh cross-sections: intersect each region mesh with the slice plane to
+// get closed loops, then fill them (even-odd, so holes work) with the region's color on
+// the 2D canvas — opaque, nothing-behind, same window/zoom/click as the voxel slices.
+function sectionLoops(pos, axis, fixed, hv){
+  const n=pos.length/3, segs=[];
+  const nc = axis===0 ? (i=>pos[3*i]) : axis===1 ? (i=>pos[3*i+1]) : (i=>pos[3*i+2]);
+  const HV = i=>hv(pos[3*i],pos[3*i+1],pos[3*i+2]);
+  for(let t=0;t<n;t+=3){
+    const a=t,b=t+1,c=t+2, na=nc(a),nb=nc(b),ncc=nc(c);
+    const aa=na>fixed, ab=nb>fixed, ac=ncc>fixed;
+    if(aa===ab && ab===ac) continue;                       // triangle doesn't cross the plane
+    const pts=[];
+    for(const [i1,v1,i2,v2] of [[a,na,b,nb],[b,nb,c,ncc],[c,ncc,a,na]]){
+      if((v1>fixed)!==(v2>fixed)){ const u=(fixed-v1)/(v2-v1), A=HV(i1), B=HV(i2);
+        pts.push([A[0]+(B[0]-A[0])*u, A[1]+(B[1]-A[1])*u]); } }
+    if(pts.length===2) segs.push(pts);
+  }
+  return assembleLoops(segs);
+}
+function assembleLoops(segs){
+  if(!segs.length) return [];
+  const key=p=>Math.round(p[0]*64)+','+Math.round(p[1]*64);
+  const byKey=new Map();
+  segs.forEach((s,idx)=>{ const ka=key(s[0]),kb=key(s[1]);
+    (byKey.get(ka)||byKey.set(ka,[]).get(ka)).push(idx); (byKey.get(kb)||byKey.set(kb,[]).get(kb)).push(idx); });
+  const used=new Array(segs.length).fill(false), loops=[];
+  for(let i=0;i<segs.length;i++){ if(used[i]) continue;
+    const loop=[segs[i][0]]; let cur=i, curKey=key(segs[i][0]), guard=0;
+    while(cur>=0 && guard++<200000){ used[cur]=true; const s=segs[cur], sa=key(s[0]);
+      const nextPt=(curKey===sa)?s[1]:s[0], nextKey=(curKey===sa)?key(s[1]):sa;
+      loop.push(nextPt); curKey=nextKey;
+      const cand=(byKey.get(nextKey)||[]).find(j=>!used[j]); if(cand==null) break; cur=cand; }
+    if(loop.length>=3) loops.push(loop);
+  }
+  return loops;
+}
 function renderMeshSlices(){
   if(!meshes.length) return;
-  if(!sliceOrtho) sliceOrtho=new THREE.OrthographicCamera(-1,1,1,-1,0.01,10);
-  const d=modelRadius*3, SLAB=1.6;   // ±mm slab -> thin true cross-section (only that slice shows)
-  const prevRot=group.rotation.clone(), prevEx=explodeAmt, prevBG=scene.background;
-  const prevClip=renderer.clippingPlanes, prevLocal=renderer.localClippingEnabled;
-  const axV=axisLineGroup.visible, alV=axisLetterGroup.visible, cgV=connGroup.visible;
-  const matState=meshes.map(o=>{ const m=o.mesh.material; return {side:m.side,opacity:m.opacity,transparent:m.transparent,depthWrite:m.depthWrite}; });
-  group.rotation.set(0,0,0); setExplode(0);
-  axisLineGroup.visible=axisLetterGroup.visible=connGroup.visible=false;
-  meshes.forEach(o=>{ const m=o.mesh.material; m.side=THREE.DoubleSide; m.opacity=1; m.transparent=false; m.depthWrite=true; });
-  scene.background=null; renderer.localClippingEnabled=true; sliceOrtho.near=0.01; sliceOrtho.far=d*3;
+  const P=mniToTjs(sliceMM);   // crosshair in three.js mesh axes (geometry is canonical world coords)
   for(const [plane,cv] of [['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]]){
-    const sp=planeSpec(plane), win=windowOf(plane);
-    const W=cv.clientWidth||300, H=cv.clientHeight||300, asp=W/H;
-    let fh=win.hHalf, fv=win.vHalf; if(fh/fv>asp) fv=fh/asp; else fh=fv*asp;   // fit window into cell, no distortion
-    sliceOrtho.left=-fh; sliceOrtho.right=fh; sliceOrtho.top=fv; sliceOrtho.bottom=-fv; sliceOrtho.updateProjectionMatrix();
-    const tgt=mniToTjs(inplaneToMNI(plane,win.cH,win.cV));
-    sliceOrtho.position.copy(tgt).addScaledVector(sp.nAxisT, sp.side*d);
-    sliceOrtho.up.copy(sp.vAxisT); sliceOrtho.lookAt(tgt); sliceOrtho.updateMatrixWorld();
-    const fixedC=tgt.dot(sp.nAxisT);   // thin slab around the slice plane
-    renderer.clippingPlanes=[ new THREE.Plane(sp.nAxisT.clone(), -(fixedC-SLAB)), new THREE.Plane(sp.nAxisT.clone().negate(), fixedC+SLAB) ];
-    renderer.setSize(W,H); renderer.render(scene, sliceOrtho);
-    const ctx=cv.getContext('2d'); cv.width=W; cv.height=H;
-    ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H); ctx.drawImage(renderer.domElement,0,0,W,H);
-    cv._plane={plane,mesh:true,ox:0,oy:0,dw:W,dh:H, hmin:win.cH-fh, hr:2*fh, vmax:win.cV+fv, vr:2*fv};
-    if($('slCross').checked){ const c=crossInplane(plane);
-      const cx=((c[0]-(win.cH-fh))/(2*fh))*W, cy=((win.cV+fv-c[1])/(2*fv))*H;
+    const win=windowOf(plane);
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
+    cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
+    ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+    const sc=Math.min(W/win.hr,H/win.vr), dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));
+    const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
+    const toX=h=>ox+((h-win.hmin)/win.hr)*dw, toY=v=>oy+((win.vmax-v)/win.vr)*dh;
+    // plane normal axis (three.js) + (h,v) accessor matching the voxel slices' orientation
+    let axis, fixed, hv;
+    if(plane==='sag'){ axis=0; fixed=P.x; hv=(x,y,z)=>[-z,y]; }       // h=MNI Y(-tjsZ), v=MNI Z(tjsY)
+    else if(plane==='cor'){ axis=2; fixed=P.z; hv=(x,y,z)=>[x,y]; }   // h=tjsX, v=tjsY
+    else { axis=1; fixed=P.y; hv=(x,y,z)=>[x,-z]; }                   // h=tjsX, v=MNI Y(-tjsZ)
+    fixed += 1e-3;                                                    // avoid vertices exactly on the plane
+    for(const rec of meshes){ const mesh=rec.mesh; if(!mesh.visible) continue;
+      const geo=mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
+      const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
+      if(fixed<lo||fixed>hi) continue;                               // mesh doesn't reach this slice
+      const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv);
+      if(!loops.length) continue;
+      const c=mesh.material.color; ctx.fillStyle=`rgb(${Math.round(c.r*255)},${Math.round(c.g*255)},${Math.round(c.b*255)})`;
+      ctx.beginPath();
+      for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
+      ctx.fill('evenodd');
+    }
+    if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.moveTo(0,cy); ctx.lineTo(W,cy); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
+    cv._plane={plane,ox,oy,dw,dh,hmin:win.hmin,hr:win.hr,vmax:win.vmax,vr:win.vr,mesh:true};
   }
-  renderer.clippingPlanes=prevClip; renderer.localClippingEnabled=prevLocal;
-  meshes.forEach((o,i)=>{ const m=o.mesh.material, s=matState[i]; m.side=s.side; m.opacity=s.opacity; m.transparent=s.transparent; m.depthWrite=s.depthWrite; });
-  axisLineGroup.visible=axV; axisLetterGroup.visible=alV; connGroup.visible=cgV;
-  scene.background=prevBG; group.rotation.copy(prevRot); setExplode(prevEx); resize();
 }
 function ensureMNI(){
   if(MNIVOL || !window.MNI152) return MNIVOL;
