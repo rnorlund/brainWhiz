@@ -132,8 +132,9 @@
   #cbar{width:calc(100% - 20px);height:14px;margin:6px 10px;border-radius:3px;border:1px solid var(--line);display:block}
   input[type=file]{font-size:11px;color:var(--muted);width:100%}
   #ovInfo{padding:0 10px 8px}
-  #panelBuilder{position:absolute;top:10px;right:10px;z-index:12;background:#0c1018ee;
-    border:1px solid var(--line);border-radius:10px;padding:8px;width:300px;backdrop-filter:blur(6px)}
+  #panelBuilder{position:absolute;top:46px;right:0;z-index:12;background:#0c1018f5;
+    border-left:1px solid var(--line);padding:8px;width:300px;backdrop-filter:blur(6px);
+    max-height:calc(100vh - 46px);overflow-y:auto}
   .pbHead{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:600;font-size:12px}
   .pbHead select{width:auto;flex:none}
   #pbCells{display:grid;gap:6px}
@@ -1615,14 +1616,18 @@ function resize(){
   const top = document.getElementById('topbar').getBoundingClientRect().height;   // toolbar
   const sbL = document.body.classList.contains('navhidden')  ? 0 : document.getElementById('sidebar').getBoundingClientRect().width;
   const sbR = document.body.classList.contains('navhiddenR') ? 0 : document.getElementById('sidebarR').getBoundingClientRect().width;
-  const w = Math.max(10, window.innerWidth - sbL - sbR);
+  // when the panel builder is open and not dragged free, DOCK it on the right and reserve
+  // its width so the viewport shrinks (never overlaps the brain/slices).
+  const pbq=$('panelBuilder'); const pbOpen = pbq && pbq.style.display!=='none';
+  let pbW=0;
+  if(pbOpen && !window.pbMoved){ pbq.style.left='auto'; pbq.style.top=top+'px'; pbq.style.right=sbR+'px'; pbW=pbq.offsetWidth; }
+  const w = Math.max(10, window.innerWidth - sbL - sbR - pbW);
   const h = Math.max(10, window.innerHeight - top);
   cv.style.left = sbL+'px'; cv.style.top = top+'px';
   renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
   for(const vid of ['sliceView','mosaicView']){ const q=$(vid); if(q){ q.style.left=sbL+'px'; q.style.top=top+'px'; q.style.width=w+'px'; q.style.height=h+'px'; } }
-  const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+16)+'px';                       // keep widgets clear of the right panel
-  const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+12)+'px';
-  const pbq=$('panelBuilder'); if(pbq && !window.pbMoved) pbq.style.right=(sbR+10)+'px';
+  const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+pbW+16)+'px';                    // keep widgets clear of right panel + builder
+  const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+pbW+12)+'px';
   requestRender();
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
@@ -1973,8 +1978,9 @@ async function bwzImport(file){
   pbRender();
 }
 $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
-  p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender(); });
-$('pbClose').addEventListener('click',()=>$('panelBuilder').style.display='none');
+  p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender();
+  resize(); refreshSliceViews(); });
+$('pbClose').addEventListener('click',()=>{ $('panelBuilder').style.display='none'; resize(); refreshSliceViews(); });
 // drag the panel builder by its header so it doesn't cover the figure you're capturing
 (function(){ const pb=$('panelBuilder'); let d=null;
   pb.querySelector('.pbHead').addEventListener('pointerdown',e=>{ if(e.target.closest('button,select,input')) return;
@@ -2353,18 +2359,23 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
   });
-  // make the 3D thumbnail cell interactive too: wheel = zoom, drag = orbit
+  // make the 3D cell fully interactive: wheel = zoom, drag = rotate, right/shift-drag = pan
   const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true); }catch(e){} };
   cell3d.style.cursor='grab';
   cell3d.addEventListener('wheel', e=>{ e.preventDefault(); setCamDistance(camDistance()*Math.exp(e.deltaY*0.0015)); refresh3d(); }, {passive:false});
+  cell3d.addEventListener('contextmenu', e=>e.preventDefault());   // allow right-drag pan
   let d3=null;
-  cell3d.addEventListener('pointerdown', e=>{ if(e.target.tagName==='IMG'||e.target===cell3d){ d3={x:e.clientX,y:e.clientY}; try{cell3d.setPointerCapture(e.pointerId);}catch(_){}} });
-  cell3d.addEventListener('pointermove', e=>{ if(!d3) return; const dx=e.clientX-d3.x, dy=e.clientY-d3.y; d3={x:e.clientX,y:e.clientY};
-    const off=camera.position.clone().sub(controls.target), sph=new THREE.Spherical().setFromVector3(off);
-    sph.theta-=dx*0.01; sph.phi=Math.max(0.05,Math.min(Math.PI-0.05, sph.phi-dy*0.01));
-    off.setFromSpherical(sph); camera.position.copy(controls.target).add(off); controls.update(); refresh3d(); });
-  const end3d=e=>{ if(d3){ d3=null; try{cell3d.releasePointerCapture(e.pointerId);}catch(_){} } };
-  cell3d.addEventListener('pointerup', end3d); cell3d.addEventListener('pointercancel', end3d);
+  cell3d.addEventListener('pointerdown', e=>{ e.preventDefault(); d3={x:e.clientX,y:e.clientY,pan:(e.button===2||e.shiftKey)}; cell3d.style.cursor='grabbing'; });
+  window.addEventListener('pointermove', e=>{ if(!d3) return; const dx=e.clientX-d3.x, dy=e.clientY-d3.y; d3.x=e.clientX; d3.y=e.clientY;
+    if(d3.pan){ const dist=camera.position.distanceTo(controls.target)*0.0016;
+      const mx=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0), my=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+      const delta=new THREE.Vector3().addScaledVector(mx,-dx*dist).addScaledVector(my,dy*dist);
+      camera.position.add(delta); controls.target.add(delta); controls.update();
+    } else { const off=camera.position.clone().sub(controls.target), sph=new THREE.Spherical().setFromVector3(off);
+      sph.theta-=dx*0.01; sph.phi=Math.max(0.05,Math.min(Math.PI-0.05, sph.phi-dy*0.01));
+      off.setFromSpherical(sph); camera.position.copy(controls.target).add(off); controls.update(); }
+    refresh3d(); });
+  window.addEventListener('pointerup', ()=>{ if(d3){ d3=null; cell3d.style.cursor='grab'; } });
 })();
 
 // ================= TOOLTIPS =================
