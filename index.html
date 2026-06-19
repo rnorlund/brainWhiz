@@ -1700,6 +1700,25 @@ window.brainAPI = {
     return url;
   },
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
+  setViewMode(m){ setViewMode(m); },
+  // hide all chrome so slice/mosaic captures use the full window (headless figures)
+  hideUI(){ for(const id of ['sidebar','sidebarR','topbar']){ const e=$(id); if(e) e.style.display='none'; }
+    const h=document.querySelector('.hint'); if(h) h.style.display='none';
+    document.body.classList.add('navhidden','navhiddenR'); resize(); },
+  // load a NIfTI (base64) into a specific overlay-stack index — for headless multi-overlay figures
+  async loadOverlayFile(idx, b64, name){ if(idx<0||idx>=overlays.length) return false;
+    const r=statBufferToVals(b64ToBuf(b64), name||'map.nii'), o=overlays[idx];
+    o.vals=r.vals; o.vol=r.nii||null; o.needsFile=false; o.volStats=null; o.tfceCache=null;
+    const tvox=window.MNI152?Math.abs(window.MNI152.affine[0][0]):2, ovmin=r.nii?Math.min(...r.nii.vox):tvox;
+    o.volGrid=(r.nii&&window.MNI152&&ovmin>=tvox-0.1)?resliceToTemplate(r.nii):(r.nii||null);
+    if(idx===selOv){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; overlay.on=!!o.vals; recolorOverlay(); updateColorbar(); }
+    refreshSliceViews(); await nextFrames(2); return true; },
+  // render the CURRENT view (3D mesh / ortho slices / mosaic) to a PNG data URL
+  captureView(w=900,h=680,transparent=true){
+    if(mosaicMode){ renderMosaic(); return $('mosaicCanvas').toDataURL('image/png'); }
+    if(sliceMode){ sliceRenderAll(); return captureSlices2x2(w,h); }
+    return this.renderTo(w,h,transparent);
+  },
   // describe the active overlay colorbar (for figure legends), or null
   colorbar(){ if(!overlay.on) return null;
     return { kind:'single', name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
@@ -1784,18 +1803,20 @@ function pbCapture(i, keepLabel){
     cbar: (sliceMode||mosaicMode) ? null : window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
 }
-// snapshot the full viewer state for a tile so it can be restored/edited later
+// snapshot the full viewer state for a tile / .bwz panel so it can be restored & rendered
 function captureViewerCfg(){
-  const ids=[...PRESET_IDS,'taskMap','regionSet','scheme','singleColor'];
+  const ids=[...PRESET_IDS,'regionSet','scheme','singleColor'];   // taskMap/overlay look now per-overlay in `overlays`
   const vals={};
   for(const id of ids){ const el=$(id); if(!el) continue; vals[id]= el.type==='checkbox'?el.checked:el.value; }
-  const ov = selOv>=0 ? overlays[selOv] : null;
   return { atlas:ATLAS_ID, vals,
     camP: camera.position.toArray().map(v=>+v.toFixed(2)),
     camT: controls.target.toArray().map(v=>+v.toFixed(2)),
     vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id),
-    // loaded-file overlay source (re-linked on import); task maps are captured via taskMap
-    fileA: (ov && ov.kind==='file') ? ov.fileName : null };
+    mode: mosaicMode?'mosaic':sliceMode?'slice':'mesh',
+    sliceMM: sliceMM.map(v=>+v.toFixed(1)), sliceKind,
+    mosaic: { plane:mosaicPlane, n:+$('mosN').value, cols:+$('mosCols').value, labels:$('mosLabels').checked },
+    active: selOv,
+    overlays: overlays.map(o=>({ name:o.name, kind:o.kind, term:o.term||'', fileName:o.fileName||'', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} })) };
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
@@ -1804,11 +1825,28 @@ function applyViewerCfg(cfg){
     return;
   }
   const v=cfg.vals||{};
-  if('taskMap' in v && v.taskMap) setControl('taskMap', v.taskMap);   // create the overlay FIRST
-  // then everything else (overlay appearance controls write into the now-selected overlay)
-  Object.keys(v).forEach(id=>{ if(id==='taskMap') return; setControl(id,v[id]); });
+  Object.keys(v).forEach(id=>{ if(id==='taskMap') return; setControl(id,v[id]); });   // non-overlay look
+  // rebuild the overlay stack
+  if(cfg.overlays){
+    overlays=[]; selOv=-1;
+    cfg.overlays.forEach(oc=>{ const o={ name:oc.name||'Overlay', kind:oc.kind||'task', term:oc.term||'', fileName:oc.fileName||'',
+        visible:oc.visible!==false, tfce:!!oc.tfce, vals:null, vol:null, volGrid:null, volStats:null, tfceCache:null,
+        s:Object.assign(ovDefaults(), oc.s||{}) };
+      if(o.kind==='task' && o.term && NEURO.terms[o.term]) o.vals=NEURO.terms[o.term];
+      o.needsFile = (o.kind==='file');                          // data loaded later (relink / make_figure)
+      overlays.push(o); });
+    selOv = (cfg.active!=null && cfg.active>=0 && cfg.active<overlays.length) ? cfg.active : (overlays.length-1);
+    if(selOv>=0){ ovSelect(selOv); } else { $('ovEditor').style.display='none'; applyScheme(activeScheme); }
+    ovRender();
+  } else if('taskMap' in v && v.taskMap) setControl('taskMap', v.taskMap);   // legacy single-map .bwz
   if(cfg.vis) showOnly(cfg.vis);
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
+  if(cfg.sliceMM) sliceMM=cfg.sliceMM.slice();
+  if(cfg.sliceKind){ sliceKind=cfg.sliceKind; const vx=$('slKindVox'),mh=$('slKindMesh'); if(vx)vx.classList.toggle('on',sliceKind==='voxel'); if(mh)mh.classList.toggle('on',sliceKind==='mesh'); }
+  if(cfg.mosaic){ mosaicPlane=cfg.mosaic.plane||'axi';
+    const mn=$('mosN'),mc=$('mosCols'),ml=$('mosLabels'); if(mn){mn.value=cfg.mosaic.n||16;$('mosNV').textContent=mn.value;} if(mc){mc.value=cfg.mosaic.cols||6;$('mosColsV').textContent=mc.value;} if(ml)ml.checked=cfg.mosaic.labels!==false;
+    document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x.dataset.mp===mosaicPlane)); }
+  setViewMode(cfg.mode||'mesh');
   requestRender();
 }
 // draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)

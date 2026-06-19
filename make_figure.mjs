@@ -102,17 +102,30 @@ async function renderPanel(ctx, panel) {
   await ctx.navigate(`file://${HERE}/index.html?atlas=${encodeURIComponent(atlas)}`);
   for (let i = 0; i < 60; i++) { const t = await ctx.ev(`typeof window.brainAPI`); if (t === "object") break; await sleep(400); }
   await ctx.ev(`window.brainAPI.ready`);
-  if (panel.vals) {
-    // .bwz panel: restore full viewer config, then load any file overlays from --root
-    await ctx.ev(`window.brainAPI.applyCfg(${JSON.stringify({atlas:panel.atlas, vals:panel.vals, camP:panel.camP, camT:panel.camT, vis:panel.vis})})`);
-    for (const slot of ["A","B"]) {
-      const fn = panel["file"+slot]; if (!fn) continue;
-      const fp = path.resolve(ROOT, fn);
-      if (!fs.existsSync(fp)) { console.warn(`  ! missing file for Map ${slot}: ${fp}`); continue; }
-      const b64 = fs.readFileSync(fp).toString("base64");
-      await ctx.ev(`window.brainAPI.loadStatArray(${JSON.stringify(b64)}, ${JSON.stringify(slot)}, ${JSON.stringify(fn)})`);
+  await ctx.ev(`window.brainAPI.hideUI()`);
+  const mode = panel.mode || "mesh";
+  if (panel.overlays || panel.vals) {
+    // .bwz panel: restore the full viewer config (overlay stack, view mode, slice/mosaic)
+    await ctx.ev(`window.brainAPI.applyCfg(${JSON.stringify(panel)})`);
+    if (panel.overlays) {                       // new format: load each file overlay into its slot
+      for (let k = 0; k < panel.overlays.length; k++) {
+        const o = panel.overlays[k];
+        if (o.kind !== "file" || !o.fileName) continue;
+        const fp = path.resolve(ROOT, o.fileName);
+        if (!fs.existsSync(fp)) { console.warn(`  ! missing overlay file: ${fp}`); continue; }
+        const b64 = fs.readFileSync(fp).toString("base64");
+        await ctx.ev(`window.brainAPI.loadOverlayFile(${k}, ${JSON.stringify(b64)}, ${JSON.stringify(o.fileName)})`);
+      }
+    } else {                                    // legacy single/A-B file panel
+      for (const slot of ["A","B"]) {
+        const fn = panel["file"+slot]; if (!fn) continue;
+        const fp = path.resolve(ROOT, fn);
+        if (!fs.existsSync(fp)) { console.warn(`  ! missing file for Map ${slot}: ${fp}`); continue; }
+        const b64 = fs.readFileSync(fp).toString("base64");
+        await ctx.ev(`window.brainAPI.loadStatArray(${JSON.stringify(b64)}, "A", ${JSON.stringify(fn)})`);
+      }
     }
-    await sleep(150);
+    await sleep(200);
   } else {
     const cfg = { view: panel.view || "left", task: panel.task, regionSet: panel.regionSet,
       scheme: panel.scheme, explosion: panel.explosion, connectivity: panel.connectivity,
@@ -120,8 +133,8 @@ async function renderPanel(ctx, panel) {
     await ctx.ev(`window.brainAPI.applyConfig(${JSON.stringify(cfg)})`);
     await sleep(250);
   }
-  const dataURL = await ctx.ev(`window.brainAPI.renderTo(${cellW},${cellH},true)`);
-  const cbar = await ctx.ev(`window.brainAPI.colorbar()`);
+  const dataURL = await ctx.ev(`window.brainAPI.captureView(${cellW},${cellH},true)`);
+  const cbar = (mode === "mesh") ? await ctx.ev(`window.brainAPI.colorbar()`) : null;  // slice/mosaic carry their own
   return { dataURL, label: panel.label || "", cbar };
 }
 
