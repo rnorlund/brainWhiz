@@ -198,7 +198,11 @@
           <button class="sm mpbtn" data-mp="sag">Sagittal</button></div>
         <div class="row"><label>Slices</label><input type="range" id="mosN" min="4" max="48" step="1" value="16" style="flex:1"><span id="mosNV" style="min-width:22px;text-align:right">16</span></div>
         <div class="row"><label>Columns</label><input type="range" id="mosCols" min="1" max="10" step="1" value="6" style="flex:1"><span id="mosColsV" style="min-width:22px;text-align:right">6</span></div>
-        <div class="row"><label class="toggle"><input type="checkbox" id="mosLabels" checked> show coordinates</label></div>
+        <div class="row"><label title="Spacing between tiles (0 = touching)">Gap</label><input type="range" id="mosGap" min="0" max="24" step="1" value="4" style="flex:1"><span id="mosGapV" style="min-width:22px;text-align:right">4</span></div>
+        <div class="row"><label title="Crop empty space around the brain so slices pack tighter">Tighten</label><input type="range" id="mosCrop" min="0" max="1" step="0.05" value="0.6" style="flex:1"><span id="mosCropV" style="min-width:22px;text-align:right">0.6</span></div>
+        <div class="row"><label class="toggle"><input type="checkbox" id="mosLabels" checked> coords</label>
+          <label style="margin-left:6px">size</label><input type="range" id="mosLabelSize" min="0" max="26" step="1" value="11" style="flex:1"><span id="mosLabelSizeV" style="min-width:18px;text-align:right">11</span></div>
+        <div class="row"><label class="toggle"><input type="checkbox" id="mosLabelCenter"> center coordinate text</label></div>
       </div>
     </div></div>
 </div>
@@ -267,8 +271,10 @@
         <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
         <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
         <label class="toggle" title="Threshold-Free Cluster Enhancement in the slice view (file overlays)"><input type="checkbox" id="ovTfce"> TFCE</label></div>
-      <div class="ctl"><div class="lab"><span title="Overlay opacity when blended in the slice view">Slice opacity</span><span id="ovOpacityV">1.0</span></div>
-        <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="1"></div>
+      <div class="ctl"><div class="lab"><span title="Overlay opacity in the slice & mosaic views">Overlay opacity</span><span id="ovOpacityV">1.0</span></div>
+        <input type="range" id="ovOpacity" min="0.05" max="1" step="0.05" value="1"></div>
+      <div class="ctl"><div class="lab"><span title="Color vividness / saturation of this overlay in slices & mosaic">Overlay vividness</span><span id="ovVividV">1.0</span></div>
+        <input type="range" id="ovVivid" min="0.5" max="2.5" step="0.05" value="1"></div>
     </div>
     <div id="ovInfo" class="muted" style="font-size:11px;margin-top:6px"></div>
   </div></details>
@@ -1290,7 +1296,7 @@ function syncStyleRows(){
   $('cmapInvert').parentElement.style.display = cm?'flex':'none';
 }
 // ---- overlay stack management ----
-function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1'}; }
+function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1',vivid:'1'}; }
 function ovRender(){
   const L=$('ovList'); if(!L) return; L.innerHTML='';
   overlays.forEach((o,i)=>{ const d=document.createElement('div'); d.className='ovItem'+(i===selOv?' sel':'');
@@ -1311,13 +1317,14 @@ function ovApplySettings(o){ const s=o.s;
   $('cmin').value=s.cmin; $('cmax').value=s.cmax; $('cthreshMode').value=s.cthreshMode; $('cthresh').value=s.cthresh;
   $('cmapInvert').checked=s.cmapInvert; $('cmapAbs').checked=s.cmapAbs;
   $('ovOpacity').value=s.opacity; $('ovOpacityV').textContent=(+s.opacity).toFixed(1);
+  $('ovVivid').value=s.vivid||'1'; $('ovVividV').textContent=(+(s.vivid||1)).toFixed(1);
   $('ovTfce').checked = !!o.tfce;
   $('taskMap').value = o.kind==='task'?(o.term||''):'';
 }
 function ovReadEditor(){ if(selOv<0) return; const o=overlays[selOv];
   o.name=$('ovName').value||o.name; overlay.name=o.name;
   o.s={ style:$('ovStyle').value, color:$('ovColor').value, cmap:$('cmap').value, cmin:$('cmin').value, cmax:$('cmax').value,
-    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value };
+    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value, vivid:$('ovVivid').value };
 }
 function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overlays[i];
   overlay.vals=o.vals||null; overlay.volA=o.vol||null; overlay.volA_grid=o.volGrid||null; overlay.name=o.name; overlay.on=!!o.vals; tfceCache=null;
@@ -1365,6 +1372,7 @@ function initOverlayUI(){
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
   $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
+  $('ovVivid').addEventListener('input', ()=>{ $('ovVividV').textContent=(+$('ovVivid').value).toFixed(1); edited(); });
   $('ovTfce').addEventListener('change', ()=>{ if(selOv<0) return; const o=overlays[selOv]; o.tfce=$('ovTfce').checked;
     if(o.tfce && !o.tfceCache && (o.volGrid||o.vol)){ $('ovInfo').textContent='computing TFCE…';
       setTimeout(()=>{ o.tfceCache=computeTFCE(o.volGrid||o.vol); $('ovInfo').textContent=o.tfceCache?(o.name+' · TFCE'):'no positive values to enhance'; refreshSliceViews(); },20);
@@ -1831,7 +1839,8 @@ function captureViewerCfg(){
     vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id),
     mode: mosaicMode?'mosaic':sliceMode?'slice':'mesh',
     sliceMM: sliceMM.map(v=>+v.toFixed(1)), sliceKind,
-    mosaic: { plane:mosaicPlane, n:+$('mosN').value, cols:+$('mosCols').value, labels:$('mosLabels').checked },
+    mosaic: { plane:mosaicPlane, n:+$('mosN').value, cols:+$('mosCols').value, labels:$('mosLabels').checked,
+      gap:+$('mosGap').value, crop:+$('mosCrop').value, labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
     active: selOv,
     overlays: overlays.map(o=>({ name:o.name, kind:o.kind, term:o.term||'', fileName:o.fileName||'', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} })) };
 }
@@ -1860,8 +1869,10 @@ function applyViewerCfg(cfg){
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
   if(cfg.sliceMM) sliceMM=cfg.sliceMM.slice();
   if(cfg.sliceKind){ sliceKind=cfg.sliceKind; const vx=$('slKindVox'),mh=$('slKindMesh'); if(vx)vx.classList.toggle('on',sliceKind==='voxel'); if(mh)mh.classList.toggle('on',sliceKind==='mesh'); }
-  if(cfg.mosaic){ mosaicPlane=cfg.mosaic.plane||'axi';
-    const mn=$('mosN'),mc=$('mosCols'),ml=$('mosLabels'); if(mn){mn.value=cfg.mosaic.n||16;$('mosNV').textContent=mn.value;} if(mc){mc.value=cfg.mosaic.cols||6;$('mosColsV').textContent=mc.value;} if(ml)ml.checked=cfg.mosaic.labels!==false;
+  if(cfg.mosaic){ const M=cfg.mosaic; mosaicPlane=M.plane||'axi';
+    const set=(id,v,vid)=>{ const e=$(id); if(e&&v!=null){ e.value=v; if(vid&&$(vid))$(vid).textContent=v; } };
+    set('mosN',M.n,'mosNV'); set('mosCols',M.cols,'mosColsV'); set('mosGap',M.gap,'mosGapV'); set('mosCrop',M.crop,'mosCropV'); set('mosLabelSize',M.labelSize,'mosLabelSizeV');
+    if($('mosLabels')) $('mosLabels').checked=M.labels!==false; if($('mosLabelCenter')) $('mosLabelCenter').checked=!!M.labelCenter;
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x.dataset.mp===mosaicPlane)); }
   setViewMode(cfg.mode||'mesh');
   requestRender();
@@ -2162,7 +2173,7 @@ function ovSliceParams(o){ const s=o.s, raw=(s.cthreshMode==='raw');
     src=o.tfceCache?o.tfceCache.vol:(o.volGrid||o.vol); hi=o.tfceCache?o.tfceCache.max:1; }
   else { src=o.volGrid||o.vol; hi=ovVolStats(o).hi; }
   hi=hi||1e-6; const thr = raw ? +s.cthresh : (+s.cthresh)*hi;   // threshold = fraction of robust max (base 0)
-  return { src, lo:0, span:hi, thr, abs:s.cmapAbs, invert:s.cmapInvert, style:s.style, color:hex2rgb(s.color), cmap:s.cmap, opacity:+s.opacity };
+  return { src, lo:0, span:hi, thr, abs:s.cmapAbs, invert:s.cmapInvert, style:s.style, color:hex2rgb(s.color), cmap:s.cmap, opacity:+s.opacity, vivid:+(s.vivid||1) };
 }
 
 // Threshold-Free Cluster Enhancement on a volume's grid (positive side).
@@ -2227,6 +2238,8 @@ function renderPlane(cv, plane){
         let cr,cg,cb;
         if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; }
         else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
+        if(p.vivid!==1){ const L=0.3*cr+0.59*cg+0.11*cb; cr=L+(cr-L)*p.vivid; cg=L+(cg-L)*p.vivid; cb=L+(cb-L)*p.vivid;
+          cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
         // alpha ramps from the threshold up: weak voxels stay translucent (anatomy shows), strong = opaque
         let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp;
         const a=p.opacity*(0.2+0.8*ramp);
@@ -2258,13 +2271,24 @@ function mosaicRange(plane){ const mni=ensureMNI(), L=templSignalRange(mni);
   return get(t=>[t,cj,ck], L.i[0]+pad, L.i[1]-pad);
 }
 function worldAt(plane,h,v,fixed){ if(plane==='sag') return [fixed,h,v]; if(plane==='cor') return [h,fixed,v]; return [h,v,fixed]; }
+// in-plane window for mosaic tiles: lerp from full template bounds toward a tight brain bbox
+// (the "Tighten" slider) so empty margin around the brain is cropped away.
+function mosaicInplane(plane){ const mni=ensureMNI(), L=templSignalRange(mni), full=baseInplane(plane), crop=+$('mosCrop').value;
+  const ci=(L.i[0]+L.i[1])>>1, cj=(L.j[0]+L.j[1])>>1, ck=(L.k[0]+L.k[1])>>1;
+  const wx=ii=>mni.worldOf(ii,cj,ck)[0], wy=jj=>mni.worldOf(ci,jj,ck)[1], wz=kk=>mni.worldOf(ci,cj,kk)[2];
+  let t; if(plane==='axi') t=[wx(L.i[0]),wx(L.i[1]),wy(L.j[0]),wy(L.j[1])];
+  else if(plane==='cor') t=[wx(L.i[0]),wx(L.i[1]),wz(L.k[0]),wz(L.k[1])];
+  else t=[wy(L.j[0]),wy(L.j[1]),wz(L.k[0]),wz(L.k[1])];
+  const th0=Math.min(t[0],t[1]),th1=Math.max(t[0],t[1]),tv0=Math.min(t[2],t[3]),tv1=Math.max(t[2],t[3]), lp=(a,b)=>a+(b-a)*crop;
+  return { hmin:lp(full.hmin,th0), hmax:lp(full.hmax,th1), vmin:lp(full.vmin,tv0), vmax:lp(full.vmax,tv1) };
+}
 function renderMosaic(){
   if(!mosaicMode) return; const mni=ensureMNI(); if(!mni) return;
   const cv=$('mosaicCanvas'), host=$('mosaicView'), dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
-  const plane=mosaicPlane, b=baseInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
-  const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round(3*dpr);
+  const plane=mosaicPlane, b=mosaicInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
+  const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round((+$('mosGap').value)*dpr);
   let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
   if(rows*tileH+(rows+1)*gap>H){ tileH=(H-(rows+1)*gap)/rows; tileW=tileH*(hr/vr); }
   const ovs=sliceOverlays().map(ovSliceParams);
@@ -2281,14 +2305,17 @@ function renderMosaic(){
           const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue;
           let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
           let cr,cg,cb; if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; } else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
+          if(p.vivid!==1){ const L=0.3*cr+0.59*cg+0.11*cb; cr=L+(cr-L)*p.vivid; cg=L+(cg-L)*p.vivid; cb=L+(cb-L)*p.vivid; cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
           let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp; const a=p.opacity*(0.2+0.8*ramp);
           r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
         }
         const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
       }}
     ctx.putImageData(img,dx,dy);
-    if(labels){ ctx.fillStyle='rgba(220,230,245,.9)'; ctx.font=`${Math.round(10.5*dpr)}px system-ui`; ctx.textAlign='left'; ctx.textBaseline='bottom';
-      ctx.fillText(`${axL}=${Math.round(fixed)}`, dx+3*dpr, dy+dh-2*dpr); }
+    if(labels){ const lz=+$('mosLabelSize').value, center=$('mosLabelCenter').checked;
+      if(lz>0){ ctx.fillStyle='rgba(225,233,245,.95)'; ctx.font=`${Math.round(lz*dpr)}px system-ui`; ctx.textBaseline='bottom';
+        if(center){ ctx.textAlign='center'; ctx.fillText(`${axL}=${Math.round(fixed)}`, dx+dw/2, dy+dh-3*dpr); }
+        else { ctx.textAlign='left'; ctx.fillText(`${axL}=${Math.round(fixed)}`, dx+3*dpr, dy+dh-2*dpr); } } }
   }
 }
 function syncPosSliders(){ $('slPosX').value=Math.round(sliceMM[0]); $('slPosY').value=Math.round(sliceMM[1]); $('slPosZ').value=Math.round(sliceMM[2]); }
@@ -2359,6 +2386,10 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x===b)); renderMosaic(); }));
   $('mosN').addEventListener('input',e=>{ $('mosNV').textContent=e.target.value; renderMosaic(); });
   $('mosCols').addEventListener('input',e=>{ $('mosColsV').textContent=e.target.value; renderMosaic(); });
+  $('mosGap').addEventListener('input',e=>{ $('mosGapV').textContent=e.target.value; renderMosaic(); });
+  $('mosCrop').addEventListener('input',e=>{ $('mosCropV').textContent=(+e.target.value).toFixed(1); renderMosaic(); });
+  $('mosLabelSize').addEventListener('input',e=>{ $('mosLabelSizeV').textContent=e.target.value; renderMosaic(); });
+  $('mosLabelCenter').addEventListener('change', renderMosaic);
   $('mosLabels').addEventListener('change', renderMosaic);
   let _slrz; window.addEventListener('resize', ()=>{ if(sliceMode||mosaicMode){ clearTimeout(_slrz); _slrz=setTimeout(refreshSliceViews,120); } });
   ['slSag','slCor','slAxi'].forEach(id=>{ const cv=$(id);

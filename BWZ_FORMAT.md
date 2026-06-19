@@ -46,7 +46,7 @@ A `.bwz` + the referenced `.nii` files = a fully reproducible figure.
   "active": 0,                    // index of the overlay shown on the 3D mesh
   "sliceMM": [0, -18, 50],        // slice/mosaic crosshair (MNI mm) for mode:"slice"
   "sliceKind": "voxel",           // mode:"slice" — "voxel" heatmap or "mesh" cross-sections
-  "mosaic": { "plane":"axi", "n":16, "cols":6, "labels":true },   // mode:"mosaic" settings
+  "mosaic": { "plane":"axi","n":16,"cols":6,"gap":4,"crop":0.6,"labels":true,"labelSize":11,"labelCenter":false },  // mode:"mosaic"
   "camP": [-330, 12, 4],          // optional camera position (omit = default left-sagittal)
   "camT": [0, 0, 0],              // optional camera target
   "vis":  [12,13,25,26],          // optional: only these ROI ids visible (omit = all)
@@ -71,7 +71,8 @@ A `.bwz` + the referenced `.nii` files = a fully reproducible figure.
     "cthresh": "0.25",                   // threshold (fraction of range, or raw — see cthreshMode)
     "cthreshMode": "frac",               // "frac" | "raw"
     "cmapInvert": false, "cmapAbs": false,
-    "opacity": "1"                       // blend opacity in the slice/mosaic view
+    "opacity": "1",                      // blend opacity in the slice/mosaic view
+    "vivid": "1"                         // color vividness/saturation in slice/mosaic (0.5–2.5)
   }
 }
 ```
