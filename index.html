@@ -325,7 +325,7 @@
     <div class="ctl"><div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
       <input type="range" id="rim" min="0" max="1.5" step="0.05" value="0.3"></div>
     <div class="row"><label>Rim color</label><input type="color" id="rimColor" value="#ffffff"></div>
-    <div class="row"><label>Background</label><input type="color" id="bg" value="#0b0e14">
+    <div class="row"><label>Background</label><input type="color" id="bg" value="#000000">
       <button class="sm" id="bgWhite" title="white">▢</button>
       <button class="sm" id="bgBlack" title="black">▣</button></div>
   </div></details>
@@ -520,7 +520,7 @@ document.title = (ENTRY?ENTRY.name:ATLAS_ID)+' — brainWhiz';
 // ---------- scene ----------
 const app = document.getElementById('app');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#0b0e14');
+scene.background = new THREE.Color('#000000');
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
 camera.position.set(0, 0, 320);
@@ -931,9 +931,16 @@ patternUniforms.uContrast.value = 1 - (+$('patStr').value);
 $('patScaleVal').textContent=(+$('patScale').value).toFixed(3);
 $('patStrVal').textContent=(+$('patStr').value).toFixed(2);
 
-$('bg').addEventListener('input', e=>scene.background=new THREE.Color(e.target.value));
-$('bgWhite').addEventListener('click', ()=>{ $('bg').value='#ffffff'; scene.background=new THREE.Color('#ffffff'); });
-$('bgBlack').addEventListener('click', ()=>{ $('bg').value='#0b0e14'; scene.background=new THREE.Color('#0b0e14'); });
+// one background color for the whole viewer — 3D mesh AND slice/mosaic boxes + their gaps
+function viewBg(){ return $('bg').value || '#000000'; }
+function applyViewBg(){ const c=viewBg(); scene.background=new THREE.Color(c);
+  for(const id of ['sliceView','mosaicView']){ const e=$(id); if(e) e.style.background=c; }
+  document.querySelectorAll('#sliceView .sl').forEach(s=>s.style.background=c);
+  refreshSliceViews(); requestRender(); }
+$('bg').addEventListener('input', applyViewBg);
+$('bgWhite').addEventListener('click', ()=>{ $('bg').value='#ffffff'; applyViewBg(); });
+$('bgBlack').addEventListener('click', ()=>{ $('bg').value='#000000'; applyViewBg(); });
+applyViewBg();   // sync containers/scene to the bg control at startup
 
 // ---------- DTI connectivity (avg of ABC participants) ----------
 const CONN = window.ATLAS_CONN;   // { dti?:{max,edges}, rs?:{max,edges} }  (or undefined)
@@ -1808,7 +1815,7 @@ async function pbResolveTile(i){
 // composite the current slice view (sag/cor/axi + 3D) into one 2x2 image for a figure tile
 function captureSlices2x2(W=900,H=680){
   const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
-  x.fillStyle='#000000'; x.fillRect(0,0,W,H);
+  x.fillStyle=viewBg(); x.fillRect(0,0,W,H);
   const qw=W/2, qh=H/2;
   const draw=(src,qx,qy)=>{ if(!src) return; const sw=src.width||src.naturalWidth, sh=src.height||src.naturalHeight;
     if(!sw||!sh) return; const s=Math.min(qw/sw,qh/sh), dw=sw*s, dh=sh*s; x.drawImage(src, qx+(qw-dw)/2, qy+(qh-dh)/2, dw, dh); };
@@ -2105,7 +2112,7 @@ function renderMeshSlices(){
     const dpr=Math.min(window.devicePixelRatio||1,2);
     const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
     cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-    ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
     const sc=Math.min(W/win.hr,H/win.vr), dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));
     const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
     const toX=h=>ox+((h-win.hmin)/win.hr)*dw, toY=v=>oy+((win.vmax-v)/win.vr)*dh;
@@ -2224,14 +2231,15 @@ function renderPlane(cv, plane){
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-  ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
   const sc=Math.min(W/hr,H/vr), dw=Math.max(1,Math.round(hr*sc)), dh=Math.max(1,Math.round(vr*sc));
   const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
   const img=ctx.createImageData(dw,dh), D=img.data;
   const ovs=sliceOverlays().map(ovSliceParams);   // each blended in its own color/threshold
+  const [bgR,bgG,bgB]=hex2rgb(viewBg());          // outside the brain = the background color
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
-      const g=mni.sampleMM(w[0],w[1],w[2])||0; let r=g,gg=g,bb=g;
+      const tv=mni.sampleMM(w[0],w[1],w[2])||0; let r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
       for(const p of ovs){ const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
         const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue;
         let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
@@ -2286,12 +2294,13 @@ function renderMosaic(){
   if(!mosaicMode) return; const mni=ensureMNI(); if(!mni) return;
   const cv=$('mosaicCanvas'), host=$('mosaicView'), dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
-  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
+  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
   const plane=mosaicPlane, b=mosaicInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
   const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round((+$('mosGap').value)*dpr);
   let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
   if(rows*tileH+(rows+1)*gap>H){ tileH=(H-(rows+1)*gap)/rows; tileW=tileH*(hr/vr); }
   const ovs=sliceOverlays().map(ovSliceParams);
+  const [bgR,bgG,bgB]=hex2rgb(viewBg());
   const gridW=cols*tileW+(cols+1)*gap, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
   const gridH=rows*tileH+(rows+1)*gap, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
   for(let s=0;s<N;s++){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
@@ -2300,7 +2309,7 @@ function renderMosaic(){
     const img=ctx.createImageData(dw,dh), D=img.data;
     for(let py=0;py<dh;py++){ const vW=b.vmax-(py/(dh-1||1))*vr;
       for(let px=0;px<dw;px++){ const hW=b.hmin+(px/(dw-1||1))*hr, w=worldAt(plane,hW,vW,fixed);
-        const g=mni.sampleMM(w[0],w[1],w[2])||0; let r=g,gg=g,bb=g;
+        const tv=mni.sampleMM(w[0],w[1],w[2])||0; let r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
         for(const p of ovs){ const vv=p.src.sampleMM(w[0],w[1],w[2]); if(vv===null||!isFinite(vv)) continue;
           const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue;
           let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
