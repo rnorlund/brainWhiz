@@ -1744,14 +1744,26 @@ async function pbResolveTile(i){
   it.dataURL=window.brainAPI.renderTo(900,680,true); it.cbar=window.brainAPI.colorbar();
   it.needsFile=false; pbRender();
 }
+// composite the current slice view (sag/cor/axi + 3D) into one 2x2 image for a figure tile
+function captureSlices2x2(W=900,H=680){
+  const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
+  x.fillStyle='#05070b'; x.fillRect(0,0,W,H);
+  const qw=W/2, qh=H/2;
+  const draw=(src,qx,qy)=>{ if(!src) return; const sw=src.width||src.naturalWidth, sh=src.height||src.naturalHeight;
+    if(!sw||!sh) return; const s=Math.min(qw/sw,qh/sh), dw=sw*s, dh=sh*s; x.drawImage(src, qx+(qw-dw)/2, qy+(qh-dh)/2, dw, dh); };
+  draw($('slSag'),0,0); draw($('slCor'),qw,0); draw($('slAxi'),0,qh); draw($('sl3d'),qw,qh);
+  return c.toDataURL('image/png');
+}
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
   const A = $('taskMap').value || (ov && ov.kind==='file' ? ov.fileName : '') || '';
-  const auto = A ? `${atlasName} · ${A.replace(/\.nii(\.gz)?$/i,'')}` : `${atlasName} · ${$('scheme').value}`;
-  pbItems[i] = { dataURL: window.brainAPI.renderTo(900,680,true),   // transparent -> figure BG shows through
+  const slice = sliceMode;
+  const auto = slice ? `${atlasName} · slices (MNI ${sliceMM.map(v=>Math.round(v)).join(', ')})`
+    : (A ? `${atlasName} · ${A.replace(/\.nii(\.gz)?$/i,'')}` : `${atlasName} · ${$('scheme').value}`);
+  pbItems[i] = { dataURL: slice ? captureSlices2x2() : window.brainAPI.renderTo(900,680,true),
     label: keepLabel!==undefined ? keepLabel : auto,
-    cbar: window.brainAPI.colorbar(), cfg: captureViewerCfg() };
+    cbar: slice ? null : window.brainAPI.colorbar(), cfg: captureViewerCfg() };
   pbRender();
 }
 // snapshot the full viewer state for a tile so it can be restored/edited later
