@@ -20,6 +20,8 @@
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:20}
   #topbar .brand{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px;white-space:nowrap}
   #topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+  #topbar .brandlogo{height:34px;width:34px;border-radius:7px;object-fit:cover;flex:none}
+  #loader .loaderlogo{width:230px;max-width:62vw;border-radius:18px;margin-bottom:20px;box-shadow:0 8px 40px #000a}
   .tbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;
     padding:5px 9px;cursor:pointer;font-size:12px;white-space:nowrap}
   .tbtn:hover{border-color:var(--accent)}
@@ -77,6 +79,17 @@
   .group[open]>summary .chev{transform:rotate(90deg)}
   .group .gname{font-weight:600;flex:1}
   .group .gcount{color:var(--muted);font-size:11px}
+  /* overlay list */
+  #ovList{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
+  .ovItem{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px}
+  .ovItem.sel{border-color:var(--accent);background:#16233b}
+  .ovItem .ovdot{width:13px;height:13px;border-radius:3px;flex:none;border:1px solid #0006}
+  .ovItem .ovnm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ovItem .ovx{color:var(--muted);padding:0 2px}
+  .ovItem .ovx:hover{color:var(--accent2)}
+  .ovItem input[type=checkbox]{accent-color:var(--accent);flex:none;margin:0}
+  .ovItem .a3d{font-size:10px;flex:none;opacity:.5}
+  .ovItem.sel .a3d{opacity:1}
   .roi{display:flex;align-items:center;gap:8px;padding:4px 14px 4px 22px}
   .roi:hover{background:var(--panel2)}
   .roi.sel{background:#23304a}
@@ -179,7 +192,7 @@
 <!-- ===== TOP TOOLBAR (most-used: atlas · views · export) ===== -->
 <div id="topbar">
   <button id="navToggle" class="tbtn" title="show / hide controls">☰</button>
-  <span class="brand"><span class="dot"></span>brainWhiz</span>
+  <img src="brainwhiz_logo.png" class="brandlogo" alt="brainWhiz" title="brainWhiz">
   <select id="atlasSel" class="tbsel" title="atlas"></select>
   <span id="netBadge" class="netbadge" title="connection mode">● online</span>
   <span style="flex:1"></span>
@@ -205,52 +218,43 @@
 <!-- ===== LEFT ACCORDION (task-grouped; only Overlay open) ===== -->
 <div id="sidebar">
 
-  <details class="acc" open><summary><span class="chev">▸</span>📊 Overlay</summary><div class="accb">
-    <div class="row"><label title="Pick a baked-in NeuroQuery task map">Task map</label>
-      <select id="taskMap"><option value="">— none —</option></select></div>
-    <div class="muted" style="font-size:11px;padding:0 0 4px">NeuroQuery terms (baked). Type to jump.</div>
-    <div class="row"><label title="Load a statistical MNI152 image; regions colored by their mean value">Map A .nii</label>
-      <input type="file" id="statFile" accept=".nii,.nii.gz,.gz"></div>
-    <div class="row"><label title="Combine two maps">Combine</label>
-      <select id="ovCombine">
-        <option value="none">Single map</option>
-        <option value="conj">Conjunction (A ∧ B)</option>
-        <option value="sub">Subtraction (A − B)</option>
-      </select></div>
-    <div class="ovB" style="display:none">
-      <div class="row"><label>Map B task</label>
-        <select id="taskMapB"><option value="">— none —</option></select></div>
-      <div class="row"><label>Map B .nii</label>
-        <input type="file" id="statFileB" accept=".nii,.nii.gz,.gz"></div>
-      <div class="row"><label>Color B</label><input type="color" id="ovColorB" value="#1f77b4"></div>
-      <div class="row"><label class="toggle"><input type="checkbox" id="ovAndOnly"> show only where A ∧ B (strict)</label></div>
-    </div>
-    <div class="row" id="ovStyleRow"><label>Overlay style</label>
-      <select id="ovStyle">
-        <option value="solid">Gray brain + 1 color</option>
-        <option value="cmap">Colormap (multicolor)</option>
-      </select></div>
-    <div class="row" id="ovColorRow"><label>Color A</label>
-      <input type="color" id="ovColor" value="#ff3b30"></div>
-    <div class="row" id="cmapRow" style="display:none"><label>Colormap</label>
-      <select id="cmap"></select></div>
-    <canvas id="cbar" width="280" height="14" title="colorbar" style="display:none"></canvas>
-    <canvas id="cbar2d" width="120" height="120" title="conjunction key" style="display:none;margin:6px auto;border:1px solid var(--line);border-radius:3px"></canvas>
+  <details class="acc" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
+    <div id="ovList"></div>
     <div class="row" style="gap:6px">
-      <label style="min-width:auto">min</label><input type="text" id="cmin" style="width:60px">
-      <label style="min-width:auto">max</label><input type="text" id="cmax" style="width:60px">
-      <button class="sm" id="autoRange">auto</button>
+      <button class="sm" id="ovAddTask" title="Add an overlay from a baked NeuroQuery task map">➕ Task map</button>
+      <button class="sm" id="ovAddFile" title="Add an overlay from your own MNI .nii/.nii.gz">➕ Load .nii</button>
     </div>
-    <div class="row"><label>Threshold <span id="cthreshUnit" class="muted"></span></label>
-      <input type="range" id="cthresh" min="0" max="1" step="0.01" value="0"></div>
-    <div class="row"><label>Units</label>
-      <select id="cthreshMode"><option value="frac">fraction of range</option><option value="raw">raw value (z, etc.)</option></select></div>
-    <div class="row" style="gap:14px">
-      <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
-      <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
-      <button class="sm" id="clearOverlay">clear</button>
+    <input type="file" id="statFile" accept=".nii,.nii.gz,.gz" style="display:none">
+    <div id="ovEditor" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:none">
+      <div class="row"><label title="Rename this overlay">Name</label><input type="text" id="ovName" style="flex:1" title="Rename this overlay"></div>
+      <div class="row" id="ovTaskRow"><label title="Pick a baked NeuroQuery task map for this overlay">Task map</label>
+        <select id="taskMap"><option value="">— none —</option></select></div>
+      <div class="row" id="ovStyleRow"><label>Style</label>
+        <select id="ovStyle">
+          <option value="solid">Gray brain + 1 color</option>
+          <option value="cmap">Colormap (multicolor)</option>
+        </select></div>
+      <div class="row" id="ovColorRow"><label>Color</label>
+        <input type="color" id="ovColor" value="#ff3b30"></div>
+      <div class="row" id="cmapRow" style="display:none"><label>Colormap</label>
+        <select id="cmap"></select></div>
+      <canvas id="cbar" width="280" height="14" title="colorbar" style="display:none"></canvas>
+      <div class="row" style="gap:6px">
+        <label style="min-width:auto">min</label><input type="text" id="cmin" style="width:60px">
+        <label style="min-width:auto">max</label><input type="text" id="cmax" style="width:60px">
+        <button class="sm" id="autoRange">auto</button>
+      </div>
+      <div class="row"><label>Threshold <span id="cthreshUnit" class="muted"></span></label>
+        <input type="range" id="cthresh" min="0" max="1" step="0.01" value="0"></div>
+      <div class="row"><label title="TFCE on raw values, or fraction of range">Units</label>
+        <select id="cthreshMode"><option value="frac">fraction of range</option><option value="raw">raw value (z, etc.)</option></select></div>
+      <div class="row" style="gap:14px">
+        <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
+        <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label></div>
+      <div class="ctl"><div class="lab"><span title="Overlay opacity when blended in the slice view">Slice opacity</span><span id="ovOpacityV">1.0</span></div>
+        <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="1"></div>
     </div>
-    <div id="ovInfo" class="muted" style="font-size:11px"></div>
+    <div id="ovInfo" class="muted" style="font-size:11px;margin-top:6px"></div>
   </div></details>
 
   <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
@@ -445,7 +449,7 @@
 
 <div class="hint">drag rotate · scroll zoom · right-drag pan · click region = info</div>
 
-<div id="loader"><div class="spin"></div><div>Loading 189 brain regions…</div></div>
+<div id="loader"><img src="brainwhiz_logo.png" class="loaderlogo" alt="brainWhiz"><div class="spin"></div><div>Loading 189 brain regions…</div></div>
 
 <script src="colormaps.js"></script>
 <script src="bundles/registry.js"></script>
@@ -576,7 +580,9 @@ function colorFor(scheme, m, idx){
   }
 }
 let activeScheme = 'lobe';
-const overlay = {on:false, vals:null, name:'', valsB:null, nameB:'', combine:'none', volA:null, volB:null, volA_grid:null};   // value-based coloring state
+const overlay = {on:false, vals:null, name:'', volA:null, volA_grid:null};   // MIRROR of the active overlay (reused by recolor/colorbar/slices)
+let overlays=[], selOv=-1;          // overlay stack; selected = active in 3D
+const OVCOLORS=['#ff3b30','#1f77b4','#2ca02c','#ff7f0e','#9467bd','#17becf','#e377c2','#bcbd22'];
 // ---- voxel slice-view state ----
 let sliceMode=false, sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
 function setSwatch(node, hex){
@@ -1204,7 +1210,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
-  'coloredOp','grayOp','satCut','glass','smooth','ovCombine','ovColorB','ovAndOnly'];
+  'coloredOp','grayOp','satCut','glass','smooth'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
@@ -1252,20 +1258,55 @@ const NEURO = window.ATLAS_NEURO || {terms:{},order:[]};
 const SAMPLES = window.ATLAS_SAMPLES || {};
 function styleIsCmap(){ return $('ovStyle').value==='cmap'; }
 function syncStyleRows(){
-  const dual = overlay.combine!=='none';
-  document.querySelector('.ovB').style.display = dual?'block':'none';
-  $('ovStyleRow').style.display = dual?'none':'flex';
-  if(dual){   // dual mode: Color A + Color B keys, diverging/blend legend
-    $('cmapRow').style.display='none'; $('cbar').style.display='block';
-    $('ovColorRow').style.display='flex';
-    $('cmapInvert').parentElement.style.display='none';
-    return;
-  }
   const cm=styleIsCmap();
   $('cmapRow').style.display = cm?'flex':'none';
   $('cbar').style.display    = cm?'block':'none';
   $('ovColorRow').style.display = cm?'none':'flex';
   $('cmapInvert').parentElement.style.display = cm?'flex':'none';
+}
+// ---- overlay stack management ----
+function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'viridis',cmin:'0',cmax:'1',cthresh:'0',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1'}; }
+function ovRender(){
+  const L=$('ovList'); if(!L) return; L.innerHTML='';
+  overlays.forEach((o,i)=>{ const d=document.createElement('div'); d.className='ovItem'+(i===selOv?' sel':'');
+    d.innerHTML=`<input type="checkbox" ${o.visible?'checked':''} title="Show this overlay in the slice view">
+      <span class="ovdot" style="background:${o.s.color}"></span>
+      <span class="ovnm">${(o.name||'overlay').replace(/</g,'&lt;')}</span>
+      <span class="a3d" title="Active on the 3D brain">${i===selOv?'🧠 3D':''}</span>
+      <span class="ovx" title="Remove overlay">✕</span>`;
+    d.querySelector('.ovnm').addEventListener('click',()=>ovSelect(i));
+    d.querySelector('.ovdot').addEventListener('click',()=>ovSelect(i));
+    const cb=d.querySelector('input'); cb.addEventListener('click',e=>e.stopPropagation());
+    cb.addEventListener('change',e=>{ o.visible=e.target.checked; if(sliceMode) sliceRenderAll(); });
+    d.querySelector('.ovx').addEventListener('click',e=>{ e.stopPropagation(); ovRemove(i); });
+    L.appendChild(d); });
+}
+function ovApplySettings(o){ const s=o.s;
+  $('ovName').value=o.name; $('ovStyle').value=s.style; $('ovColor').value=s.color; $('cmap').value=s.cmap;
+  $('cmin').value=s.cmin; $('cmax').value=s.cmax; $('cthreshMode').value=s.cthreshMode; $('cthresh').value=s.cthresh;
+  $('cmapInvert').checked=s.cmapInvert; $('cmapAbs').checked=s.cmapAbs;
+  $('ovOpacity').value=s.opacity; $('ovOpacityV').textContent=(+s.opacity).toFixed(1);
+  $('taskMap').value = o.kind==='task'?(o.term||''):'';
+}
+function ovReadEditor(){ if(selOv<0) return; const o=overlays[selOv];
+  o.name=$('ovName').value||o.name; overlay.name=o.name;
+  o.s={ style:$('ovStyle').value, color:$('ovColor').value, cmap:$('cmap').value, cmin:$('cmin').value, cmax:$('cmax').value,
+    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value };
+}
+function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overlays[i];
+  overlay.vals=o.vals||null; overlay.volA=o.vol||null; overlay.volA_grid=o.volGrid||null; overlay.name=o.name; overlay.on=!!o.vals; tfceCache=null;
+  ovApplySettings(o); syncStyleRows(); syncThreshRange();
+  $('ovEditor').style.display='block'; $('ovTaskRow').style.display = o.kind==='task'?'flex':'none';
+  if(o.vals) recolorOverlay(); else applyScheme(activeScheme);
+  updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
+}
+function ovAdd(kind){ const s=ovDefaults(); s.color=OVCOLORS[overlays.length%OVCOLORS.length];
+  overlays.push({name:'Overlay '+(overlays.length+1), kind, term:'', fileName:'', vals:null, vol:null, volGrid:null, visible:true, s});
+  selOv=overlays.length-1; return overlays[selOv]; }
+function ovRemove(i){ overlays.splice(i,1);
+  if(!overlays.length){ selOv=-1; overlay.on=false; overlay.vals=null; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
+    $('ovEditor').style.display='none'; applyScheme(activeScheme); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); return; }
+  ovSelect(Math.min(i, overlays.length-1));
 }
 function initOverlayUI(){
   const tmSel=$('taskMap');
@@ -1277,45 +1318,33 @@ function initOverlayUI(){
   const ccm=$('connCmap');
   for(const k of CMAP_ORDER){ if(!CMAPS[k]) continue; const o=document.createElement('option'); o.value=k; o.textContent=k; ccm.appendChild(o); }
   ccm.value='turbo';
-  const tmB=$('taskMapB');
-  for(const term of NEURO.order){ const o=document.createElement('option'); o.value=term; o.textContent=term; tmB.appendChild(o); }
   const tm=$('taskMap');
-  const applyTask=()=>{ const t=tm.value.trim(); overlay.fileA=null;
-    if(!t){ if(overlay.combine==='none') applyScheme(activeScheme); else { overlay.vals=null; overlay.name=''; } return; }
+  const applyTask=()=>{ const t=tm.value.trim();
+    if(selOv<0) ovAdd('task');
+    if(!t){ const o=overlays[selOv]; o.vals=null; o.term=''; overlay.vals=null; overlay.on=false; applyScheme(activeScheme); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); return; }
     if(!NEURO.terms[t]){ $('ovInfo').textContent='No baked map for "'+t+'".'; return; }
-    $('statFile').value='';
     applyOverlay(NEURO.terms[t], t);
   };
   tm.addEventListener('change', applyTask);
-  tmB.addEventListener('change', ()=>{ const t=tmB.value.trim(); overlay.fileB=null;
-    if(!t){ overlay.valsB=null; overlay.nameB=''; if(overlay.on) recolorOverlay(); return; }
-    $('statFileB').value=''; applyOverlayB(NEURO.terms[t], t); });
-  $('ovCombine').addEventListener('change', e=>{
-    overlay.combine=e.target.value; syncStyleRows();
-    if(overlay.on){ recolorOverlay(); updateColorbar(); }
-  });
-  $('ovStyle').addEventListener('change', ()=>{ syncStyleRows(); if(overlay.on) recolorOverlay(); });
-  $('ovColor').addEventListener('input', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
-  $('ovColorB').addEventListener('input', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
-  $('ovAndOnly').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); });
-  $('cmap').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
-  $('cmapInvert').addEventListener('change', ()=>{ if(overlay.on) recolorOverlay(); updateColorbar(); });
-  $('cmapAbs').addEventListener('change', ()=>{ if(overlay.on){ autoRange(); syncThreshRange(); recolorOverlay(); } });
-  $('cthreshMode').addEventListener('change', ()=>{ syncThreshRange(); if(overlay.on) recolorOverlay(); });
-  $('cthresh').addEventListener('input', ()=>{ if(overlay.on) recolorOverlay(); });
-  $('cmin').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
-  $('cmax').addEventListener('change', ()=>{ if(overlay.on){ recolorOverlay(); updateColorbar(); } });
-  $('autoRange').addEventListener('click', ()=>{ autoRange(); recolorOverlay(); updateColorbar(); });
-  $('clearOverlay').addEventListener('click', ()=>{ $('taskMap').value=''; $('statFile').value='';
-    $('taskMapB').value=''; $('statFileB').value=''; $('ovCombine').value='none';
-    overlay.valsB=null; overlay.nameB=''; overlay.combine='none';
-    overlay.volA=null; overlay.volB=null; overlay.volA_grid=null; tfceCache=null;
-    syncStyleRows(); applyScheme(activeScheme); if(sliceMode) sliceRenderAll(); });
+  // editor controls all edit the SELECTED overlay, then recolor 3D + slices
+  const edited=(extra)=>{ ovReadEditor(); if(extra) extra(); if(overlay.on) recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll(); };
+  $('ovName').addEventListener('input', ()=>{ if(selOv>=0){ overlays[selOv].name=$('ovName').value; overlay.name=$('ovName').value; ovRender(); } });
+  $('ovStyle').addEventListener('change', ()=>{ syncStyleRows(); edited(); });
+  $('ovColor').addEventListener('input', ()=>edited());
+  $('cmap').addEventListener('change', ()=>edited());
+  $('cmapInvert').addEventListener('change', ()=>edited());
+  $('cmapAbs').addEventListener('change', ()=>edited(()=>{ autoRange(); syncThreshRange(); }));
+  $('cthreshMode').addEventListener('change', ()=>edited(syncThreshRange));
+  $('cthresh').addEventListener('input', ()=>edited());
+  $('cmin').addEventListener('change', ()=>edited());
+  $('cmax').addEventListener('change', ()=>edited());
+  $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
+  $('autoRange').addEventListener('click', ()=>edited(autoRange));
+  $('ovAddTask').addEventListener('click', ()=>{ ovAdd('task'); ovSelect(selOv); $('taskMap').focus(); });
+  $('ovAddFile').addEventListener('click', ()=>{ ovAdd('file'); ovSelect(selOv); $('statFile').value=''; $('statFile').click(); });
   $('statFile').addEventListener('change', e=>loadStatFile(e,'A'));
-  $('statFileB').addEventListener('change', e=>loadStatFile(e,'B'));
   window.updateColorbar=updateColorbar;
-  syncStyleRows();
-  updateColorbar();
+  syncStyleRows(); updateColorbar(); ovRender();
 }
 function curVal(raw){ return $('cmapAbs').checked ? Math.abs(raw) : raw; }
 function autoRange(){
@@ -1325,13 +1354,13 @@ function autoRange(){
   if(!isFinite(mn)){ mn=0; mx=1; }
   $('cmin').value=(+mn).toFixed(2); $('cmax').value=(+mx).toFixed(2);
 }
-function applyOverlay(valsObj, name){
-  overlay.on=true; overlay.vals=valsObj; overlay.name=name;
-  autoRange(); syncThreshRange(); recolorOverlay(); updateColorbar();
-}
-function applyOverlayB(valsObj, name){
-  overlay.valsB=valsObj; overlay.nameB=name;
-  if(overlay.on){ recolorOverlay(); updateColorbar(); }
+function applyOverlay(valsObj, name){   // a task map chosen for the selected overlay
+  if(selOv<0) ovAdd('task');
+  const o=overlays[selOv]; o.kind='task'; o.term=name; o.vals=valsObj; o.vol=null; o.volGrid=null;
+  if(/^Overlay \d+$/.test(o.name)) o.name=name;              // adopt the term as the name until renamed
+  $('ovTaskRow').style.display='flex'; $('ovName').value=o.name;
+  overlay.on=true; overlay.vals=valsObj; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
+  autoRange(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); if(sliceMode) sliceRenderAll();
 }
 const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
 const _gray=new THREE.Color(NEUTRAL);
@@ -1346,8 +1375,6 @@ function rangeOf(vals, abs){
 }
 function recolorOverlay(){
   if(!overlay.on||!overlay.vals) return;
-  const combine = overlay.combine;
-  if(combine!=='none' && overlay.valsB){ recolorDual(combine); return; }
   const mn=parseFloat($('cmin').value), mx=parseFloat($('cmax').value);
   const inv=$('cmapInvert').checked, name=$('cmap').value;
   const solid=!styleIsCmap();
@@ -1388,40 +1415,6 @@ function syncThreshRange(){
     $('cthreshUnit').textContent='(raw)';
   } else { s.min=0; s.max=1; s.step=0.01; if(+s.value>1) s.value=0; $('cthreshUnit').textContent=''; }
 }
-// conjunction (additive color mixing) / subtraction (diverging via the 2 colors)
-function recolorDual(combine){
-  const abs=$('cmapAbs').checked;
-  const [loA,spA]=rangeOf(overlay.vals, abs);
-  const [loB,spB]=rangeOf(overlay.valsB, abs);
-  const fp=threshFrac();                          // subtraction gates on |d| by slider position
-  const cA=new THREE.Color($('ovColor').value), cB=new THREE.Color($('ovColorB').value);
-  const andOnly=$('ovAndOnly').checked;
-  const nrm=(raw,lo,sp)=>{ if(raw===undefined||!isFinite(raw)) return 0;
-    let v=abs?Math.abs(raw):raw; let n=(v-lo)/sp; n=Math.max(0,Math.min(1,n)); return threshPass(v,lo,sp)?n:0; };
-  const _c=new THREE.Color();
-  for(const o of meshes){
-    const nA=nrm(overlay.vals[o.meta.id],loA,spA), nB=nrm(overlay.valsB[o.meta.id],loB,spB);
-    let hex=NEUTRAL;
-    if(combine==='conj'){
-      const show = andOnly ? (nA>0 && nB>0) : (nA>0 || nB>0);
-      if(show){ _c.setStyle(NEUTRAL);
-        _c.r += nA*(cA.r-_c.r) + nB*(cB.r-_c.r);
-        _c.g += nA*(cA.g-_c.g) + nB*(cB.g-_c.g);
-        _c.b += nA*(cA.b-_c.b) + nB*(cB.b-_c.b);
-        hex='#'+_c.getHexString(); }
-    } else {                                       // subtraction A - B
-      const d=nA-nB;
-      if(Math.abs(d)>=fp && Math.abs(d)>0){
-        _c.copy(_gray).lerp(d>0?cA:cB, Math.min(1,Math.abs(d)));
-        hex='#'+_c.getHexString();
-      }
-    }
-    o.meta.color=hex; o.mesh.material.color.set(hex); setSwatch(o.meta.node,hex);
-  }
-  setOpacities();
-  const op = combine==='conj' ? '∧' : '−';
-  $('ovInfo').textContent=`${overlay.name||'A'}  ${op}  ${overlay.nameB||'B'}`;
-}
 // shared legend drawers (used by the live panel + figure export)
 function conjMix(out, cA, cB, nA, nB){ out.setStyle(NEUTRAL);
   out.r += nA*(cA.r-out.r) + nB*(cB.r-out.r);
@@ -1448,19 +1441,7 @@ function drawDiverging(ctx, x, y, W, H, colorA, colorB){
 }
 function updateColorbar(){
   const cv=$('cbar'), x=cv.getContext('2d'), w=cv.width, h=cv.height;
-  const cv2=$('cbar2d'), x2=cv2.getContext('2d');
-  x.clearRect(0,0,w,h); x2.clearRect(0,0,cv2.width,cv2.height);
-  const dual = overlay.on && overlay.combine!=='none' && overlay.valsB;
-  if(dual && overlay.combine==='conj'){
-    cv.style.display='none'; cv2.style.display='block';
-    drawBivariate(x2, 16, 6, cv2.width-32, $('ovColor').value, $('ovColorB').value, '#aab3c2');
-    return;
-  }
-  cv2.style.display='none'; cv.style.display='block';
-  if(dual && overlay.combine==='sub'){            // diverging: B ◄ gray ► A
-    drawDiverging(x, 0, w, h, $('ovColor').value, $('ovColorB').value);
-    return;
-  }
+  x.clearRect(0,0,w,h);
   const name=$('cmap').value||'viridis', inv=$('cmapInvert').checked;
   for(let px=0; px<w; px++){ let t=px/(w-1); if(inv) t=1-t;
     const c=sampleCmap(name,t); x.fillStyle=`rgb(${c.map(v=>Math.round(v*255)).join(',')})`;
@@ -1546,15 +1527,16 @@ function mniWarning(r){
   if(vmx>5 || vmn<0.4) w.push(`unusual voxel size (${r.vox.map(v=>v.toFixed(1)).join('×')} mm)`);
   return w;
 }
-function applyStatVals(r, name, which){
-  if(which==='B'){ overlay.fileB=name; overlay.volB=r.nii||null; $('taskMapB').value=''; applyOverlayB(r.vals, name); }
-  else { overlay.fileA=name; overlay.volA=r.nii||null; tfceCache=null;
-    // keep the FINER grid: reslice up to the background grid only when the overlay is
-    // COARSER than it (never downsample a finer overlay — keep its native resolution).
-    const tvox = window.MNI152 ? Math.abs(window.MNI152.affine[0][0]) : 2;
-    const ovmin = r.nii ? Math.min(...r.nii.vox) : tvox;
-    overlay.volA_grid = (r.nii && window.MNI152 && ovmin >= tvox-0.1) ? resliceToTemplate(r.nii) : (r.nii||null);
-    $('taskMap').value=''; applyOverlay(r.vals, name); }
+function applyStatVals(r, name){   // a loaded .nii for the selected overlay
+  if(selOv<0) ovAdd('file');
+  const o=overlays[selOv]; o.kind='file'; o.term=''; o.fileName=name; o.vals=r.vals; o.vol=r.nii||null;
+  if(/^Overlay \d+$/.test(o.name)) o.name=name.replace(/\.nii(\.gz)?$/i,'');
+  // keep the FINER grid: reslice up to the background grid only when the overlay is COARSER (never downsample)
+  const tvox = window.MNI152 ? Math.abs(window.MNI152.affine[0][0]) : 2, ovmin = r.nii ? Math.min(...r.nii.vox) : tvox;
+  o.volGrid = (r.nii && window.MNI152 && ovmin >= tvox-0.1) ? resliceToTemplate(r.nii) : (r.nii||null);
+  overlay.on=true; overlay.vals=o.vals; overlay.name=o.name; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; tfceCache=null;
+  $('ovTaskRow').style.display='none'; $('ovName').value=o.name; $('taskMap').value='';
+  autoRange(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
   if(sliceMode) sliceRenderAll();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
@@ -1703,9 +1685,6 @@ window.brainAPI = {
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
   // describe the active overlay colorbar (for figure legends), or null
   colorbar(){ if(!overlay.on) return null;
-    if(overlay.combine!=='none' && overlay.valsB)
-      return { kind:overlay.combine, name:overlay.name||'A', nameB:overlay.nameB||'B',
-               colorA:$('ovColor').value, colorB:$('ovColorB').value };
     return { kind:'single', name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
              cmap:$('cmap').value, style:$('ovStyle').value, color:$('ovColor').value }; }
 };
@@ -1767,13 +1746,9 @@ async function pbResolveTile(i){
 }
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
-  const A=$('taskMap').value||overlay.fileA||'', B=$('taskMapB').value||overlay.fileB||'';
-  const combine=$('ovCombine').value;
-  let auto;
-  if(A && combine==='sub')      auto=`${A} − ${B}`;
-  else if(A && combine==='conj') auto=`${A} ∧ ${B}`;
-  else if(A)                     auto=`${atlasName} · ${A}`;
-  else                           auto=`${atlasName} · ${$('scheme').value}`;
+  const ov = selOv>=0 ? overlays[selOv] : null;
+  const A = $('taskMap').value || (ov && ov.kind==='file' ? ov.fileName : '') || '';
+  const auto = A ? `${atlasName} · ${A.replace(/\.nii(\.gz)?$/i,'')}` : `${atlasName} · ${$('scheme').value}`;
   pbItems[i] = { dataURL: window.brainAPI.renderTo(900,680,true),   // transparent -> figure BG shows through
     label: keepLabel!==undefined ? keepLabel : auto,
     cbar: window.brainAPI.colorbar(), cfg: captureViewerCfg() };
@@ -1781,16 +1756,16 @@ function pbCapture(i, keepLabel){
 }
 // snapshot the full viewer state for a tile so it can be restored/edited later
 function captureViewerCfg(){
-  const ids=[...PRESET_IDS,'taskMap','taskMapB','regionSet','scheme','singleColor'];
+  const ids=[...PRESET_IDS,'taskMap','regionSet','scheme','singleColor'];
   const vals={};
   for(const id of ids){ const el=$(id); if(!el) continue; vals[id]= el.type==='checkbox'?el.checked:el.value; }
+  const ov = selOv>=0 ? overlays[selOv] : null;
   return { atlas:ATLAS_ID, vals,
     camP: camera.position.toArray().map(v=>+v.toFixed(2)),
     camT: controls.target.toArray().map(v=>+v.toFixed(2)),
     vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id),
-    // overlay sources that aren't fully captured by control values (loaded files)
-    fileA: (!$('taskMap').value && overlay.vals && overlay.fileA) ? overlay.fileA : null,
-    fileB: (!$('taskMapB').value && overlay.valsB && overlay.fileB) ? overlay.fileB : null };
+    // loaded-file overlay source (re-linked on import); task maps are captured via taskMap
+    fileA: (ov && ov.kind==='file') ? ov.fileName : null };
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
@@ -1799,9 +1774,9 @@ function applyViewerCfg(cfg){
     return;
   }
   const v=cfg.vals||{};
-  const last=['ovStyle','ovColor','ovColorB','cmap','cmin','cmax','cthresh','cmapInvert','cmapAbs','ovAndOnly','ovCombine','taskMapB','taskMap'];
-  Object.keys(v).filter(id=>!last.includes(id)).forEach(id=>setControl(id,v[id]));
-  last.forEach(id=>{ if(id in v) setControl(id,v[id]); });
+  if('taskMap' in v && v.taskMap) setControl('taskMap', v.taskMap);   // create the overlay FIRST
+  // then everything else (overlay appearance controls write into the now-selected overlay)
+  Object.keys(v).forEach(id=>{ if(id==='taskMap') return; setControl(id,v[id]); });
   if(cfg.vis) showOnly(cfg.vis);
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
   requestRender();
@@ -2149,7 +2124,7 @@ function sliceRenderAll(){
   syncPosSliders();
   $('slCoord').textContent=`MNI ${sliceMM.map(v=>Math.round(v)).join(', ')} mm`;
   $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
-    : (overlay.volA?(overlay.fileA||'loaded map'):'— load a stat .nii —');
+    : (overlay.volA?(overlay.name||'loaded map'):'— load a stat .nii —');
   const statOn = sliceKind==='voxel';
   $('slStatRow').style.opacity=$('slThRow').style.opacity = statOn?'1':'0.4';
   $('slThV').textContent = (statOn && overlay.volA) ? (sliceThreshAbs()).toFixed(sliceStat==='tfce'?0:2) : '—';
