@@ -38,45 +38,62 @@ A `.bwz` + the referenced `.nii` files = a fully reproducible figure.
 
 ```jsonc
 {
-  "label": "Motor − Language",    // title text ("" = no title for this panel)
+  "label": "Motor",               // title text ("" = no title for this panel)
   "atlas": "jhu",                 // bundle id: jhu aal aicha bro catani fox ho
                                   //   aalcat aal3 anatomy3 neuromorph hammers lpba40 cobra xtract arterial
-  "fileA": "maps/motor.nii.gz",   // optional: Map-A overlay from a file (path relative to --root)
-  "fileB": "maps/lang.nii.gz",    // optional: Map-B overlay from a file
+  "mode": "mesh",                 // "mesh" (3D) | "slice" (ortho 2x2) | "mosaic" (lightbox)
+  "overlays": [ overlay, ... ],   // the overlay STACK (see below) — 0..N data overlays
+  "active": 0,                    // index of the overlay shown on the 3D mesh
+  "sliceMM": [0, -18, 50],        // slice/mosaic crosshair (MNI mm) for mode:"slice"
+  "sliceKind": "voxel",           // mode:"slice" — "voxel" heatmap or "mesh" cross-sections
+  "mosaic": { "plane":"axi", "n":16, "cols":6, "labels":true },   // mode:"mosaic" settings
   "camP": [-330, 12, 4],          // optional camera position (omit = default left-sagittal)
   "camT": [0, 0, 0],              // optional camera target
   "vis":  [12,13,25,26],          // optional: only these ROI ids visible (omit = all)
-  "vals": { ...controls... }      // all viewer control values (see table below)
+  "vals": { ...controls... }      // NON-overlay viewer controls (render/appearance/axes/conn)
 }
 ```
 
-- **Task-map overlays** are set inside `vals` (`taskMap`, `taskMapB`) — no files needed.
-- **File overlays** use `fileA`/`fileB`; `make_figure.mjs --root <folder>` resolves them.
-  (In the browser, file panels prompt you to "relink" the file.)
-- Overlays must be **MNI152-space** `.nii`/`.nii.gz`; each ROI is colored by its mean value.
+### An `overlay` (entry in `panel.overlays`)
+```jsonc
+{
+  "name": "Motor",                       // editable label shown in the Overlays list
+  "kind": "task",                        // "task" (baked NeuroQuery) | "file" (your .nii)
+  "term": "motor",                       // kind:"task" — the NeuroQuery term
+  "fileName": "maps/motor.nii.gz",       // kind:"file" — path resolved by make_figure --root
+  "visible": true,                       // shown in the slice/mosaic blend
+  "tfce": false,                         // TFCE-enhance this overlay in slices/mosaic
+  "s": {                                 // this overlay's appearance
+    "style": "solid",                    // "solid" (gray brain + one color) | "cmap"
+    "color": "#ff3b30",                  // solid color
+    "cmap": "hot",                       // colormap for style:"cmap"
+    "cmin": "0", "cmax": "6.4",          // 3D-mesh value range (per-ROI means)
+    "cthresh": "0.25",                   // threshold (fraction of range, or raw — see cthreshMode)
+    "cthreshMode": "frac",               // "frac" | "raw"
+    "cmapInvert": false, "cmapAbs": false,
+    "opacity": "1"                       // blend opacity in the slice/mosaic view
+  }
+}
+```
+
+- **3D mesh** shows the single `active` overlay (each region colored by its mean value).
+- **Slices & mosaic** blend *all* `visible` overlays, each in its own color/colormap/threshold
+  over the MNI152 template (voxel range, alpha ramps from the threshold up).
+- **File overlays** (`kind:"file"`) need the `.nii`; `make_figure.mjs --root <folder>` resolves
+  `fileName`. In the browser, file panels prompt you to relink. Task overlays need no file.
+- Overlays must be **MNI152-space**. Legacy single-map `.bwz` (with `vals.taskMap`/`fileA`) still loads.
 
 ---
 
-## `vals` — viewer control reference
+## `vals` — non-overlay viewer controls
 
-Values are strings for sliders/inputs and booleans for checkboxes (both are accepted).
+Values are strings for sliders/inputs and booleans for checkboxes. (Overlay appearance now
+lives per-overlay in `overlays[].s` above; `vals` holds the rest.)
 
-### Overlay / data coloring
+### Region coloring (when no overlay is active)
 | id | values | meaning |
 |----|--------|---------|
-| `taskMap` | term or `""` | Map A: baked NeuroQuery term (motor, language, working memory, attention, visual, auditory, face, fear, reward, pain, emotion, semantic, reading, memory, spatial, inhibition, movement, finger tapping, speech production, decision making) |
-| `taskMapB` | term or `""` | Map B term (for combine) |
-| `ovCombine` | `none` `conj` `sub` | single map / conjunction (A∧B) / subtraction (A−B) |
-| `ovStyle` | `solid` `cmap` | gray-brain + one color, or full colormap (single-map only) |
-| `ovColor` | hex | Map-A / activation color |
-| `ovColorB` | hex | Map-B color (combine modes) |
-| `ovAndOnly` | bool | conjunction: show only where **both** A and B pass threshold |
-| `cmap` | name | colormap for `cmap` style (viridis, jet, turbo, cividis, RdBu_rev, …28 total) |
-| `cmin` `cmax` | number | value range (single-map) |
-| `cthresh` | 0–1 | threshold as a fraction of range |
-| `cmapInvert` | bool | invert colormap |
-| `cmapAbs` | bool | use \|value\| |
-| `scheme` | `lobe` `hemi` `rainbow` `random` `single` | categorical region coloring (when no overlay) |
+| `scheme` | `lobe` `hemi` `rainbow` `random` `single` | categorical region coloring |
 | `singleColor` | hex | color for `scheme:"single"` |
 
 ### Region opacity / emphasis
@@ -147,16 +164,41 @@ See [`example.bwz`](example.bwz) and [`examples/`](examples/) for ready-to-run r
 
 ## Minimal example
 
+A 1×2: a 3D mesh of "motor" (red), and a 3D mesh showing two overlays at once
+(motor red + language blue) with motor active on the brain.
+
 ```json
 {
   "bwz": 1, "grid": "1x2",
   "figure": { "brain": 480, "titleSize": 24, "titleColor": "#111", "bg": "#ffffff" },
   "panels": [
-    { "label": "Motor", "atlas": "jhu",
-      "vals": { "taskMap": "motor", "ovStyle": "solid", "ovColor": "#d62728", "cthresh": "0.12" } },
-    { "label": "Motor − Language", "atlas": "jhu",
-      "vals": { "taskMap": "motor", "taskMapB": "language", "ovCombine": "sub",
-                "ovColor": "#d62728", "ovColorB": "#1f77b4", "cthresh": "0.1" } }
+    { "label": "Motor", "atlas": "jhu", "mode": "mesh", "active": 0,
+      "overlays": [
+        { "name": "Motor", "kind": "task", "term": "motor", "visible": true,
+          "s": { "style": "solid", "color": "#d62728", "cthresh": "0.12" } }
+      ] },
+    { "label": "Motor + Language", "atlas": "jhu", "mode": "mesh", "active": 0,
+      "overlays": [
+        { "name": "Motor",    "kind": "task", "term": "motor",    "visible": true, "s": { "style":"solid", "color":"#d62728", "cthresh":"0.12" } },
+        { "name": "Language", "kind": "task", "term": "language", "visible": true, "s": { "style":"solid", "color":"#1f77b4", "cthresh":"0.12" } }
+      ] }
+  ]
+}
+```
+
+A mosaic (lightbox) of a file overlay — run with `--root <folder containing the .nii>`:
+
+```json
+{
+  "bwz": 1, "grid": "1x1",
+  "figure": { "brain": 900, "titleSize": 22, "titleColor": "#fff", "bg": "#000000" },
+  "panels": [
+    { "label": "Axial mosaic", "atlas": "jhu", "mode": "mosaic",
+      "mosaic": { "plane": "axi", "n": 16, "cols": 6, "labels": true },
+      "overlays": [
+        { "name": "Activation", "kind": "file", "fileName": "motor.nii.gz", "visible": true,
+          "s": { "style": "cmap", "cmap": "hot", "cthresh": "0.3" } }
+      ] }
   ]
 }
 ```

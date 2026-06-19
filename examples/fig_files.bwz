@@ -1,6 +1,11 @@
-{ "bwz":1, "app":"brainWhiz", "grid":"1x2",
-  "figure":{ "brain":520,"titleSize":24,"titleFont":"Georgia, serif","titleColor":"#ffffff","colorbarSize":44,"gap":16,"bg":"#000000" },
-  "panels":[
-    {"label":"Loaded .nii (viridis)","atlas":"jhu","fileA":"neuroquery_motor.nii.gz","vals":{"taskMap":"","ovCombine":"none","ovStyle":"cmap","cmap":"viridis","vivid":"1.4","cthresh":"0.1","axisLines":true,"axisLetters":true}},
-    {"label":".nii − .nii (subtraction)","atlas":"jhu","fileA":"neuroquery_motor.nii.gz","fileB":"neuroquery_language.nii.gz","vals":{"taskMap":"","ovCombine":"sub","ovColor":"#d62728","ovColorB":"#1f77b4","cthresh":"0.1","axisLines":true,"axisLetters":true}}
-  ]}
+{
+  "bwz": 1, "app": "brainWhiz", "grid": "1x1",
+  "figure": { "brain": 900, "titleSize": 20, "titleColor": "#fff", "colorbarSize": 0, "bg": "#000000" },
+  "panels": [
+    { "label": "Motor (red) + Language (blue)", "atlas": "jhu", "mode": "slice", "sliceKind": "voxel", "sliceMM": [-42, -16, 52],
+      "overlays": [
+        { "name": "Motor",    "kind": "file", "fileName": "neuroquery_motor.nii.gz",    "visible": true, "s": { "style":"solid", "color":"#ff3b30", "cthresh":"0.4" } },
+        { "name": "Language", "kind": "file", "fileName": "neuroquery_language.nii.gz", "visible": true, "s": { "style":"solid", "color":"#3b9bff", "cthresh":"0.4" } }
+      ] }
+  ]
+}

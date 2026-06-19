@@ -1,8 +1,10 @@
-{ "bwz":1, "app":"brainWhiz", "grid":"2x2",
-  "figure":{ "brain":480,"titleSize":24,"titleFont":"system-ui","titleColor":"#111111","colorbarSize":42,"gap":16,"bg":"#ffffff" },
-  "panels":[
-    {"label":"Motor","atlas":"jhu","vals":{"taskMap":"motor","ovCombine":"none","ovStyle":"solid","ovColor":"#d62728","scheme":"lobe","vivid":"1.5","cthresh":"0.12","axisLines":true,"axisLetters":true}},
-    {"label":"Language","atlas":"jhu","vals":{"taskMap":"language","ovCombine":"none","ovStyle":"solid","ovColor":"#1f77b4","vivid":"1.5","cthresh":"0.12","axisLines":true,"axisLetters":true}},
-    {"label":"Motor ∧ Language","atlas":"jhu","vals":{"taskMap":"motor","taskMapB":"language","ovCombine":"conj","ovColor":"#d62728","ovColorB":"#1f77b4","vivid":"1.5","cthresh":"0.15","axisLines":true,"axisLetters":true}},
-    {"label":"Working memory (AAL)","atlas":"aal","vals":{"taskMap":"working memory","ovCombine":"none","ovStyle":"cmap","cmap":"viridis","vivid":"1.4","cthresh":"0","axisLines":true,"axisLetters":true}}
-  ]}
+{
+  "bwz": 1, "app": "brainWhiz", "grid": "2x2",
+  "figure": { "brain": 440, "titleSize": 20, "titleColor": "#111", "colorbarSize": 0, "gap": 14, "bg": "#ffffff" },
+  "panels": [
+    { "label": "Motor",          "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"Motor","kind":"task","term":"motor","visible":true,"s":{"style":"solid","color":"#d62728","cthresh":"0.12"} } ] },
+    { "label": "Language",       "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"Language","kind":"task","term":"language","visible":true,"s":{"style":"solid","color":"#1f77b4","cthresh":"0.12"} } ] },
+    { "label": "Working memory", "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"WM","kind":"task","term":"working memory","visible":true,"s":{"style":"cmap","cmap":"viridis","cthresh":"0.12"} } ] },
+    { "label": "Attention",      "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"Attn","kind":"task","term":"attention","visible":true,"s":{"style":"cmap","cmap":"turbo","cthresh":"0.12"} } ] }
+  ]
+}
