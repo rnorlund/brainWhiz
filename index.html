@@ -27,10 +27,10 @@
   .tbtn:hover{border-color:var(--accent)}
   .tbtn.tbon{background:var(--accent);color:#001;border-color:var(--accent);font-weight:600}
   /* ---- voxel slice view ---- */
-  #mosaicView{position:absolute;display:none;background:#05070b;z-index:8}
+  #mosaicView{position:absolute;display:none;background:#000000;z-index:8}
   #mosaicView.on{display:block}
   #mosaicView canvas{width:100%;height:100%;display:block}
-  #sliceView{position:absolute;display:none;background:#05070b;z-index:8}
+  #sliceView{position:absolute;display:none;background:#000000;z-index:8}
   #sliceView.on{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px}
   #sliceView .sl{position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
   #sliceView .sl canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:auto;cursor:crosshair;touch-action:none}
@@ -179,6 +179,10 @@
       <div class="row seg" id="slKindRow"><label>Render</label>
         <button id="slKindVox" class="sm on">Voxel heatmap</button>
         <button id="slKindMesh" class="sm">Mesh regions</button></div>
+      <div class="row" id="meshBorderRow" style="display:none"><label title="Outline between region cross-sections">Borders</label>
+        <input type="color" id="meshBorderColor" value="#000000" title="border color">
+        <input type="range" id="meshBorderW" min="0" max="4" step="0.25" value="1" style="flex:1" title="border thickness">
+        <span id="meshBorderWV" style="min-width:24px;text-align:right">1.0</span></div>
       <div id="orthoCtl">
         <div class="row"><label>Slice</label>
           <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
@@ -1796,7 +1800,7 @@ async function pbResolveTile(i){
 // composite the current slice view (sag/cor/axi + 3D) into one 2x2 image for a figure tile
 function captureSlices2x2(W=900,H=680){
   const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
-  x.fillStyle='#05070b'; x.fillRect(0,0,W,H);
+  x.fillStyle='#000000'; x.fillRect(0,0,W,H);
   const qw=W/2, qh=H/2;
   const draw=(src,qx,qy)=>{ if(!src) return; const sw=src.width||src.naturalWidth, sh=src.height||src.naturalHeight;
     if(!sw||!sh) return; const s=Math.min(qw/sw,qh/sh), dw=sw*s, dh=sh*s; x.drawImage(src, qx+(qw-dw)/2, qy+(qh-dh)/2, dw, dh); };
@@ -2090,7 +2094,7 @@ function renderMeshSlices(){
     const dpr=Math.min(window.devicePixelRatio||1,2);
     const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
     cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-    ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
     const sc=Math.min(W/win.hr,H/win.vr), dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));
     const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
     const toX=h=>ox+((h-win.hmin)/win.hr)*dw, toY=v=>oy+((win.vmax-v)/win.vr)*dh;
@@ -2100,6 +2104,7 @@ function renderMeshSlices(){
     else if(plane==='cor'){ axis=2; fixed=P.z; hv=(x,y,z)=>[x,y]; }   // h=tjsX, v=tjsY
     else { axis=1; fixed=P.y; hv=(x,y,z)=>[x,-z]; }                   // h=tjsX, v=MNI Y(-tjsZ)
     fixed += 1e-3;                                                    // avoid vertices exactly on the plane
+    const bw=(+$('meshBorderW').value)*dpr, bcol=$('meshBorderColor').value;   // region border outline
     for(const rec of meshes){ const mesh=rec.mesh; if(!mesh.visible) continue;
       const geo=mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
       const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
@@ -2110,6 +2115,7 @@ function renderMeshSlices(){
       ctx.beginPath();
       for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
       ctx.fill('evenodd');
+      if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(); }   // outline this region
     }
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
@@ -2207,7 +2213,7 @@ function renderPlane(cv, plane){
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-  ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
   const sc=Math.min(W/hr,H/vr), dw=Math.max(1,Math.round(hr*sc)), dh=Math.max(1,Math.round(vr*sc));
   const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
   const img=ctx.createImageData(dw,dh), D=img.data;
@@ -2256,7 +2262,7 @@ function renderMosaic(){
   if(!mosaicMode) return; const mni=ensureMNI(); if(!mni) return;
   const cv=$('mosaicCanvas'), host=$('mosaicView'), dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
-  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle='#05070b'; ctx.fillRect(0,0,W,H);
+  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle='#000000'; ctx.fillRect(0,0,W,H);
   const plane=mosaicPlane, b=baseInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
   const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round(3*dpr);
   let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
@@ -2304,6 +2310,7 @@ function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   // slice panel: ortho controls for Slices, mosaic controls for Mosaic
   $('orthoCtl').style.display = sliceMode?'block':'none';
   $('slKindRow').style.display = sliceMode?'flex':'none';
+  $('meshBorderRow').style.display = (sliceMode && sliceKind==='mesh')?'flex':'none';
   $('mosaicCtl').style.display = mosaicMode?'block':'none';
   const hint=document.querySelector('.hint'), zw=$('zoomWidget'), off=(m!=='mesh');
   if(hint) hint.style.display=off?'none':''; if(zw) zw.style.display=off?'none':'';
@@ -2340,8 +2347,12 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('modeMesh').addEventListener('click', ()=>setViewMode('mesh'));
   $('modeSlice').addEventListener('click', ()=>setViewMode('slice'));
   $('modeMosaic').addEventListener('click', ()=>setViewMode('mosaic'));
-  $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); sliceRenderAll(); });
-  $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); sliceRenderAll(); });
+  const syncKindRows=()=>{ $('meshBorderRow').style.display = (sliceMode && sliceKind==='mesh') ? 'flex' : 'none'; };
+  $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
+  $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
+  $('meshBorderColor').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
+  $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
+  window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
   // mosaic controls
   document.querySelectorAll('.mpbtn').forEach(b=>b.addEventListener('click',()=>{ mosaicPlane=b.dataset.mp;
