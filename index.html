@@ -2212,6 +2212,18 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
   });
+  // make the 3D thumbnail cell interactive too: wheel = zoom, drag = orbit
+  const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true); }catch(e){} };
+  cell3d.style.cursor='grab';
+  cell3d.addEventListener('wheel', e=>{ e.preventDefault(); setCamDistance(camDistance()*Math.exp(e.deltaY*0.0015)); refresh3d(); }, {passive:false});
+  let d3=null;
+  cell3d.addEventListener('pointerdown', e=>{ if(e.target.tagName==='IMG'||e.target===cell3d){ d3={x:e.clientX,y:e.clientY}; try{cell3d.setPointerCapture(e.pointerId);}catch(_){}} });
+  cell3d.addEventListener('pointermove', e=>{ if(!d3) return; const dx=e.clientX-d3.x, dy=e.clientY-d3.y; d3={x:e.clientX,y:e.clientY};
+    const off=camera.position.clone().sub(controls.target), sph=new THREE.Spherical().setFromVector3(off);
+    sph.theta-=dx*0.01; sph.phi=Math.max(0.05,Math.min(Math.PI-0.05, sph.phi-dy*0.01));
+    off.setFromSpherical(sph); camera.position.copy(controls.target).add(off); controls.update(); refresh3d(); });
+  const end3d=e=>{ if(d3){ d3=null; try{cell3d.releasePointerCapture(e.pointerId);}catch(_){} } };
+  cell3d.addEventListener('pointerup', end3d); cell3d.addEventListener('pointercancel', end3d);
 })();
 
 // ================= TOOLTIPS =================
