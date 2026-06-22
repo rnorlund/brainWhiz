@@ -390,6 +390,10 @@
         <input type="range" id="tractLineW" min="0.5" max="5" step="0.5" value="1.5"></div>
       <div class="ctl"><div class="lab"><span title="Slab shadow: project tract points within ±this many mm of the slice (0 = thin slice only)">Slab ± mm</span><span id="tractSlabMMV">6</span></div>
         <input type="range" id="tractSlabMM" min="0" max="16" step="1" value="6"></div>
+      <div class="row"><label class="toggle"><input type="checkbox" id="tractSpotlight"> 🔦 Spotlight map on tract</label></div>
+      <div class="ctl"><div class="lab"><span title="'On tract' = within this many mm of the visible tracts (dilates the tract point cloud). Used by spotlight + the on-tract readout">Mask ± mm</span><span id="tractMaskRV">4</span></div>
+        <input type="range" id="tractMaskR" min="2" max="10" step="1" value="4"></div>
+      <div id="tractReadout" style="font-size:11px;opacity:.85;margin:2px 0;min-height:14px" title="Fraction of the active overlay's suprathreshold voxels that lie within the visible tracts"></div>
       <div class="ctl"><div class="lab"><span title="Smooth the chunky tract hull meshes (Taubin) — same as ROI mesh smoothing">Tract smoothing</span><span id="tractSmoothV">4</span></div>
         <input type="range" id="tractSmooth" min="0" max="12" step="1" value="4"></div>
       <div class="row"><label class="toggle"><input type="checkbox" id="tractExplode" checked> explode tracts with brain</label></div>
@@ -709,7 +713,7 @@ const OVCOLORS=['#ff3b30','#1f77b4','#2ca02c','#ff7f0e','#9467bd','#17becf','#e3
 // ---- voxel slice-view state ----
 let sliceMode=false, mosaicMode=false, mosaicPlane='axi', sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
 let underlayVol=null, underlayRaw=null, underlayName='';   // custom anatomical background (e.g. subject T1)
-function refreshSliceViews(){ if(sliceMode) sliceRenderAll(); else if(mosaicMode) renderMosaic(); }
+function refreshSliceViews(){ if(sliceMode) sliceRenderAll(); else if(mosaicMode) renderMosaic(); if(window.__tractsInit && tractRecs.length) updateTractReadout(); }
 function setSwatch(node, hex){
   const sw = document.querySelector(`.swatch[data-node="${node}"]`);
   if(sw){ sw.style.background = hex; sw.querySelector('input').value = hex; }
@@ -1287,7 +1291,7 @@ renderer.domElement.addEventListener('click',ev=>{
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
 // ---- white-matter tract overlay (loaded from a tract atlas, on top of the current atlas) ----
-const tractGroup = new THREE.Group(); let tractRecs=[]; let tractAtlasId='';
+const tractGroup = new THREE.Group(); let tractRecs=[]; let tractAtlasId=''; window.__tractsInit=true;
 const TRACT_PAL=['#ff3b30','#ffcc00','#34c759','#00c7be','#5db0ff','#bf5af2','#ff77d0','#ff9f0a','#a2d729','#64d2ff','#ff6482','#c0a3ff'];
 async function loadTracts(id){
   if(tractAtlasId===id && tractRecs.length){ return; }
@@ -1314,24 +1318,25 @@ async function loadTracts(id){
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; applyTractSmooth(); applyTractColorMode(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
+    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); applyTractColorMode(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
   }, err=>alert('Tract mesh parse failed: '+err));
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
-  tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; restoreCortex(); refreshSliceViews(); requestRender(); }
+  tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; $('tractCount').textContent=''; $('tractReadout').textContent='';
+  invalidateTractMask(); restoreCortex(); refreshSliceViews(); requestRender(); }
 function buildTractList(){ const L=$('tractList'); L.innerHTML='';
   const nv=tractRecs.filter(r=>r.visible).length;
   $('tractCount').textContent = tractRecs.length ? `${nv}/${tractRecs.length} shown` : '';
   tractRecs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
     d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="ovdot" style="background:${r.color};width:11px;height:11px;border-radius:3px;flex:none"></span><span class="nm" style="flex:1" title="${r.meta.name}">${r.meta.name}</span>`;
-    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; refreshSliceViews(); requestRender(); });
+    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; invalidateTractMask(); refreshSliceViews(); requestRender(); });
     L.appendChild(d); }); }
 // one slider drives both 3D mesh opacity and 2D cross-section fill alpha
 function setTractOpacity(){ const op=+$('tractOp').value; $('tractOpV').textContent=op.toFixed(2);
   for(const r of tractRecs){ r.mesh.material.opacity=op; r.mesh.material.transparent=(op<1); r.mesh.material.needsUpdate=true; } requestRender(); }
 // Taubin-smooth the chunky tract hulls (reuses the ROI mesh smoother); recompute bbox for cross-sections
 function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } refreshSliceViews(); requestRender(); }
-function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); refreshSliceViews(); requestRender(); }
+function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); invalidateTractMask(); refreshSliceViews(); requestRender(); }
 function applyCortexFade(){ const f=+$('cortexFade').value; if(!tractRecs.length){ restoreCortex(); return; }
   meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=Math.max(0.04, 1-f); m.depthWrite=(f<0.5); }); requestRender(); }
 function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); }
@@ -1349,6 +1354,34 @@ function dirToRGB(d){ const h=v=>Math.round(255*Math.min(1,Math.abs(v))).toStrin
 function applyTractColorMode(){ const ori = $('tractColorMode') && $('tractColorMode').value==='orientation';
   for(const r of tractRecs){ const c=(ori&&r.oriColor)?r.oriColor:r.color; r.drawColor=c; r.mesh.material.color.set(c); r.mesh.material.needsUpdate=true; }
   requestRender(); refreshSliceViews(); }
+// ---- tract MASK (dilated point cloud on the MNI grid) -> spotlight + "% activation on tract" ----
+let tractMaskVol=null;
+function invalidateTractMask(){ tractMaskVol=null; }
+function tractMask(){ if(tractMaskVol!==null) return tractMaskVol||null;
+  const mni=ensureMNI(); if(!mni||!tractRecs.length){ return (tractMaskVol=false)&&null; }
+  const [nx,ny,nz]=mni.dim, nxy=nx*ny, T=mni.T, Minv=mni.Minv, data=new Uint8Array(nx*ny*nz);
+  const vs=Math.hypot(mni.M[0],mni.M[3],mni.M[6])||2, R=+($('tractMaskR')?$('tractMaskR').value:4), rv=Math.max(1,Math.round(R/vs)), R2=R*R;
+  let any=false;
+  for(const r of tractRecs){ if(!r.visible||!r.pts) continue; any=true; const pts=r.pts;
+    for(let p=0;p<pts.length;p+=3){ const x=pts[p],y=pts[p+1],z=pts[p+2], dx=x-T[0],dy=y-T[1],dz=z-T[2];
+      const ci=Math.round(Minv[0]*dx+Minv[1]*dy+Minv[2]*dz), cj=Math.round(Minv[3]*dx+Minv[4]*dy+Minv[5]*dz), ck=Math.round(Minv[6]*dx+Minv[7]*dy+Minv[8]*dz);
+      for(let kk=ck-rv;kk<=ck+rv;kk++){ if(kk<0||kk>=nz)continue; for(let jj=cj-rv;jj<=cj+rv;jj++){ if(jj<0||jj>=ny)continue; const row=jj*nx+kk*nxy;
+        for(let ii=ci-rv;ii<=ci+rv;ii++){ if(ii<0||ii>=nx)continue; const w=mni.worldOf(ii,jj,kk), ex=w[0]-x,ey=w[1]-y,ez=w[2]-z;
+          if(ex*ex+ey*ey+ez*ez<=R2) data[ii+row]=1; } } } }
+  }
+  if(!any){ return (tractMaskVol=false)&&null; }
+  return (tractMaskVol=makeVol(data, mni.dim.slice(), mni.M.slice(), mni.T.slice()));
+}
+function spotlightOn(){ return $('tractSpotlight') && $('tractSpotlight').checked && tractRecs.some(r=>r.visible); }
+// fraction of the active overlay's suprathreshold voxels lying within the visible tracts
+function updateTractReadout(){ const el=$('tractReadout'); if(!el) return;
+  const o=(typeof overlays!=='undefined')?overlays[selOv]:null, vol=o&&(o.volGrid||o.vol), tm=(o&&vol)?tractMask():null;
+  if(!o||!vol||!tm){ el.textContent=''; return; }
+  const p=ovSliceParams(o), src=p.src, d=src.data, [nx,ny,nz]=src.dim, nxy=nx*ny; let tot=0,on=0;
+  for(let idx=0;idx<d.length;idx++){ const v=d[idx], val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue; tot++;
+    const k=(idx/nxy)|0, rr=idx-k*nxy, j=(rr/nx)|0, i=rr-j*nx, w=src.worldOf(i,j,k); if(tm.sampleMM(w[0],w[1],w[2])) on++; }
+  el.textContent = tot ? `${o.name}: ${on}/${tot} active voxels on tract (${Math.round(100*on/tot)}%)` : '';
+}
 // draw tracts on a 2D plane: Outline (map shows through) | Fill | Slab-shadow (point-cloud trajectory)
 function drawTracts(ctx, plane, toX, toY, fixedMNI){
   if(!tractRecs.length) return;
@@ -1389,6 +1422,9 @@ $('tractRenderMode').addEventListener('change',refreshSliceViews);
 $('tractColorMode').addEventListener('change',applyTractColorMode);
 $('tractLineW').addEventListener('input',e=>{ $('tractLineWV').textContent=(+e.target.value).toFixed(1); refreshSliceViews(); });
 $('tractSlabMM').addEventListener('input',e=>{ $('tractSlabMMV').textContent=e.target.value; refreshSliceViews(); });
+$('tractSpotlight').addEventListener('change',()=>{ updateTractReadout(); refreshSliceViews(); });
+$('tractMaskR').addEventListener('input',e=>{ $('tractMaskRV').textContent=e.target.value; });
+$('tractMaskR').addEventListener('change',()=>{ invalidateTractMask(); updateTractReadout(); refreshSliceViews(); });
 $('tractExplode').addEventListener('change',()=>setExplode(explodeAmt));
 $('tractAll').addEventListener('click',()=>setTractVis(()=>true));
 $('tractNone').addEventListener('click',()=>setTractVis(()=>false));
@@ -2416,7 +2452,7 @@ function ensureMNI(){
 }
 // load a NIfTI (parsed) as the slice/mosaic background underlay, normalized to 0..255 grayscale
 function setUnderlay(nii){
-  if(!nii){ underlayVol=null; refreshSliceViews(); return; }
+  if(!nii){ underlayVol=null; invalidateTractMask(); refreshSliceViews(); return; }
   const d=nii.data, n=d.length, arr=[]; for(let i=0;i<n;i++){ if(d[i]>0&&isFinite(d[i])) arr.push(d[i]); }
   arr.sort((a,b)=>a-b); const hi=arr.length?arr[Math.floor(arr.length*0.99)]||arr[arr.length-1]:1;
   const sc=255/(hi||1), out=new Float32Array(n); for(let i=0;i<n;i++){ const v=d[i]; out[i]=(v>0&&isFinite(v))?Math.min(255,v*sc):0; }
@@ -2424,6 +2460,7 @@ function setUnderlay(nii){
   // overlays must re-reslice onto the new grid
   overlays.forEach(o=>{ o.volStats=null; o.tfceCache=null; if(o.vol){ const tvox=Math.abs(nii.M[0])||2, ovmin=Math.min(...o.vol.vox);
     o.volGrid = ovmin>=tvox-0.1 ? resliceToTemplate(o.vol) : o.vol; if(o===overlays[selOv]) overlay.volA_grid=o.volGrid; } });
+  invalidateTractMask();   // tract mask lives on the (now changed) background grid
   refreshSliceViews();
 }
 function statMax(vol){ if(!vol) return 0; if(vol._mx!=null) return vol._mx;
@@ -2514,6 +2551,7 @@ function renderPlane(cv, plane){
   const img=ctx.createImageData(dw,dh), D=img.data;
   const ovs=sliceOverlays().map(ovSliceParams);   // each blended in its own color/threshold
   const [bgR,bgG,bgB]=hex2rgb(viewBg());          // outside the brain = the background color
+  const tmask=spotlightOn()?tractMask():null;     // spotlight: dim everything off the tract
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
       const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
@@ -2530,6 +2568,7 @@ function renderPlane(cv, plane){
         const a=p.opacity*(0.2+0.8*ramp);
         r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
       }
+      if(tmask && painted && !tmask.sampleMM(w[0],w[1],w[2])){ const L=0.30*r+0.59*gg+0.11*bb; r=gg=bb=L*0.45; }   // off-tract -> dim gray
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
   }}
   ctx.putImageData(img,ox,oy);
@@ -2580,6 +2619,7 @@ function renderMosaic(){
   if(rows*tileH+(rows+1)*gap>H){ tileH=(H-(rows+1)*gap)/rows; tileW=tileH*(hr/vr); }
   const ovs=sliceOverlays().map(ovSliceParams);
   const [bgR,bgG,bgB]=hex2rgb(viewBg());
+  const tmask=spotlightOn()?tractMask():null;
   const gridW=cols*tileW+(cols+1)*gap, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
   const gridH=rows*tileH+(rows+1)*gap, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
   for(let s=0;s<N;s++){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
@@ -2597,6 +2637,7 @@ function renderMosaic(){
           let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp; const a=p.opacity*(0.2+0.8*ramp);
           r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
         }
+        if(tmask && painted && !tmask.sampleMM(w[0],w[1],w[2])){ const L=0.30*r+0.59*gg+0.11*bb; r=gg=bb=L*0.45; }
         const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
       }}
     ctx.putImageData(img,dx,dy);
