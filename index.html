@@ -332,11 +332,12 @@
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
         <option>Checkerboard</option><option>Stripes</option><option>Grid lines</option><option>Dots</option><option>Hatch</option>
+        <option>Cross-hatch</option><option>Bricks</option><option>Waves</option><option>Concentric</option><option>Lattice</option>
       </select></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
-      <input type="range" id="patScale" min="0.01" max="0.4" step="0.005" value="0.08"></div>
+      <input type="range" id="patScale" min="0.01" max="2.5" step="0.01" value="0.08"></div>
     <div class="ctl"><div class="lab"><span>Pattern strength</span><span id="patStrVal"></span></div>
       <input type="range" id="patStr" min="0" max="1" step="0.02" value="0.55"></div>
     <div class="row"><label>Pattern fill</label>
@@ -351,6 +352,18 @@
     <div class="row"><label>Background</label><input type="color" id="bg" value="#000000">
       <button class="sm" id="bgWhite" title="white">▢</button>
       <button class="sm" id="bgBlack" title="black">▣</button></div>
+    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      <div class="row"><label class="toggle" title="A glowing halo radiating off the brain (additive glow). Just for fun."><input type="checkbox" id="auraOn"> ✨ Aura glow</label>
+        <input type="color" id="auraColor" value="#5db0ff" title="Aura color"></div>
+      <div class="ctl"><div class="lab"><span title="Halo size relative to the brain">Aura size</span><span id="auraSizeV">1.35</span></div>
+        <input type="range" id="auraSize" min="0.6" max="2.6" step="0.05" value="1.35"></div>
+      <div class="ctl"><div class="lab"><span title="Aura brightness">Aura intensity</span><span id="auraIntV">0.85</span></div>
+        <input type="range" id="auraIntensity" min="0" max="2" step="0.05" value="0.85"></div>
+      <div class="ctl"><div class="lab"><span title="Pulsing/breathing speed (0 = steady)">Aura pulse</span><span id="auraPulseV">0.0</span></div>
+        <input type="range" id="auraPulse" min="0" max="4" step="0.1" value="0"></div>
+      <div class="row"><label class="toggle" title="Continuously cycle the aura hue"><input type="checkbox" id="auraRainbow"> 🌈 rainbow cycle</label>
+        <label class="toggle" title="Slowly rotate the halo"><input type="checkbox" id="auraSpin"> ⟳ spin</label></div>
+    </div>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>◯ Regions</summary><div class="accb">
@@ -758,9 +771,14 @@ const COLOR_GLSL = `
     else if(uPattern==2){ on = 1.0 - step(0.5, fract(q.x)); }
     else if(uPattern==3){ vec3 g=abs(fract(q)-0.5); float l=min(min(g.x,g.y),g.z); on = smoothstep(0.0,0.06,l); }
     else if(uPattern==4){ vec3 f=fract(q)-0.5; float d=length(f.xy); on = smoothstep(0.18,0.27,d); }
-    else if(uPattern==5){ on = 1.0 - step(0.5, fract(q.x+q.y)); }
-    if(uPatMode==0){ diffuseColor.rgb *= mix(uContrast, 1.0, on); }
-    else { float a = mix(uContrast, 1.0, on); diffuseColor.a *= a; if(a < 0.04) discard; }
+    else if(uPattern==5){ on = 1.0 - step(0.5, fract(q.x+q.y)); }                                                   // hatch (diagonal stripes)
+    else if(uPattern==6){ vec2 d=abs(fract(vec2(q.x+q.y,q.x-q.y))-0.5); on=smoothstep(0.0,0.07,min(d.x,d.y)); }       // cross-hatch (diagonal grid)
+    else if(uPattern==7){ float ox=mod(floor(q.y),2.0)*0.5; vec2 d=abs(fract(vec2(q.x+ox,q.y))-0.5); on=smoothstep(0.0,0.06,min(d.x,d.y)); }  // bricks
+    else if(uPattern==8){ on = 1.0 - step(0.5, fract(q.y + 0.32*sin(q.x*6.2831853))); }                              // waves
+    else if(uPattern==9){ on = smoothstep(0.0,0.08, abs(fract(length(q.xy))-0.5)); }                                 // concentric rings
+    else if(uPattern==10){ vec3 g=abs(fract(q)-0.5); on = 1.0 - smoothstep(0.0,0.05, min(min(g.x,g.y),g.z)); }       // mesh (thin grid lines KEPT, rest cut)
+    if(uPatMode==0){ diffuseColor.rgb *= mix(uContrast, 1.0, on); }            // darken the off-cells
+    else { if(on < (1.0 - uContrast)) discard; }                               // CUT: remove off-cells entirely (perforated mesh); strength = hole coverage
   }
   if(uWire>0.5){
     vec3 dB=fwidth(vBary);
@@ -978,6 +996,30 @@ $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
+// ---------- aura glow (additive halo radiating off the brain — just for fun) ----------
+let auraSprite=null, _auraT=0, _auraHue=0.58;
+function auraTexture(){ const cv=document.createElement('canvas'); cv.width=cv.height=256; const x=cv.getContext('2d');
+  const g=x.createRadialGradient(128,128,28,128,128,128);
+  g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(0.42,'rgba(255,255,255,0)');
+  g.addColorStop(0.60,'rgba(255,255,255,0.95)'); g.addColorStop(0.80,'rgba(255,255,255,0.32)'); g.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=g; x.fillRect(0,0,256,256); return new THREE.CanvasTexture(cv); }
+function ensureAura(){ if(auraSprite) return auraSprite;
+  const mat=new THREE.SpriteMaterial({map:auraTexture(), color:new THREE.Color($('auraColor').value),
+    transparent:true, blending:THREE.AdditiveBlending, depthTest:true, depthWrite:false, opacity:+$('auraIntensity').value});
+  auraSprite=new THREE.Sprite(mat); auraSprite.renderOrder=-2; scene.add(auraSprite); return auraSprite; }
+function positionAura(){ if(!auraSprite) return; const box=new THREE.Box3().setFromObject(group); if(box.isEmpty()) return;
+  const c=box.getCenter(new THREE.Vector3()), s=box.getSize(new THREE.Vector3()), rad=Math.max(s.x,s.y,s.z)*0.5;
+  auraSprite.position.copy(c); const sc=rad*2*(+$('auraSize').value); auraSprite.scale.set(sc,sc,1); }
+function updateAura(){ const on=$('auraOn').checked; if(on){ ensureAura(); positionAura(); }
+  if(auraSprite){ auraSprite.visible=on; if(!$('auraRainbow').checked) auraSprite.material.color.set($('auraColor').value); auraSprite.material.opacity=+$('auraIntensity').value; }
+  requestRender(); }
+$('auraOn').addEventListener('change', updateAura);
+$('auraColor').addEventListener('input', updateAura);
+$('auraSize').addEventListener('input', e=>{ $('auraSizeV').textContent=(+e.target.value).toFixed(2); positionAura(); requestRender(); });
+$('auraIntensity').addEventListener('input', e=>{ $('auraIntV').textContent=(+e.target.value).toFixed(2); updateAura(); });
+$('auraPulse').addEventListener('input', e=>{ $('auraPulseV').textContent=(+e.target.value).toFixed(1); requestRender(); });
+$('auraRainbow').addEventListener('change', updateAura);
+$('auraSpin').addEventListener('change', requestRender);
 $('vividVal').textContent=(+$('vivid').value).toFixed(2)+'×';
 $('rimVal').textContent=(+$('rim').value).toFixed(2);
 $('coloredOpVal').textContent=(+$('coloredOp').value).toFixed(2);
@@ -987,7 +1029,8 @@ $('satCutVal').textContent=(+$('satCut').value).toFixed(2);
 const STYLE_MAP = {
   'Solid':{p:0}, 'Flat shaded':{p:0,flat:true},
   'Wireframe':{p:0,wire:1,fill:0}, 'Wireframe + fill':{p:0,wire:1,fill:1},
-  'Checkerboard':{p:1}, 'Stripes':{p:2}, 'Grid lines':{p:3}, 'Dots':{p:4}, 'Hatch':{p:5}
+  'Checkerboard':{p:1}, 'Stripes':{p:2}, 'Grid lines':{p:3}, 'Dots':{p:4}, 'Hatch':{p:5},
+  'Cross-hatch':{p:6}, 'Bricks':{p:7}, 'Waves':{p:8}, 'Concentric':{p:9}, 'Lattice':{p:10}
 };
 function applySurfStyle(){
   const s = STYLE_MAP[$('surfStyle').value] || {p:0};
@@ -1641,7 +1684,8 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
-  'coloredOp','grayOp','satCut','glass','smooth'];
+  'coloredOp','grayOp','satCut','glass','smooth',
+  'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow','auraSpin'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
@@ -2174,12 +2218,13 @@ window.brainAPI = {
     if(selOv>=0) overlays[selOv].raw=b64;
     await nextFrames(2); return true; },
   // render the 3D scene at an exact size and return a PNG data URL (no UI chrome)
-  renderTo(w=600,h=480,transparent=false){
+  renderTo(w=600,h=480,transparent=false,zoom=1){
     const oldBG=scene.background; if(transparent) scene.background=null;
+    const oldZoom=camera.zoom; if(zoom!==1){ camera.zoom*=zoom; }
     renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
     renderer.render(scene,camera);
     const url=renderer.domElement.toDataURL('image/png');
-    scene.background=oldBG; resize(); renderer.render(scene,camera);
+    scene.background=oldBG; camera.zoom=oldZoom; resize(); renderer.render(scene,camera);
     return url;
   },
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
@@ -2882,7 +2927,7 @@ function sliceRenderAll(){
   const nvis = sliceOverlays().length;
   $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
     : (nvis ? nvis+' overlay'+(nvis>1?'s':'') : '— add/show a .nii overlay —');
-  try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true); }catch(e){}
+  try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true,1.1); }catch(e){}
 }
 function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   sliceMode=(m==='slice'); mosaicMode=(m==='mosaic');
@@ -2973,7 +3018,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
   });
   // make the 3D cell fully interactive: wheel = zoom, drag = rotate, right/shift-drag = pan
-  const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true); }catch(e){} };
+  const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true,1.1); }catch(e){} };
   cell3d.style.cursor='grab';
   cell3d.addEventListener('wheel', e=>{ e.preventDefault(); setCamDistance(camDistance()*Math.exp(e.deltaY*0.0015)); refresh3d(); }, {passive:false});
   cell3d.addEventListener('contextmenu', e=>e.preventDefault());   // allow right-drag pan
@@ -3186,8 +3231,15 @@ function tick(){
   const spinOn = $('spin').checked && !controls.autoRotate;
   const pulseOn = connUniforms.uPulse.value>0.5;
   const flowOn = tractFX.uPulse.value>0.5;
+  const auraAnim = auraSprite && $('auraOn').checked && (+$('auraPulse').value>0 || $('auraRainbow').checked || $('auraSpin').checked);
+  if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value;
+    let op=+$('auraIntensity').value; if(ps>0) op*= 0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8));
+    auraSprite.material.opacity=op;
+    if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; auraSprite.material.color.setHSL(_auraHue,0.85,0.6); }
+    if($('auraSpin').checked) auraSprite.material.rotation += dt*0.5;
+  }
   // ongoing animations must keep rendering every frame
-  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn;
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
@@ -3206,7 +3258,7 @@ function tick(){
   }
   // refresh the slice-grid 3D thumbnail when the 3D look changes (wireframe, rim, shading, …),
   // throttled so continuous animations (spin/flow/pulse) don't re-render it every frame
-  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true); }catch(e){} } }
+  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true,1.1); }catch(e){} } }
 }
 tick();
 </script>
