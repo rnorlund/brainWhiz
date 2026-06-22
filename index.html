@@ -209,11 +209,19 @@
           <button class="sm mpbtn on" data-mp="axi">Axial</button>
           <button class="sm mpbtn" data-mp="cor">Coronal</button>
           <button class="sm mpbtn" data-mp="sag">Sagittal</button></div>
-        <div class="row"><label>Slices</label><input type="range" id="mosN" min="4" max="48" step="1" value="16" style="flex:1"><span id="mosNV" style="min-width:22px;text-align:right">16</span></div>
-        <div class="row"><label>Columns</label><input type="range" id="mosCols" min="1" max="10" step="1" value="6" style="flex:1"><span id="mosColsV" style="min-width:22px;text-align:right">6</span></div>
-        <div class="row"><label title="Spacing between tiles. 0 = touching; negative = slices overlap / slide under each other">Gap</label><input type="range" id="mosGap" min="-40" max="24" step="1" value="4" style="flex:1"><span id="mosGapV" style="min-width:22px;text-align:right">4</span></div>
-        <div class="row"><label title="When the gap is negative and slices overlap, which side is drawn on top">Overlap</label>
+        <div class="row"><label>Slices</label><input type="range" id="mosN" min="1" max="80" step="1" value="16" style="flex:1"><span id="mosNV" style="min-width:22px;text-align:right">16</span></div>
+        <div class="row"><label>Columns</label><input type="range" id="mosCols" min="1" max="12" step="1" value="6" style="flex:1"><span id="mosColsV" style="min-width:22px;text-align:right">6</span></div>
+        <div class="row"><label title="Fill an exact rows × columns grid with that many equidistant slices, in one click">Grid R×C</label>
+          <input type="number" id="mosRows" min="1" max="12" step="1" value="3" style="width:46px"><span style="opacity:.6">×</span>
+          <input type="number" id="mosColsN" min="1" max="12" step="1" value="6" style="width:46px">
+          <button class="sm" id="mosFill" title="Set slices = rows × cols and lay them out equidistant">⤢ Fill</button></div>
+        <div class="row"><label title="Horizontal spacing between tiles. 0 = touching; negative = overlap / slide under each other">Gap X</label><input type="range" id="mosGapX" min="-40" max="24" step="1" value="4" style="flex:1"><span id="mosGapXV" style="min-width:22px;text-align:right">4</span></div>
+        <div class="row"><label title="Vertical spacing between rows. 0 = touching; negative = rows overlap">Gap Y</label><input type="range" id="mosGapY" min="-40" max="24" step="1" value="4" style="flex:1"><span id="mosGapYV" style="min-width:22px;text-align:right">4</span></div>
+        <div class="row"><label title="When tiles overlap, which side is drawn on top">Overlap</label>
           <select id="mosOverlap" style="flex:1"><option value="right">Right over left</option><option value="left">Left over right</option></select></div>
+        <div class="row"><label class="toggle" title="Set the slice range manually (start/stop level in mm) instead of auto-spanning the brain"><input type="checkbox" id="mosManual"> range</label>
+          <input type="number" id="mosZ0" step="1" value="-40" style="width:50px" title="start level (mm)"><span style="opacity:.6">→</span>
+          <input type="number" id="mosZ1" step="1" value="70" style="width:50px" title="stop level (mm)"><span id="mosZAx" style="opacity:.6;font-size:11px">z</span></div>
         <div class="row"><label title="Crop empty space around the brain so slices pack tighter">Tighten</label><input type="range" id="mosCrop" min="0" max="1" step="0.05" value="0.6" style="flex:1"><span id="mosCropV" style="min-width:22px;text-align:right">0.6</span></div>
         <div class="row"><label class="toggle"><input type="checkbox" id="mosLabels" checked> coords</label>
           <label style="margin-left:6px">size</label><input type="range" id="mosLabelSize" min="0" max="26" step="1" value="11" style="flex:1"><span id="mosLabelSizeV" style="min-width:18px;text-align:right">11</span></div>
@@ -234,8 +242,11 @@
   <button id="modeMosaic" class="tbtn" title="mosaic / lightbox: evenly-spaced slices tiled in one figure">▦ Mosaic</button>
   <span class="tbsep"></span>
   <button id="vSide" class="tbtn">Left</button>
+  <button id="vRight" class="tbtn">Right</button>
   <button id="vTop" class="tbtn">Top</button>
+  <button id="vBottom" class="tbtn">Bottom</button>
   <button id="vFront" class="tbtn">Front</button>
+  <button id="vBack" class="tbtn">Back</button>
   <button id="reset" class="tbtn">Reset</button>
   <span class="tbsep"></span>
   <button id="snap" class="tbtn">📷 PNG</button>
@@ -1223,7 +1234,10 @@ function view(pos, dist){ // pos = direction the camera sits from center; dist d
 }
 $('vTop').onclick   = ()=>view([0,1,0.0001]);   // superior
 $('vSide').onclick  = ()=>view([-1,0,0]);        // left sagittal
+$('vRight').onclick = ()=>view([1,0,0]);         // right sagittal
+$('vBottom').onclick= ()=>view([0,-1,0.0001]);   // inferior
 $('vFront').onclick = ()=>view([0,0,-1]);        // anterior (face)
+$('vBack').onclick  = ()=>view([0,0,1]);         // posterior
 // extra standard-view buttons (View & motion section)
 document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{
   const V={left:[-1,0,0],right:[1,0,0],superior:[0,1,0.0001],inferior:[0,-1,0.0001],anterior:[0,0,-1],posterior:[0,0,1]};
@@ -2395,7 +2409,9 @@ function captureViewerCfg(){
     mode: mosaicMode?'mosaic':sliceMode?'slice':'mesh',
     sliceMM: sliceMM.map(v=>+v.toFixed(1)), sliceKind,
     mosaic: { plane:mosaicPlane, n:+$('mosN').value, cols:+$('mosCols').value, labels:$('mosLabels').checked,
-      gap:+$('mosGap').value, overlap:$('mosOverlap').value, crop:+$('mosCrop').value, labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
+      gapX:+$('mosGapX').value, gapY:+$('mosGapY').value, overlap:$('mosOverlap').value, crop:+$('mosCrop').value,
+      manual:$('mosManual').checked, z0:+$('mosZ0').value, z1:+$('mosZ1').value,
+      labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
     active: selOv,
     overlays: overlays.map(o=>({ name:o.name, kind:o.kind, term:o.term||'', fileName:o.fileName||'', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} })) };
 }
@@ -2426,9 +2442,13 @@ function applyViewerCfg(cfg){
   if(cfg.sliceKind){ sliceKind=cfg.sliceKind; const vx=$('slKindVox'),mh=$('slKindMesh'); if(vx)vx.classList.toggle('on',sliceKind==='voxel'); if(mh)mh.classList.toggle('on',sliceKind==='mesh'); }
   if(cfg.mosaic){ const M=cfg.mosaic; mosaicPlane=M.plane||'axi';
     const set=(id,v,vid)=>{ const e=$(id); if(e&&v!=null){ e.value=v; if(vid&&$(vid))$(vid).textContent=v; } };
-    set('mosN',M.n,'mosNV'); set('mosCols',M.cols,'mosColsV'); set('mosGap',M.gap,'mosGapV'); set('mosCrop',M.crop,'mosCropV'); set('mosLabelSize',M.labelSize,'mosLabelSizeV');
+    set('mosN',M.n,'mosNV'); set('mosCols',M.cols,'mosColsV'); set('mosCrop',M.crop,'mosCropV'); set('mosLabelSize',M.labelSize,'mosLabelSizeV');
+    set('mosGapX', M.gapX!=null?M.gapX:M.gap, 'mosGapXV'); set('mosGapY', M.gapY!=null?M.gapY:M.gap, 'mosGapYV');   // back-compat with old single gap
+    if(M.manual!=null && $('mosManual')) $('mosManual').checked=!!M.manual;
+    if(M.z0!=null) set('mosZ0',M.z0); if(M.z1!=null) set('mosZ1',M.z1);
     if($('mosOverlap')&&M.overlap) $('mosOverlap').value=M.overlap;
     if($('mosLabels')) $('mosLabels').checked=M.labels!==false; if($('mosLabelCenter')) $('mosLabelCenter').checked=!!M.labelCenter;
+    if($('mosZAx')) $('mosZAx').textContent = mosaicPlane==='axi'?'z':mosaicPlane==='cor'?'y':'x';
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x.dataset.mp===mosaicPlane)); }
   setViewMode(cfg.mode||'mesh');
   requestRender();
@@ -2890,21 +2910,24 @@ function renderMosaic(){
   const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
   const plane=mosaicPlane, b=mosaicInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
-  const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round((+$('mosGap').value)*dpr);
-  const sizeGap=Math.max(0,gap);                       // tile SIZE ignores negative gap (negative only tightens spacing)
-  let tileW=(W-(cols+1)*sizeGap)/cols, tileH=tileW*(vr/hr);
-  if(rows*tileH+(rows+1)*sizeGap>H){ tileH=(H-(rows+1)*sizeGap)/rows; tileW=tileH*(hr/vr); }
+  let lo,hi; if($('mosManual')&&$('mosManual').checked){ lo=Math.min(+$('mosZ0').value,+$('mosZ1').value); hi=Math.max(+$('mosZ0').value,+$('mosZ1').value); }
+  else { const rr=mosaicRange(plane); lo=rr[0]; hi=rr[1]; }
+  const N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols);
+  const gapX=Math.round((+$('mosGapX').value)*dpr), gapY=Math.round((+$('mosGapY').value)*dpr);
+  const sgX=Math.max(0,gapX), sgY=Math.max(0,gapY);    // tile SIZE ignores negative gaps (negative only tightens spacing)
+  let tileW=(W-(cols+1)*sgX)/cols, tileH=tileW*(vr/hr);
+  if(rows*tileH+(rows+1)*sgY>H){ tileH=(H-(rows+1)*sgY)/rows; tileW=tileH*(hr/vr); }
   const ovs=sliceOverlays().map(ovSliceParams);
   const [bgR,bgG,bgB]=hex2rgb(viewBg());
   const tmask=spotlightOn()?tractMask():null;
-  const gridW=cols*tileW+(cols+1)*gap, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
-  const gridH=rows*tileH+(rows+1)*gap, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
+  const gridW=cols*tileW+(cols+1)*gapX, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
+  const gridH=rows*tileH+(rows+1)*gapY, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
   const tcv=document.createElement('canvas'), tctx=tcv.getContext('2d');   // tile buffer -> drawImage composites (overlap-safe)
   const leftTop = $('mosOverlap') && $('mosOverlap').value==='left';       // overlap stacking order
   const order=[...Array(N).keys()].sort((a,bb)=>{ const ca=a%cols, cb=bb%cols; return leftTop?(cb-ca):(ca-cb); });
   for(const s of order){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
     const col=s%cols, row=(s/cols)|0, dw=Math.max(1,Math.round(tileW)), dh=Math.max(1,Math.round(tileH));
-    const dx=Math.round(startX+gap+col*(tileW+gap)), dy=Math.round(startY+gap+row*(tileH+gap));
+    const dx=Math.round(startX+gapX+col*(tileW+gapX)), dy=Math.round(startY+gapY+row*(tileH+gapY));
     const img=ctx.createImageData(dw,dh), D=img.data;
     for(let py=0;py<dh;py++){ const vW=b.vmax-(py/(dh-1||1))*vr;
       for(let px=0;px<dw;px++){ const hW=b.hmin+(px/(dw-1||1))*hr, w=worldAt(plane,hW,vW,fixed);
@@ -2999,11 +3022,18 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     rd.readAsArrayBuffer(f); e.target.value=''; });
   $('ulReset').addEventListener('click', ()=>{ setUnderlay(null); underlayRaw=null; underlayName=''; $('ulName').textContent='MNI template'; });
   // mosaic controls
+  const mosAxLab=()=>{ if($('mosZAx')) $('mosZAx').textContent = mosaicPlane==='axi'?'z':mosaicPlane==='cor'?'y':'x'; };
   document.querySelectorAll('.mpbtn').forEach(b=>b.addEventListener('click',()=>{ mosaicPlane=b.dataset.mp;
-    document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x===b)); renderMosaic(); }));
+    document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x===b)); mosAxLab(); renderMosaic(); }));
+  mosAxLab();
   $('mosN').addEventListener('input',e=>{ $('mosNV').textContent=e.target.value; renderMosaic(); });
   $('mosCols').addEventListener('input',e=>{ $('mosColsV').textContent=e.target.value; renderMosaic(); });
-  $('mosGap').addEventListener('input',e=>{ $('mosGapV').textContent=e.target.value; renderMosaic(); });
+  $('mosFill').addEventListener('click',()=>{ const r=Math.max(1,Math.min(12,+$('mosRows').value||1)), c=Math.max(1,Math.min(12,+$('mosColsN').value||1));
+    const n=Math.max(1,Math.min(+$('mosN').max, r*c)); $('mosCols').value=c; $('mosColsV').textContent=c; $('mosN').value=n; $('mosNV').textContent=n; renderMosaic(); });
+  $('mosGapX').addEventListener('input',e=>{ $('mosGapXV').textContent=e.target.value; renderMosaic(); });
+  $('mosGapY').addEventListener('input',e=>{ $('mosGapYV').textContent=e.target.value; renderMosaic(); });
+  $('mosManual').addEventListener('change', renderMosaic);
+  $('mosZ0').addEventListener('input', renderMosaic); $('mosZ1').addEventListener('input', renderMosaic);
   $('mosOverlap').addEventListener('change', renderMosaic);
   $('mosCrop').addEventListener('input',e=>{ $('mosCropV').textContent=(+e.target.value).toFixed(1); renderMosaic(); });
   $('mosLabelSize').addEventListener('input',e=>{ $('mosLabelSizeV').textContent=e.target.value; renderMosaic(); });
@@ -3055,7 +3085,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     navToggle:'Show / hide the left (data) sidebar', navToggleR:'Show / hide the right (Look & feel) sidebar',
     atlasSel:'Choose which brain atlas / parcellation to display', netBadge:'Online / offline status',
     modeMesh:'3D mesh view', modeSlice:'Voxel ortho-slice view (axial / sagittal / coronal). Load a stat .nii to overlay',
-    vSide:'View from the left', vTop:'View from above', vFront:'View from the front', reset:'Reset the camera to the default view',
+    vSide:'View from the left', vRight:'View from the right', vTop:'View from above', vBottom:'View from below', vFront:'View from the front', vBack:'View from behind', reset:'Reset the camera to the default view',
     snap:'Save a PNG screenshot of the current view', pbToggle:'Open the figure-panel builder (grids of brains)',
     presetSel:'Apply a saved look/settings preset', savePreset:'Save the current look as a reusable preset', delPreset:'Delete the selected preset',
     taskMap:'Color regions by a baked NeuroQuery task map (motor, language, …)', taskMapB:'Second task map, for conjunction / subtraction',
