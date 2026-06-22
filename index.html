@@ -29,6 +29,17 @@
   .tbtn:hover{border-color:var(--accent)}
   .tbtn.tbon{background:var(--accent);color:#001;border-color:var(--accent);font-weight:600}
   /* ---- voxel slice view ---- */
+  /* ---- figure editor ---- */
+  #figEditor{position:fixed;inset:0;z-index:60;background:#11151c;display:none;flex-direction:column}
+  #figEditor.on{display:flex}
+  #feBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .febtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+  .febtn:hover{border-color:var(--accent)}
+  .fesep{width:1px;height:22px;background:var(--line);margin:0 2px}
+  .femut{color:var(--muted);font-size:11px}
+  #feStage{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#0a0d12;padding:20px}
+  #feStage canvas{box-shadow:0 6px 40px #000a}
+  #feHint{padding:5px 10px;font-size:11px;color:var(--muted);background:var(--panel);border-top:1px solid var(--line)}
   #mosaicView{position:absolute;display:none;background:#000000;z-index:8}
   #mosaicView.on{display:block}
   #mosaicView canvas{width:100%;height:100%;display:block}
@@ -227,6 +238,7 @@
   <span class="tbsep"></span>
   <button id="snap" class="tbtn">📷 PNG</button>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
+  <button id="feToggle" class="tbtn" title="Figure editor — arrange panels, add text / arrows / lines, export">📐 Editor</button>
   <span class="tbsep"></span>
   <label class="tbmuted">Preset</label>
   <select id="presetSel" class="tbsel" style="width:118px"><option value="">—</option></select>
@@ -419,6 +431,40 @@
   <button id="zoomIn">＋</button>
   <input type="range" id="zoomVert" min="0" max="1" step="0.004" value="0.55">
   <button id="zoomOut">－</button>
+</div>
+
+<div id="figEditor">
+  <div id="feBar">
+    <button class="febtn" id="feClose" title="back to viewer">✕ Close</button>
+    <span class="fesep"></span>
+    <button class="febtn" id="feAddView" title="add the current 3D / slice / mosaic view">＋ Current view</button>
+    <button class="febtn" id="feAddPanels" title="import all tiles from the panel builder">＋ Panels</button>
+    <button class="febtn" id="feAddImg" title="add an image file">＋ Image…</button>
+    <input type="file" id="feImgFile" accept="image/*" style="display:none">
+    <span class="fesep"></span>
+    <button class="febtn" id="feText" title="add a text label (double-click to edit)">T Text</button>
+    <button class="febtn" id="feArrow" title="add an arrow">↗ Arrow</button>
+    <button class="febtn" id="feLine" title="add a line with end dots">•— Line</button>
+    <button class="febtn" id="feBox" title="add a rectangle outline">▭ Box</button>
+    <span class="fesep"></span>
+    <label class="femut">Color</label><input type="color" id="feColor" value="#ff3b30" title="color of selected / new item">
+    <label class="femut">Size</label><input type="range" id="feSize" min="6" max="96" step="1" value="28" style="width:90px" title="text / line size"><span id="feSizeV" class="femut">28</span>
+    <span class="fesep"></span>
+    <button class="febtn" id="feDup" title="duplicate selected">⧉</button>
+    <button class="febtn" id="feFront" title="bring to front">⤒</button>
+    <button class="febtn" id="feBack" title="send to back">⤓</button>
+    <button class="febtn" id="feDel" title="delete selected (Del)">🗑</button>
+    <span style="flex:1"></span>
+    <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:62px" title="width"> ×
+    <input type="number" id="feH" value="900" min="100" max="6000" style="width:62px" title="height">
+    <label class="femut">BG</label><input type="color" id="feBg" value="#ffffff" title="figure background"><label class="toggle femut"><input type="checkbox" id="feBgTransparent"> transp</label>
+    <span class="fesep"></span>
+    <select id="feFormat" class="tbsel" style="font-size:11px"><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select>
+    <label class="femut">scale</label><select id="feScale" class="tbsel" style="font-size:11px"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select>
+    <button class="febtn" id="feExport" title="export the figure">⤓ Export</button>
+  </div>
+  <div id="feStage"><canvas id="feCanvas"></canvas></div>
+  <div id="feHint">Drag to move · handles to resize/rotate · double-click text to edit · Del removes · Ctrl/⌘ C/V copy-paste · paste an image from the clipboard</div>
 </div>
 
 <div id="panelBuilder">
@@ -2494,6 +2540,87 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     if(!t && el.placeholder) t = el.placeholder;
     if(t) el.title = t;
   });
+})();
+
+// ================= FIGURE EDITOR (fabric.js, lazy-loaded) =================
+let feCanvas=null, feClip=null;
+async function ensureFabric(){ if(window.fabric) return true;
+  const ok=await loadScript(window.__served ? 'vendor/fabric.min.js' : 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js');
+  return ok && !!window.fabric; }
+function feSel(){ return feCanvas && feCanvas.getActiveObject(); }
+function feDl(name,href){ const a=document.createElement('a'); a.download=name; a.href=href; a.click(); }
+function feResize(){ if(feCanvas){ feCanvas.setWidth(+$('feW').value); feCanvas.setHeight(+$('feH').value); feCanvas.renderAll(); } }
+function feAddObj(o){ feCanvas.add(o); feCanvas.setActiveObject(o); feCanvas.requestRenderAll(); }
+function feImg(dataURL, opts){ fabric.Image.fromURL(dataURL, img=>{ img.set(Object.assign({left:30,top:30},opts||{}));
+  const maxW=feCanvas.getWidth()*0.5; if(img.width>maxW) img.scaleToWidth(maxW); feAddObj(img); }); }
+function feAddCurrentView(){ let url; try{ url=window.brainAPI.captureView(900,680,false); }catch(e){ return; } feImg(url,{left:40,top:40}); }
+function feImportPanels(){ const [rows,cols]=pbDims(), cw=feCanvas.getWidth(), gap=14, tw=(cw-gap*(cols+1))/cols, rh=tw*0.8+gap+26;
+  pbItems.forEach((it,i)=>{ if(!it||!it.dataURL) return; const col=i%cols, row=(i/cols)|0;
+    const x=gap+col*(tw+gap), y=gap+row*rh;
+    fabric.Image.fromURL(it.dataURL, img=>{ img.scaleToWidth(tw); img.set({left:x, top:y+(it.label?22:0)}); feCanvas.add(img);
+      if(it.label){ feCanvas.add(new fabric.IText(it.label,{left:x, top:y, fontSize:18, fill:'#111', fontFamily:'system-ui'})); }
+      feCanvas.requestRenderAll(); }); }); }
+function feArrowObj(){ const c=$('feColor').value, w=Math.max(2,(+$('feSize').value)/8);
+  const line=new fabric.Line([0,0,120,0],{stroke:c,strokeWidth:w});
+  const head=new fabric.Triangle({left:120,top:0,originX:'center',originY:'center',angle:90,width:w*5,height:w*5,fill:c});
+  return new fabric.Group([line,head],{left:60,top:60}); }
+function feLineObj(){ const c=$('feColor').value, w=Math.max(2,(+$('feSize').value)/8), r=w*1.8;
+  const line=new fabric.Line([0,0,120,0],{stroke:c,strokeWidth:w});
+  const d1=new fabric.Circle({left:0,top:0,originX:'center',originY:'center',radius:r,fill:c});
+  const d2=new fabric.Circle({left:120,top:0,originX:'center',originY:'center',radius:r,fill:c});
+  return new fabric.Group([line,d1,d2],{left:60,top:60}); }
+function feDelSel(){ feCanvas.getActiveObjects().forEach(o=>feCanvas.remove(o)); feCanvas.discardActiveObject(); feCanvas.requestRenderAll(); }
+function feApplyColor(){ const o=feSel(); if(!o) return; const c=$('feColor').value;
+  if(o.type==='i-text'||o.type==='text') o.set('fill',c);
+  else if(o.type==='rect') o.set('stroke',c);
+  else if(o.type==='group') o.forEachObject(x=>x.set(x.type==='line'?'stroke':'fill',c));
+  else o.set('stroke',c); feCanvas.requestRenderAll(); }
+function feExport(){ const fmt=$('feFormat').value, scale=+$('feScale').value, transp=$('feBgTransparent').checked;
+  const oldBg=feCanvas.backgroundColor; if(transp){ feCanvas.backgroundColor=null; feCanvas.renderAll(); }
+  const restore=()=>{ feCanvas.backgroundColor=oldBg; feCanvas.renderAll(); };
+  try{
+    if(fmt==='svg'){ feDl('figure.svg','data:image/svg+xml;charset=utf-8,'+encodeURIComponent(feCanvas.toSVG())); return; }
+    const png=feCanvas.toDataURL({format:'png',multiplier:scale});
+    if(fmt==='pdf'){ const {jsPDF}=window.jspdf, w=feCanvas.getWidth(), h=feCanvas.getHeight();
+      const pdf=new jsPDF({orientation:w>h?'l':'p',unit:'pt',format:[w,h]}); pdf.addImage(png,'PNG',0,0,w,h); pdf.save('figure.pdf'); return; }
+    feDl('figure.png',png);
+  }catch(e){ alert('Export failed: '+e.message); } finally{ restore(); } }
+async function openFigEditor(){
+  $('figEditor').classList.add('on');
+  if(!await ensureFabric()){ alert('Could not load the figure-editor library (offline?).'); $('figEditor').classList.remove('on'); return; }
+  if(!feCanvas){
+    feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:$('feBg').value, preserveObjectStacking:true});
+    feResize();
+    document.addEventListener('keydown',e=>{ if(!$('figEditor').classList.contains('on')) return; const o=feSel();
+      if((e.key==='Delete'||e.key==='Backspace') && o && !o.isEditing){ feDelSel(); e.preventDefault(); }
+      else if((e.metaKey||e.ctrlKey)&&e.key==='c'&&o){ o.clone(c=>feClip=c); }
+      else if((e.metaKey||e.ctrlKey)&&e.key==='v'&&feClip){ feClip.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); } });
+    $('figEditor').addEventListener('paste',e=>{ const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
+      for(const it of items){ if(it.type.indexOf('image')===0){ const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(it.getAsFile()); e.preventDefault(); } } });
+    feImportPanels();   // seed with whatever's in the panel builder
+  }
+  feCanvas.requestRenderAll();
+}
+(function initFigEditor(){
+  $('feToggle').addEventListener('click', openFigEditor);
+  $('feClose').addEventListener('click', ()=>$('figEditor').classList.remove('on'));
+  $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
+  $('feBg').addEventListener('input', ()=>{ if(feCanvas){ feCanvas.backgroundColor=$('feBg').value; feCanvas.renderAll(); } });
+  $('feColor').addEventListener('input', feApplyColor);
+  $('feSize').addEventListener('input', ()=>{ $('feSizeV').textContent=$('feSize').value; const o=feSel(); if(o&&(o.type==='i-text'||o.type==='text')){ o.set('fontSize',+$('feSize').value); feCanvas.requestRenderAll(); } });
+  $('feText').addEventListener('click', ()=>feAddObj(new fabric.IText('Label',{left:60,top:60,fontSize:+$('feSize').value,fill:$('feColor').value,fontFamily:'system-ui'})));
+  $('feArrow').addEventListener('click', ()=>feAddObj(feArrowObj()));
+  $('feLine').addEventListener('click', ()=>feAddObj(feLineObj()));
+  $('feBox').addEventListener('click', ()=>feAddObj(new fabric.Rect({left:60,top:60,width:160,height:110,fill:'',stroke:$('feColor').value,strokeWidth:Math.max(2,(+$('feSize').value)/8)})));
+  $('feDel').addEventListener('click', feDelSel);
+  $('feDup').addEventListener('click', ()=>{ const o=feSel(); if(o) o.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); });
+  $('feFront').addEventListener('click', ()=>{ const o=feSel(); if(o){ o.bringToFront(); feCanvas.requestRenderAll(); } });
+  $('feBack').addEventListener('click', ()=>{ const o=feSel(); if(o){ o.sendToBack(); feCanvas.requestRenderAll(); } });
+  $('feAddView').addEventListener('click', feAddCurrentView);
+  $('feAddPanels').addEventListener('click', feImportPanels);
+  $('feAddImg').addEventListener('click', ()=>$('feImgFile').click());
+  $('feImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(f); e.target.value=''; });
+  $('feExport').addEventListener('click', feExport);
 })();
 
 const clock=new THREE.Clock();
