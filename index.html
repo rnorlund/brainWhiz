@@ -397,7 +397,8 @@
       <div class="row" style="gap:10px;flex-wrap:wrap">
         <label class="toggle" title="Make the cortex a faint glass shell so the deep tracts read clearly in 3D"><input type="checkbox" id="tractGlass"> 🪟 Glass cortex</label>
         <label class="toggle" title="Animate a pulse of light flowing along each tract (3D)"><input type="checkbox" id="tractFlow"> 🌊 Flow</label>
-        <label class="toggle" title="Cut the cortex away above the axial slice level (Z slider) so tracts are exposed; tracts are never clipped"><input type="checkbox" id="tractClip"> ✂️ Clip at slice</label></div>
+        <label class="toggle" title="Cut the cortex away above the axial slice level (Z slider) so tracts are exposed; tracts are never clipped"><input type="checkbox" id="tractClip"> ✂️ Clip at slice</label>
+        <label class="toggle" title="Highlight only tracts that connect two active foci (suprathreshold clusters of the active overlay) and draw a ribbon between them; other tracts fade"><input type="checkbox" id="tractBridge"> 🌉 Bridge foci</label></div>
       <div class="ctl"><div class="lab"><span title="Smooth the chunky tract hull meshes (Taubin) — same as ROI mesh smoothing">Tract smoothing</span><span id="tractSmoothV">4</span></div>
         <input type="range" id="tractSmooth" min="0" max="12" step="1" value="4"></div>
       <div class="row"><label class="toggle"><input type="checkbox" id="tractExplode" checked> explode tracts with brain</label></div>
@@ -1322,25 +1323,26 @@ async function loadTracts(id){
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
+    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); rebuildBridges(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
   }, err=>alert('Tract mesh parse failed: '+err));
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
   tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; $('tractCount').textContent=''; $('tractReadout').textContent='';
-  invalidateTractMask(); restoreCortex(); refreshSliceViews(); requestRender(); }
+  clearBridges(); bridgeAny=false; tractBridgeFoci=[]; invalidateTractMask(); restoreCortex(); refreshSliceViews(); requestRender(); }
 function buildTractList(){ const L=$('tractList'); L.innerHTML='';
   const nv=tractRecs.filter(r=>r.visible).length;
   $('tractCount').textContent = tractRecs.length ? `${nv}/${tractRecs.length} shown` : '';
   tractRecs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
     d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="ovdot" style="background:${r.color};width:11px;height:11px;border-radius:3px;flex:none"></span><span class="nm" style="flex:1" title="${r.meta.name}">${r.meta.name}</span>`;
-    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; invalidateTractMask(); refreshSliceViews(); requestRender(); });
+    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; invalidateTractMask(); if($('tractBridge')&&$('tractBridge').checked) rebuildBridges(); else { refreshSliceViews(); requestRender(); } });
     L.appendChild(d); }); }
 // one slider drives both 3D mesh opacity and 2D cross-section fill alpha
 function setTractOpacity(){ const op=+$('tractOp').value; $('tractOpV').textContent=op.toFixed(2);
   for(const r of tractRecs){ r.mesh.material.opacity=op; r.mesh.material.transparent=(op<1); r.mesh.material.needsUpdate=true; } requestRender(); }
 // Taubin-smooth the chunky tract hulls (reuses the ROI mesh smoother); recompute bbox for cross-sections
 function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } refreshSliceViews(); requestRender(); }
-function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); invalidateTractMask(); refreshSliceViews(); requestRender(); }
+function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); invalidateTractMask();
+  if($('tractBridge')&&$('tractBridge').checked) rebuildBridges(); else { refreshSliceViews(); requestRender(); } }
 function applyCortexFade(){ const f=+$('cortexFade').value, glass=$('tractGlass')&&$('tractGlass').checked; if(!tractRecs.length){ restoreCortex(); return; }
   meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=glass?0.05:Math.max(0.04, 1-f); m.depthWrite=glass?false:(f<0.5); }); requestRender(); }
 function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); meshes.forEach(o=>{ o.mesh.material.clippingPlanes=null; }); }
@@ -1390,6 +1392,52 @@ function updateTractClip(){ const on = !!($('tractClip') && $('tractClip').check
   const changed = on!==tractClipOn; tractClipOn=on;
   meshes.forEach(o=>{ const m=o.mesh.material; m.clippingPlanes = on?[tractClipPlane]:null; if(changed) m.needsUpdate=true; });
   requestRender(); }
+// ---- BRIDGE RIBBONS: highlight tracts whose endpoints connect two active foci, ribbon between them ----
+const bridgeGroup=new THREE.Group(); let bridgeAny=false, tractBridgeFoci=[];
+function _dist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]); }
+// two endpoint centroids (MNI) = the extreme 15% of the point cloud along the principal axis
+function tractEndpoints(r){ if(r.ep) return r.ep; if(!r.pts||!r.dir) return null;
+  const d=r.dir, pts=r.pts, n=pts.length/3; let mn=1e9,mx=-1e9; const proj=new Float32Array(n);
+  for(let i=0;i<n;i++){ const p=pts[3*i]*d[0]+pts[3*i+1]*d[1]+pts[3*i+2]*d[2]; proj[i]=p; if(p<mn)mn=p; if(p>mx)mx=p; }
+  const lo=mn+(mx-mn)*0.15, hi=mx-(mx-mn)*0.15; let a=[0,0,0],na=0,b=[0,0,0],nb=0;
+  for(let i=0;i<n;i++){ if(proj[i]<=lo){a[0]+=pts[3*i];a[1]+=pts[3*i+1];a[2]+=pts[3*i+2];na++;} else if(proj[i]>=hi){b[0]+=pts[3*i];b[1]+=pts[3*i+1];b[2]+=pts[3*i+2];nb++;} }
+  if(!na||!nb) return null; r.ep=[[a[0]/na,a[1]/na,a[2]/na],[b[0]/nb,b[1]/nb,b[2]/nb]]; return r.ep;
+}
+// active-overlay suprathreshold clusters (centroids in MNI) — the "foci" the tracts may connect
+function overlayFoci(maxK){ const o=window.__tractsInit?overlays[selOv]:null, vol=o&&(o.volGrid||o.vol);
+  if(!vol){ if(selected&&selected.meta&&selected.meta.centroid) return [{c:selected.meta.centroid,n:1}]; return []; }
+  const p=ovSliceParams(o), src=p.src, d=src.data, [nx,ny,nz]=src.dim, nxy=nx*ny, lab=new Int32Array(d.length), st=[]; let comp=0; const cs=[];
+  for(let idx=0;idx<d.length;idx++){ const val=p.abs?Math.abs(d[idx]):d[idx]; if(!(val>p.thr)||lab[idx])continue; comp++;
+    let sx=0,sy=0,sz=0,cnt=0; st.length=0; st.push(idx); lab[idx]=comp;
+    while(st.length){ const q=st.pop(), k=(q/nxy)|0, rr=q-k*nxy, j=(rr/nx)|0, i=rr-j*nx, w=src.worldOf(i,j,k); sx+=w[0];sy+=w[1];sz+=w[2];cnt++;
+      const nb=[i>0?q-1:-1,i<nx-1?q+1:-1,j>0?q-nx:-1,j<ny-1?q+nx:-1,k>0?q-nxy:-1,k<nz-1?q+nxy:-1];
+      for(const m2 of nb){ if(m2<0||lab[m2])continue; const v2=p.abs?Math.abs(d[m2]):d[m2]; if(v2>p.thr){ lab[m2]=comp; st.push(m2); } } }
+    cs.push({c:[sx/cnt,sy/cnt,sz/cnt], n:cnt});
+  }
+  cs.sort((a,b)=>b.n-a.n); return cs.slice(0,maxK||6);
+}
+function clearBridges(){ while(bridgeGroup.children.length){ const c=bridgeGroup.children.pop(); if(c.geometry)c.geometry.dispose(); bridgeGroup.remove(c); } }
+function rebuildBridges(){ clearBridges(); bridgeAny=false; tractBridgeFoci=[];
+  if(!($('tractBridge')&&$('tractBridge').checked)||!tractRecs.length){ setTractOpacity(); requestRender(); refreshSliceViews(); return; }
+  if(!bridgeGroup.parent) group.add(bridgeGroup);
+  const foci=overlayFoci(6); tractBridgeFoci=foci; const R=+($('tractMaskR')?$('tractMaskR').value:4)*5+10;   // endpoint↔focus match radius (mm)
+  tractRecs.forEach(r=>{ r._conn=false; });
+  for(const r of tractRecs){ if(!r.visible) continue; const ep=tractEndpoints(r); if(!ep||foci.length<2) continue;
+    let fa=-1,fb=-1,da=1e9,db=1e9;
+    foci.forEach((f,fi)=>{ const ea=_dist(ep[0],f.c), eb=_dist(ep[1],f.c); if(ea<da){da=ea;fa=fi;} if(eb<db){db=eb;fb=fi;} });
+    if(fa>=0&&fb>=0&&fa!==fb&&da<R&&db<R){ r._conn=true; bridgeAny=true; drawBridge3D(foci[fa].c, r, foci[fb].c, r.drawColor||r.color); }
+  }
+  const op=+$('tractOp').value;
+  tractRecs.forEach(r=>{ const m=r.mesh.material; m.transparent=true; m.opacity = bridgeAny ? (r._conn?Math.min(1,op):0.1) : op; });
+  requestRender(); refreshSliceViews();
+}
+function drawBridge3D(aMNI, r, bMNI, color){ const A=mniToTjs(aMNI), B=mniToTjs(bMNI), C=r.base.clone();
+  const curve=new THREE.QuadraticBezierCurve3(A, C, B);   // route the arc through the tract centroid
+  const tube=new THREE.Mesh(new THREE.TubeGeometry(curve,40,1.7,8,false),
+    new THREE.MeshStandardMaterial({color:color, emissive:new THREE.Color(color).multiplyScalar(0.35), roughness:0.4, metalness:0, transparent:true, opacity:0.92}));
+  tube.renderOrder=3; bridgeGroup.add(tube);
+  [A,B].forEach(P=>{ const s=new THREE.Mesh(new THREE.SphereGeometry(3.2,16,12), new THREE.MeshStandardMaterial({color:'#ffffff', emissive:0x444444, roughness:0.5}));
+    s.position.copy(P); s.renderOrder=3; bridgeGroup.add(s); }); }
 // ---- tract MASK (dilated point cloud on the MNI grid) -> spotlight + "% activation on tract" ----
 let tractMaskVol=null;
 function invalidateTractMask(){ tractMaskVol=null; }
@@ -1428,9 +1476,11 @@ function drawTracts(ctx, plane, toX, toY, fixedMNI){
   const fixed = (plane==='cor'? -fixedMNI : fixedMNI) + 1e-3;   // MNI fixed -> three.js coord
   const hv = plane==='sag'?((x,y,z)=>[-z,y]) : plane==='cor'?((x,y,z)=>[x,y]) : ((x,y,z)=>[x,-z]);
   const inPlane = plane==='sag'?((X,Y,Z)=>[Y,Z]) : plane==='cor'?((X,Y,Z)=>[X,Z]) : ((X,Y,Z)=>[X,Y]);
+  const bridge = $('tractBridge') && $('tractBridge').checked && bridgeAny;
   for(const r of tractRecs){ if(!r.visible) continue; const color=r.drawColor||r.color;
+    const eop = (bridge && !r._conn) ? op*0.16 : op;   // non-connecting tracts dim when bridging
     if(mode==='slab' && slab>0 && r.pts){                       // soft footprint from the point cloud within ±slab
-      const pts=r.pts, n=pts.length/3; ctx.globalAlpha=Math.min(1,op*0.6); ctx.fillStyle=color;
+      const pts=r.pts, n=pts.length/3; ctx.globalAlpha=Math.min(1,eop*0.6); ctx.fillStyle=color;
       const rad=Math.max(1.1, lw*1.2);
       for(let i=0;i<n;i++){ const X=pts[3*i],Y=pts[3*i+1],Z=pts[3*i+2]; const a=mAxis===0?X:mAxis===1?Y:Z;
         if(Math.abs(a-fixedMNI)>slab) continue; const ip=inPlane(X,Y,Z); ctx.beginPath(); ctx.arc(toX(ip[0]),toY(ip[1]),rad,0,6.283185); ctx.fill(); }
@@ -1442,11 +1492,17 @@ function drawTracts(ctx, plane, toX, toY, fixedMNI){
     const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv); if(!loops.length) continue;
     ctx.beginPath();
     for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
-    if(mode==='outline'){ ctx.globalAlpha=Math.min(1,op*0.18); ctx.fillStyle=color; ctx.fill('evenodd');   // faint tint so it reads as filled-ish
-      ctx.globalAlpha=op; ctx.lineWidth=lw; ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
-    else { ctx.globalAlpha=op; ctx.fillStyle=color; ctx.fill('evenodd');
-      ctx.globalAlpha=Math.min(1,op+0.2); ctx.lineWidth=Math.max(0.6,lw*0.5); ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
+    if(mode==='outline'){ ctx.globalAlpha=Math.min(1,eop*0.18); ctx.fillStyle=color; ctx.fill('evenodd');   // faint tint so it reads as filled-ish
+      ctx.globalAlpha=eop; ctx.lineWidth=lw; ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
+    else { ctx.globalAlpha=eop; ctx.fillStyle=color; ctx.fill('evenodd');
+      ctx.globalAlpha=Math.min(1,eop+0.2); ctx.lineWidth=Math.max(0.6,lw*0.5); ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
   }
+  // bridge foci markers (rings) where a focus is within the slab of this plane
+  if(bridge && tractBridgeFoci.length){ const slabF=Math.max(8,slab);
+    for(const f of tractBridgeFoci){ const a=mAxis===0?f.c[0]:mAxis===1?f.c[1]:f.c[2]; if(Math.abs(a-fixedMNI)>slabF) continue;
+      const ip=inPlane(f.c[0],f.c[1],f.c[2]), cx=toX(ip[0]), cy=toY(ip[1]);
+      ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,7,0,6.283185); ctx.stroke();
+      ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,9,0,6.283185); ctx.stroke(); } }
 }
 $('tractLoad').addEventListener('click',()=>loadTracts($('tractAtlas').value));
 $('tractClear').addEventListener('click',clearTracts);
@@ -1464,6 +1520,7 @@ $('tractMaskR').addEventListener('change',()=>{ invalidateTractMask(); updateTra
 $('tractGlass').addEventListener('change',applyCortexFade);
 $('tractFlow').addEventListener('change',e=>{ tractFX.uPulse.value=e.target.checked?1:0; requestRender(); });
 $('tractClip').addEventListener('change',updateTractClip);
+$('tractBridge').addEventListener('change',rebuildBridges);
 $('tractExplode').addEventListener('change',()=>setExplode(explodeAmt));
 $('tractAll').addEventListener('click',()=>setTractVis(()=>true));
 $('tractNone').addEventListener('click',()=>setTractVis(()=>false));
@@ -1633,6 +1690,7 @@ function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overl
   $('ovEditor').style.display='block'; $('ovTaskRow').style.display = o.kind==='task'?'flex':'none';
   if(o.vals) recolorOverlay(); else applyScheme(activeScheme);
   updateColorbar(); ovRender(); refreshSliceViews();
+  if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
 }
 function ovAdd(kind){ const s=ovDefaults(); s.color=OVCOLORS[overlays.length%OVCOLORS.length];
   overlays.push({name:'Overlay '+(overlays.length+1), kind, term:'', fileName:'', vals:null, vol:null, volGrid:null, visible:true, s});
@@ -1877,6 +1935,7 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
   refreshSliceViews();
+  if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
   requestRender();   // overlay arrived async (FileReader / headless) — force a frame
@@ -2051,7 +2110,7 @@ window.brainAPI = {
     const tvox=window.MNI152?Math.abs(window.MNI152.affine[0][0]):2, ovmin=r.nii?Math.min(...r.nii.vox):tvox;
     o.volGrid=(r.nii&&window.MNI152&&ovmin>=tvox-0.1)?resliceToTemplate(r.nii):(r.nii||null);
     if(idx===selOv){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; overlay.on=!!o.vals; recolorOverlay(); updateColorbar(); }
-    refreshSliceViews(); await nextFrames(2); return true; },
+    refreshSliceViews(); if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges(); await nextFrames(2); return true; },
   // render the CURRENT view (3D mesh / ortho slices / mosaic) to a PNG data URL
   captureView(w=900,h=680,transparent=true){
     if(mosaicMode){ viewTransparent=!!transparent; renderMosaic(); const u=$('mosaicCanvas').toDataURL('image/png'); viewTransparent=false; renderMosaic(); return u; }
