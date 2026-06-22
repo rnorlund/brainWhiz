@@ -2160,7 +2160,13 @@ window.brainAPI = {
   projectJSON(){
     const data={ overlays:{}, underlay: underlayRaw?{name:underlayName,b64:underlayRaw}:null };
     overlays.forEach((o,i)=>{ if(o.kind==='file' && o.raw) data.overlays[i]=o.raw; });
-    return { bwz:1, kind:'project', app:'brainWhiz', atlas:ATLAS_ID, viewer:captureViewerCfg(), data,
+    const tracts = tractAtlasId ? {
+      atlas: tractAtlasId, visible: tractRecs.filter(r=>r.visible).map(r=>r.meta.id),
+      smooth:$('tractSmooth').value, opacity:$('tractOp').value, renderMode:$('tractRenderMode').value, colorMode:$('tractColorMode').value,
+      slabMM:$('tractSlabMM').value, lineW:$('tractLineW').value, maskR:$('tractMaskR').value, cortexFade:$('cortexFade').value,
+      spotlight:$('tractSpotlight').checked, bridge:$('tractBridge').checked, glass:$('tractGlass').checked,
+      clip:$('tractClip').checked, flow:$('tractFlow').checked, explode:$('tractExplode').checked } : null;
+    return { bwz:1, kind:'project', app:'brainWhiz', atlas:ATLAS_ID, viewer:captureViewerCfg(), data, tracts,
       grid: pbDims().join('x'), figure: pbFigureSettings(),
       panels: pbItems.map(it=> it?{label:it.label, cfg:it.cfg, dataURL:it.dataURL, cbar:it.cbar}:null),
       editor: feCanvas?feCanvas.toJSON():null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
@@ -2171,6 +2177,21 @@ window.brainAPI = {
     applyViewerCfg(p.viewer);
     if(p.data){ if(p.data.underlay) this.setUnderlayBytes(p.data.underlay.b64, p.data.underlay.name);
       if(p.data.overlays) for(const k in p.data.overlays){ const ovc=(p.viewer.overlays||[])[+k]||{}; await this.loadOverlayFile(+k, p.data.overlays[k], ovc.fileName||'overlay.nii'); } }
+    if(p.tracts && p.tracts.atlas){ const t=p.tracts, setv=(id,v)=>{ if(v!=null&&$(id)) $(id).value=v; };
+      $('tractAtlas').value=t.atlas;
+      setv('tractSmooth',t.smooth); if($('tractSmoothV'))$('tractSmoothV').textContent=t.smooth;
+      setv('tractOp',t.opacity); if($('tractOpV'))$('tractOpV').textContent=(+t.opacity).toFixed(2);
+      setv('tractRenderMode',t.renderMode); setv('tractColorMode',t.colorMode);
+      setv('tractSlabMM',t.slabMM); if($('tractSlabMMV'))$('tractSlabMMV').textContent=t.slabMM;
+      setv('tractLineW',t.lineW); if($('tractLineWV'))$('tractLineWV').textContent=(+t.lineW).toFixed(1);
+      setv('tractMaskR',t.maskR); if($('tractMaskRV'))$('tractMaskRV').textContent=t.maskR;
+      setv('cortexFade',t.cortexFade); if($('cortexFadeV'))$('cortexFadeV').textContent=(+t.cortexFade).toFixed(2);
+      const tog={spotlight:'tractSpotlight',bridge:'tractBridge',glass:'tractGlass',clip:'tractClip',flow:'tractFlow',explode:'tractExplode'};
+      for(const k in tog){ if($(tog[k])) $(tog[k]).checked=!!t[k]; }
+      await loadTracts(t.atlas);                                  // load chain applies the control values above
+      const vis=new Set(t.visible||[]); if(t.visible&&t.visible.length) setTractVis(r=> vis.has(r.meta.id));
+      tractFX.uPulse.value = t.flow?1:0; updateTractClip(); rebuildBridges();
+    }
     if(p.grid){ const [r,c]=p.grid.split('x').map(Number); if(r&&$('pbRows'))$('pbRows').value=r; if(c&&$('pbCols'))$('pbCols').value=c; }
     if(p.figure){ const f=p.figure, set=(id,v)=>{ if(v!=null&&$(id)){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
       set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);

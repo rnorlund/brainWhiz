@@ -211,3 +211,28 @@ overlay `.nii` bytes **and** the underlay (e.g. a subject T1), plus all viewer s
 panel layout, and the figure-editor canvas. **📂 Project** reopens it and recreates the exact
 figure with no need for the original files — ideal for archiving or sharing a finished figure
 you can still edit. (The lightweight `.bwz` above stays for recipes that reference files by name.)
+
+### White-matter tracts in a project
+
+If a tract atlas is loaded, the project file also stores a `tracts` block so the overlay
+recreates exactly (atlas, which tracts are visible, and every tract control):
+
+```jsonc
+"tracts": {
+  "atlas": "xtract",                 // tract atlas id (xtract | catani)
+  "visible": [2, 3],                 // tract ids shown (e.g. 2,3 = Arcuate Fasciculus L,R)
+  "smooth": "4",                     // Taubin smoothing passes
+  "opacity": "0.85",                 // 3D mesh + 2D fill opacity
+  "renderMode": "outline",           // 2D: outline | fill | slab
+  "colorMode": "orientation",        // palette | orientation (DTI direction RGB)
+  "slabMM": "8", "lineW": "1.5", "maskR": "4", "cortexFade": "0.75",
+  "spotlight": true,                 // dim the map off the tract (slices/mosaic)
+  "bridge": true,                    // highlight tracts connecting active foci + ribbons
+  "glass": true,                     // glass cortex shell in 3D
+  "clip": false, "flow": true, "explode": true
+}
+```
+
+Tract meshes come from the bundled atlas (`bundles/xtract` / `bundles/catani`), so only the
+settings are stored, not geometry. The 🗣 **Language demo** button is a one-click preset of
+this (Arcuate Fasciculus + Broca/Wernicke foci + bridge + glass + flow).
