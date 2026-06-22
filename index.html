@@ -1302,6 +1302,8 @@ function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
     p[id] = el.type==='checkbox' ? el.checked : el.value; }
+  p._camP = camera.position.toArray().map(v=>+v.toFixed(2));   // save the camera (zoom + angle) too
+  p._camT = controls.target.toArray().map(v=>+v.toFixed(2));
   return p;
 }
 function applyPreset(p){
@@ -1310,6 +1312,7 @@ function applyPreset(p){
     else { el.value=p[id];
       el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }
   }
+  if(p._camP){ camera.position.fromArray(p._camP); controls.target.fromArray(p._camT||[0,0,0]); controls.update(); requestRender(); }
 }
 function loadPresets(){ try{ return JSON.parse(localStorage.getItem('brainPresets')||'{}'); }catch(e){ return {}; } }
 function savePresets(s){ localStorage.setItem('brainPresets', JSON.stringify(s)); }
