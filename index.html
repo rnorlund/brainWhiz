@@ -211,7 +211,9 @@
           <button class="sm mpbtn" data-mp="sag">Sagittal</button></div>
         <div class="row"><label>Slices</label><input type="range" id="mosN" min="4" max="48" step="1" value="16" style="flex:1"><span id="mosNV" style="min-width:22px;text-align:right">16</span></div>
         <div class="row"><label>Columns</label><input type="range" id="mosCols" min="1" max="10" step="1" value="6" style="flex:1"><span id="mosColsV" style="min-width:22px;text-align:right">6</span></div>
-        <div class="row"><label title="Spacing between tiles (0 = touching)">Gap</label><input type="range" id="mosGap" min="0" max="24" step="1" value="4" style="flex:1"><span id="mosGapV" style="min-width:22px;text-align:right">4</span></div>
+        <div class="row"><label title="Spacing between tiles. 0 = touching; negative = slices overlap / slide under each other">Gap</label><input type="range" id="mosGap" min="-40" max="24" step="1" value="4" style="flex:1"><span id="mosGapV" style="min-width:22px;text-align:right">4</span></div>
+        <div class="row"><label title="When the gap is negative and slices overlap, which side is drawn on top">Overlap</label>
+          <select id="mosOverlap" style="flex:1"><option value="right">Right over left</option><option value="left">Left over right</option></select></div>
         <div class="row"><label title="Crop empty space around the brain so slices pack tighter">Tighten</label><input type="range" id="mosCrop" min="0" max="1" step="0.05" value="0.6" style="flex:1"><span id="mosCropV" style="min-width:22px;text-align:right">0.6</span></div>
         <div class="row"><label class="toggle"><input type="checkbox" id="mosLabels" checked> coords</label>
           <label style="margin-left:6px">size</label><input type="range" id="mosLabelSize" min="0" max="26" step="1" value="11" style="flex:1"><span id="mosLabelSizeV" style="min-width:18px;text-align:right">11</span></div>
@@ -945,12 +947,17 @@ function setOpacities(){
   const glass=$('glass').checked;
   const cutout = (patternUniforms.uPatMode.value===1 && patternUniforms.uPattern.value>0)
               || (patternUniforms.uWire.value>0 && patternUniforms.uWireFill.value<1);
+  const hasActivation = overlay.on;   // overlay present -> selective glass; otherwise whole-brain glass shell
   for(const o of meshes){
     const colored=isColored(o);
     let op = (colored ? colO : grO) * all;
-    if(glass && !colored) op = Math.min(op, 0.09);   // uncolored regions -> faint glass shell
+    // Glass: with an overlay, fade only the INACTIVE (uncolored) regions so activation pops.
+    // With no overlay (categorical scheme = everything saturated), fade the WHOLE brain to a shell,
+    // otherwise toggling glass would do nothing (every region counts as "colored").
+    const faint = glass && (hasActivation ? !colored : true);
+    if(faint) op = Math.min(op, hasActivation ? 0.09 : 0.13);
     o.mesh.material.opacity = op; o.mesh.material.transparent = op < 1 || cutout;
-    o.mesh.material.depthWrite = !(glass && !colored);
+    o.mesh.material.depthWrite = !faint;
   }
 }
 $('glass').addEventListener('change', setOpacities);
@@ -967,7 +974,7 @@ $('saveColored').addEventListener('click', ()=>{
 
 // ---------- render style (shading / vividness / rim glow) ----------
 $('shading').addEventListener('change', e=>setShading(e.target.value));
-$('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; });
+$('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
 $('vividVal').textContent=(+$('vivid').value).toFixed(2)+'×';
@@ -2340,7 +2347,7 @@ function captureViewerCfg(){
     mode: mosaicMode?'mosaic':sliceMode?'slice':'mesh',
     sliceMM: sliceMM.map(v=>+v.toFixed(1)), sliceKind,
     mosaic: { plane:mosaicPlane, n:+$('mosN').value, cols:+$('mosCols').value, labels:$('mosLabels').checked,
-      gap:+$('mosGap').value, crop:+$('mosCrop').value, labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
+      gap:+$('mosGap').value, overlap:$('mosOverlap').value, crop:+$('mosCrop').value, labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
     active: selOv,
     overlays: overlays.map(o=>({ name:o.name, kind:o.kind, term:o.term||'', fileName:o.fileName||'', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} })) };
 }
@@ -2372,6 +2379,7 @@ function applyViewerCfg(cfg){
   if(cfg.mosaic){ const M=cfg.mosaic; mosaicPlane=M.plane||'axi';
     const set=(id,v,vid)=>{ const e=$(id); if(e&&v!=null){ e.value=v; if(vid&&$(vid))$(vid).textContent=v; } };
     set('mosN',M.n,'mosNV'); set('mosCols',M.cols,'mosColsV'); set('mosGap',M.gap,'mosGapV'); set('mosCrop',M.crop,'mosCropV'); set('mosLabelSize',M.labelSize,'mosLabelSizeV');
+    if($('mosOverlap')&&M.overlap) $('mosOverlap').value=M.overlap;
     if($('mosLabels')) $('mosLabels').checked=M.labels!==false; if($('mosLabelCenter')) $('mosLabelCenter').checked=!!M.labelCenter;
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x.dataset.mp===mosaicPlane)); }
   setViewMode(cfg.mode||'mesh');
@@ -2623,13 +2631,17 @@ function renderMeshSlices(){
     else { axis=1; fixed=P.y; hv=(x,y,z)=>[x,-z]; }                   // h=tjsX, v=MNI Y(-tjsZ)
     fixed += 1e-3;                                                    // avoid vertices exactly on the plane
     const bw=(+$('meshBorderW').value)*dpr, bcol=$('meshBorderColor').value;   // region border outline
+    const vivid=patternUniforms.uVivid.value;                        // mirror the 3D vividness on the 2D fills
     for(const rec of meshes){ const mesh=rec.mesh; if(!mesh.visible) continue;
       const geo=mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
       const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
       if(fixed<lo||fixed>hi) continue;                               // mesh doesn't reach this slice
       const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv);
       if(!loops.length) continue;
-      const c=mesh.material.color; ctx.fillStyle=`rgb(${Math.round(c.r*255)},${Math.round(c.g*255)},${Math.round(c.b*255)})`;
+      const c=mesh.material.color; let cr=c.r*255, cg=c.g*255, cb=c.b*255;
+      if(vivid!==1){ const L=0.299*cr+0.587*cg+0.114*cb; cr=L+(cr-L)*vivid; cg=L+(cg-L)*vivid; cb=L+(cb-L)*vivid;
+        cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
+      ctx.fillStyle=`rgb(${cr|0},${cg|0},${cb|0})`;
       ctx.beginPath();
       for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
       ctx.fill('evenodd');
@@ -2816,14 +2828,18 @@ function renderMosaic(){
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
   const plane=mosaicPlane, b=mosaicInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
   const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round((+$('mosGap').value)*dpr);
-  let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
-  if(rows*tileH+(rows+1)*gap>H){ tileH=(H-(rows+1)*gap)/rows; tileW=tileH*(hr/vr); }
+  const sizeGap=Math.max(0,gap);                       // tile SIZE ignores negative gap (negative only tightens spacing)
+  let tileW=(W-(cols+1)*sizeGap)/cols, tileH=tileW*(vr/hr);
+  if(rows*tileH+(rows+1)*sizeGap>H){ tileH=(H-(rows+1)*sizeGap)/rows; tileW=tileH*(hr/vr); }
   const ovs=sliceOverlays().map(ovSliceParams);
   const [bgR,bgG,bgB]=hex2rgb(viewBg());
   const tmask=spotlightOn()?tractMask():null;
   const gridW=cols*tileW+(cols+1)*gap, startX=(W-gridW)/2, axL=plane==='axi'?'z':plane==='cor'?'y':'x', labels=$('mosLabels').checked;
   const gridH=rows*tileH+(rows+1)*gap, startY=Math.max(0,(H-gridH)/2);   // center the grid vertically
-  for(let s=0;s<N;s++){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
+  const tcv=document.createElement('canvas'), tctx=tcv.getContext('2d');   // tile buffer -> drawImage composites (overlap-safe)
+  const leftTop = $('mosOverlap') && $('mosOverlap').value==='left';       // overlap stacking order
+  const order=[...Array(N).keys()].sort((a,bb)=>{ const ca=a%cols, cb=bb%cols; return leftTop?(cb-ca):(ca-cb); });
+  for(const s of order){ const frac=N>1?s/(N-1):0.5, fixed=lo+(hi-lo)*frac;
     const col=s%cols, row=(s/cols)|0, dw=Math.max(1,Math.round(tileW)), dh=Math.max(1,Math.round(tileH));
     const dx=Math.round(startX+gap+col*(tileW+gap)), dy=Math.round(startY+gap+row*(tileH+gap));
     const img=ctx.createImageData(dw,dh), D=img.data;
@@ -2839,9 +2855,9 @@ function renderMosaic(){
           r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
         }
         if(tmask && painted && !tmask.sampleMM(w[0],w[1],w[2])){ const L=0.30*r+0.59*gg+0.11*bb; r=gg=bb=L*0.45; }
-        const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
+        const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=painted?255:0;   // off-brain transparent -> tiles overlap cleanly
       }}
-    ctx.putImageData(img,dx,dy);
+    tcv.width=dw; tcv.height=dh; tctx.putImageData(img,0,0); ctx.drawImage(tcv,dx,dy);   // drawImage composites (alpha-aware)
     drawTracts(ctx, plane, (h=>dx+((h-b.hmin)/hr)*dw), (v=>dy+((b.vmax-v)/vr)*dh), fixed);
     if(labels){ const lz=+$('mosLabelSize').value, center=$('mosLabelCenter').checked;
       if(lz>0){ ctx.fillStyle='rgba(225,233,245,.95)'; ctx.font=`${Math.round(lz*dpr)}px system-ui`; ctx.textBaseline='bottom';
@@ -2925,6 +2941,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('mosN').addEventListener('input',e=>{ $('mosNV').textContent=e.target.value; renderMosaic(); });
   $('mosCols').addEventListener('input',e=>{ $('mosColsV').textContent=e.target.value; renderMosaic(); });
   $('mosGap').addEventListener('input',e=>{ $('mosGapV').textContent=e.target.value; renderMosaic(); });
+  $('mosOverlap').addEventListener('change', renderMosaic);
   $('mosCrop').addEventListener('input',e=>{ $('mosCropV').textContent=(+e.target.value).toFixed(1); renderMosaic(); });
   $('mosLabelSize').addEventListener('input',e=>{ $('mosLabelSizeV').textContent=e.target.value; renderMosaic(); });
   $('mosLabelCenter').addEventListener('change', renderMosaic);
