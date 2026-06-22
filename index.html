@@ -959,6 +959,7 @@ function setOpacities(){
     o.mesh.material.opacity = op; o.mesh.material.transparent = op < 1 || cutout;
     o.mesh.material.depthWrite = !faint;
   }
+  refreshSliceViews();   // mesh-region slices mirror these opacity tiers (All · colored · gray · cutoff · glass)
 }
 $('glass').addEventListener('change', setOpacities);
 $('opacity').addEventListener('input', e=>{ $('opVal').textContent=(+e.target.value).toFixed(2); setOpacities(); });
@@ -2632,20 +2633,26 @@ function renderMeshSlices(){
     fixed += 1e-3;                                                    // avoid vertices exactly on the plane
     const bw=(+$('meshBorderW').value)*dpr, bcol=$('meshBorderColor').value;   // region border outline
     const vivid=patternUniforms.uVivid.value;                        // mirror the 3D vividness on the 2D fills
+    // mirror the 3D per-region opacity tiers (All · colored · gray · cutoff · glass) on the 2D fills
+    const allOp=+$('opacity').value, colOp=+$('coloredOp').value, grOp=+$('grayOp').value, glass=$('glass').checked, hasAct=overlay.on;
     for(const rec of meshes){ const mesh=rec.mesh; if(!mesh.visible) continue;
       const geo=mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
       const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
       if(fixed<lo||fixed>hi) continue;                               // mesh doesn't reach this slice
       const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv);
       if(!loops.length) continue;
+      const colored=isColored(rec); let rop=(colored?colOp:grOp)*allOp;
+      const faint=glass&&(hasAct?!colored:true); if(faint) rop=Math.min(rop, hasAct?0.09:0.13);
+      if(rop<=0.004) continue;                                        // effectively hidden
       const c=mesh.material.color; let cr=c.r*255, cg=c.g*255, cb=c.b*255;
       if(vivid!==1){ const L=0.299*cr+0.587*cg+0.114*cb; cr=L+(cr-L)*vivid; cg=L+(cg-L)*vivid; cb=L+(cb-L)*vivid;
         cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
       ctx.fillStyle=`rgb(${cr|0},${cg|0},${cb|0})`;
       ctx.beginPath();
       for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
-      ctx.fill('evenodd');
+      ctx.globalAlpha=Math.min(1,rop); ctx.fill('evenodd');
       if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(); }   // outline this region
+      ctx.globalAlpha=1;
     }
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
