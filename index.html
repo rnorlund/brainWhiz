@@ -295,6 +295,11 @@
 
   <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:6px">Controls the <b>🔪 Slices</b> view (top bar). Load a stat <b>.nii</b> in Overlay to see a heatmap; click a slice or drag the X/Y/Z sliders to navigate.</div>
+    <div class="row" style="margin-bottom:6px"><label title="Anatomical background under the slices/mosaic. Default is the MNI152 template; load a subject T1 (same space as your overlays) for individual results.">Underlay</label>
+      <span id="ulName" class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MNI template</span>
+      <button class="sm" id="ulLoad" title="Load a .nii anatomical (e.g. subject T1) as the background">＋ .nii</button>
+      <button class="sm" id="ulReset" title="Use the bundled MNI152 template">MNI</button></div>
+    <input type="file" id="ulFile" accept=".nii,.nii.gz,.gz" style="display:none">
   </div></details>
 
   <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance</summary><div class="accb">
@@ -676,6 +681,7 @@ let overlays=[], selOv=-1;          // overlay stack; selected = active in 3D
 const OVCOLORS=['#ff3b30','#1f77b4','#2ca02c','#ff7f0e','#9467bd','#17becf','#e377c2','#bcbd22'];
 // ---- voxel slice-view state ----
 let sliceMode=false, mosaicMode=false, mosaicPlane='axi', sliceMM=[0,0,0], tfceCache=null, MNIVOL=null;
+let underlayVol=null, underlayRaw=null, underlayName='';   // custom anatomical background (e.g. subject T1)
 function refreshSliceViews(){ if(sliceMode) sliceRenderAll(); else if(mosaicMode) renderMosaic(); }
 function setSwatch(node, hex){
   const sw = document.querySelector(`.swatch[data-node="${node}"]`);
@@ -766,6 +772,7 @@ function b64ToBuf(b64){
   for(let i=0;i<len;i++) bytes[i]=bin.charCodeAt(i);
   return bytes.buffer;
 }
+function bufToB64(buf){ const u=new Uint8Array(buf), CH=0x8000; let s=''; for(let i=0;i<u.length;i+=CH) s+=String.fromCharCode.apply(null,u.subarray(i,i+CH)); return btoa(s); }
 const loader = new GLTFLoader();
 loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   let i=0;
@@ -1806,6 +1813,11 @@ window.brainAPI = {
   },
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
   setViewMode(m){ setViewMode(m); },
+  // set (or clear) the slice/mosaic anatomical underlay from NIfTI bytes (base64)
+  setUnderlayBytes(b64, name){
+    if(!b64){ setUnderlay(null); underlayRaw=null; underlayName=''; $('ulName').textContent='MNI template'; return true; }
+    let buf=b64ToBuf(b64), b=buf; if(/\.gz$/i.test(name||'')) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
+    setUnderlay(parseNifti(b)); underlayName=name||'underlay'; underlayRaw=b64; $('ulName').textContent=underlayName; return true; },
   // hide all chrome so slice/mosaic captures use the full window (headless figures)
   hideUI(){ for(const id of ['sidebar','sidebarR','topbar']){ const e=$(id); if(e) e.style.display='none'; }
     const h=document.querySelector('.hint'); if(h) h.style.display='none';
@@ -2216,12 +2228,25 @@ function renderMeshSlices(){
   }
 }
 function ensureMNI(){
+  if(underlayVol) return underlayVol;        // a loaded T1/anatomical underlay replaces the MNI template
   if(MNIVOL || !window.MNI152) return MNIVOL;
   const m=window.MNI152, bin=atob(m.data), u=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
   const raw=window.pako.ungzip(u), a=m.affine;
   MNIVOL=makeVol(raw, m.dim, [a[0][0],a[0][1],a[0][2],a[1][0],a[1][1],a[1][2],a[2][0],a[2][1],a[2][2]], [a[0][3],a[1][3],a[2][3]]);
   return MNIVOL;
+}
+// load a NIfTI (parsed) as the slice/mosaic background underlay, normalized to 0..255 grayscale
+function setUnderlay(nii){
+  if(!nii){ underlayVol=null; refreshSliceViews(); return; }
+  const d=nii.data, n=d.length, arr=[]; for(let i=0;i<n;i++){ if(d[i]>0&&isFinite(d[i])) arr.push(d[i]); }
+  arr.sort((a,b)=>a-b); const hi=arr.length?arr[Math.floor(arr.length*0.99)]||arr[arr.length-1]:1;
+  const sc=255/(hi||1), out=new Float32Array(n); for(let i=0;i<n;i++){ const v=d[i]; out[i]=(v>0&&isFinite(v))?Math.min(255,v*sc):0; }
+  underlayVol=makeVol(out, nii.dim.slice(), nii.M.slice(), nii.T.slice());
+  // overlays must re-reslice onto the new grid
+  overlays.forEach(o=>{ o.volStats=null; o.tfceCache=null; if(o.vol){ const tvox=Math.abs(nii.M[0])||2, ovmin=Math.min(...o.vol.vox);
+    o.volGrid = ovmin>=tvox-0.1 ? resliceToTemplate(o.vol) : o.vol; if(o===overlays[selOv]) overlay.volA_grid=o.volGrid; } });
+  refreshSliceViews();
 }
 function statMax(vol){ if(!vol) return 0; if(vol._mx!=null) return vol._mx;
   let mx=0; const d=vol.data; for(let i=0;i<d.length;i++){ if(d[i]>mx) mx=d[i]; } return (vol._mx=mx); }
@@ -2464,6 +2489,13 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
+  $('ulLoad').addEventListener('click', ()=>$('ulFile').click());
+  $('ulFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
+    rd.onload=()=>{ try{ const buf=rd.result; let b=buf; if(/\.gz$/i.test(f.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
+      setUnderlay(parseNifti(b)); underlayName=f.name; underlayRaw=bufToB64(buf); $('ulName').textContent=f.name; refreshSliceViews(); }
+      catch(err){ alert('Could not read underlay: '+err.message); } };
+    rd.readAsArrayBuffer(f); e.target.value=''; });
+  $('ulReset').addEventListener('click', ()=>{ setUnderlay(null); underlayRaw=null; underlayName=''; $('ulName').textContent='MNI template'; });
   // mosaic controls
   document.querySelectorAll('.mpbtn').forEach(b=>b.addEventListener('click',()=>{ mosaicPlane=b.dataset.mp;
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x===b)); renderMosaic(); }));
