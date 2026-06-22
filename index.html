@@ -3179,6 +3179,7 @@ async function openFigEditor(){
 })();
 
 const clock=new THREE.Clock();
+let _sl3dAcc=0, _sl3dDirty=false;   // keep the slice-grid 3D thumbnail in sync with 3D appearance changes
 function tick(){
   requestAnimationFrame(tick);
   const dt=clock.getDelta();
@@ -3201,7 +3202,11 @@ function tick(){
     renderRequested=false;
     headlight.position.copy(camera.position);
     renderer.render(scene,camera);
+    if(sliceMode) _sl3dDirty=true;          // 3D scene changed -> the slice-grid thumbnail is now stale
   }
+  // refresh the slice-grid 3D thumbnail when the 3D look changes (wireframe, rim, shading, …),
+  // throttled so continuous animations (spin/flow/pulse) don't re-render it every frame
+  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true); }catch(e){} } }
 }
 tick();
 </script>
