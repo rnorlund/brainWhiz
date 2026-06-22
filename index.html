@@ -388,6 +388,17 @@
       <input type="color" id="connPulseColor" value="#ffffff" title="pulse color"></div>
     <div class="ctl"><div class="lab"><span>Pulse speed</span><span id="connPulseVal">0.8</span></div>
       <input type="range" id="connPulseSpeed" min="0.1" max="3" step="0.1" value="0.8"></div>
+    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">🧵 WM tracts</label>
+        <select id="tractAtlas" class="tbsel" style="font-size:11px" title="Tract atlas to load"><option value="xtract">XTRACT (42)</option><option value="catani">Catani (27)</option></select>
+        <button class="sm" id="tractLoad" title="Load this atlas's tract meshes as an overlay">Load</button>
+        <button class="sm" id="tractClear" title="Remove all loaded tracts">✕</button></div>
+      <div class="ctl"><div class="lab"><span title="Fade the cortical/region meshes so the deep tracts show through in 3D">Fade cortex (3D)</span><span id="cortexFadeV">0.75</span></div>
+        <input type="range" id="cortexFade" min="0" max="1" step="0.05" value="0.75"></div>
+      <div class="ctl"><div class="lab"><span title="Tract fill opacity on the slice/mosaic cross-sections">Tract opacity</span><span id="tractOpV">0.8</span></div>
+        <input type="range" id="tractOp" min="0.1" max="1" step="0.05" value="0.8"></div>
+      <div id="tractList" style="max-height:170px;overflow:auto;font-size:11px"></div>
+    </div>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
@@ -1257,6 +1268,59 @@ renderer.domElement.addEventListener('click',ev=>{
 });
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
+// ---- white-matter tract overlay (loaded from a tract atlas, on top of the current atlas) ----
+const tractGroup = new THREE.Group(); let tractRecs=[]; let tractAtlasId='';
+const TRACT_PAL=['#ff3b30','#ffcc00','#34c759','#00c7be','#5db0ff','#bf5af2','#ff77d0','#ff9f0a','#a2d729','#64d2ff','#ff6482','#c0a3ff'];
+async function loadTracts(id){
+  if(tractAtlasId===id && tractRecs.length){ return; }
+  clearTracts();
+  const sL=window.ATLAS_LABELS, sG=window.ATLAS_GLB_B64, sS=window.ATLAS_SAMPLES;   // borrow the bundle globals
+  const ok=await loadScript(`bundles/${id}/data.js`);
+  const tLabels=window.ATLAS_LABELS, tGLB=window.ATLAS_GLB_B64;
+  window.ATLAS_LABELS=sL; window.ATLAS_GLB_B64=sG; window.ATLAS_SAMPLES=sS;        // restore active atlas globals
+  if(!ok||!tGLB){ alert('Could not load tract atlas "'+id+'".'); return; }
+  const tMeta=tLabels||[], byNodeT=new Map(tMeta.map(m=>[m.node,m]));
+  loader.parse(b64ToBuf(tGLB), '', gltf=>{ let i=0;
+    gltf.scene.traverse(o=>{ if(!o.isMesh) return;
+      const meta=byNodeT.get(o.name)||tMeta[i]||{node:o.name,name:o.name,abbr:o.name,id:i+1};
+      let g=o.geometry; if(g.index) g=g.toNonIndexed(); if(!g.attributes.normal) g.computeVertexNormals(); o.geometry=g;
+      const col=TRACT_PAL[i%TRACT_PAL.length];
+      o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.5, metalness:0.0, transparent:true, opacity:0.95});
+      o.renderOrder=2;
+      tractRecs.push({mesh:o, meta, color:col, visible:true}); o.userData.meta=meta; i++; });
+    tractGroup.add(gltf.scene); group.add(tractGroup);
+    tractAtlasId=id; buildTractList(); applyCortexFade(); refreshSliceViews(); requestRender();
+  }, err=>alert('Tract mesh parse failed: '+err));
+}
+function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
+  tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; restoreCortex(); refreshSliceViews(); requestRender(); }
+function buildTractList(){ const L=$('tractList'); L.innerHTML='';
+  tractRecs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
+    d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="ovdot" style="background:${r.color};width:11px;height:11px;border-radius:3px;flex:none"></span><span class="nm" style="flex:1" title="${r.meta.name}">${r.meta.name}</span>`;
+    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; refreshSliceViews(); requestRender(); });
+    L.appendChild(d); }); }
+function applyCortexFade(){ const f=+$('cortexFade').value; if(!tractRecs.length){ restoreCortex(); return; }
+  meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=Math.max(0.04, 1-f); m.depthWrite=(f<0.5); }); requestRender(); }
+function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); }
+function drawTracts(ctx, plane, toX, toY, fixedMNI){
+  if(!tractRecs.length) return;
+  const axis = plane==='sag'?0 : plane==='cor'?2 : 1;
+  let fixed = (plane==='cor'? -fixedMNI : fixedMNI) + 1e-3;     // MNI fixed -> three.js coord
+  const hv = plane==='sag'?((x,y,z)=>[-z,y]) : plane==='cor'?((x,y,z)=>[x,y]) : ((x,y,z)=>[x,-z]);
+  const op=+$('tractOp').value;
+  for(const r of tractRecs){ if(!r.visible) continue; const geo=r.mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
+    const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
+    if(fixed<lo||fixed>hi) continue;
+    const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv); if(!loops.length) continue;
+    ctx.globalAlpha=op; ctx.fillStyle=r.color; ctx.beginPath();
+    for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
+    ctx.fill('evenodd'); ctx.globalAlpha=1;
+  }
+}
+$('tractLoad').addEventListener('click',()=>loadTracts($('tractAtlas').value));
+$('tractClear').addEventListener('click',clearTracts);
+$('cortexFade').addEventListener('input',e=>{ $('cortexFadeV').textContent=(+e.target.value).toFixed(2); applyCortexFade(); });
+$('tractOp').addEventListener('input',e=>{ $('tractOpV').textContent=(+e.target.value).toFixed(2); refreshSliceViews(); });
 const axisLineGroup = new THREE.Group(); group.add(axisLineGroup);
 const axisLetterGroup = new THREE.Group(); group.add(axisLetterGroup);
 function makeTextSprite(txt, col){
@@ -2262,6 +2326,7 @@ function renderMeshSlices(){
       ctx.fill('evenodd');
       if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(); }   // outline this region
     }
+    drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
@@ -2396,8 +2461,10 @@ function renderPlane(cv, plane){
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
   }}
   ctx.putImageData(img,ox,oy);
+  const toX=h=>ox+((h-hmin)/hr)*dw, toY=v=>oy+((vmax-v)/vr)*dh;
+  drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
   if($('slCross').checked){ const c=crossInplane(plane);
-    const cx=ox+((c[0]-hmin)/hr)*dw, cy=oy+((vmax-c[1])/vr)*dh;
+    const cx=toX(c[0]), cy=toY(c[1]);
     ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
   cv._plane={plane,ox,oy,dw,dh,hmin,hr,vmax,vr,mesh:false};
@@ -2461,6 +2528,7 @@ function renderMosaic(){
         const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
       }}
     ctx.putImageData(img,dx,dy);
+    drawTracts(ctx, plane, (h=>dx+((h-b.hmin)/hr)*dw), (v=>dy+((b.vmax-v)/vr)*dh), fixed);
     if(labels){ const lz=+$('mosLabelSize').value, center=$('mosLabelCenter').checked;
       if(lz>0){ ctx.fillStyle='rgba(225,233,245,.95)'; ctx.font=`${Math.round(lz*dpr)}px system-ui`; ctx.textBaseline='bottom';
         if(center){ ctx.textAlign='center'; ctx.fillText(`${axL}=${Math.round(fixed)}`, dx+dw/2, dy+dh-3*dpr); }
