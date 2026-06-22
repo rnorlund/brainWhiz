@@ -253,11 +253,13 @@
 
   <details class="acc" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
     <div id="ovList"></div>
-    <div class="row" style="gap:6px">
+    <div class="row" style="gap:6px;flex-wrap:wrap">
       <button class="sm" id="ovAddTask" title="Add an overlay from a baked NeuroQuery task map">➕ Task map</button>
       <button class="sm" id="ovAddFile" title="Add an overlay from your own MNI .nii/.nii.gz">➕ Load .nii</button>
+      <button class="sm" id="ovAddCsv" title="Load a CSV/TSV with one value per region (factor loadings, scores…). Auto-matches to the atlas by region count, id column, or region names.">➕ Load .csv</button>
     </div>
     <input type="file" id="statFile" accept=".nii,.nii.gz,.gz" style="display:none">
+    <input type="file" id="csvFile" accept=".csv,.tsv,.txt" style="display:none">
     <div id="ovEditor" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:none">
       <div class="row"><label title="Rename this overlay">Name</label><input type="text" id="ovName" style="flex:1" title="Rename this overlay"></div>
       <div class="row" id="ovTaskRow"><label title="Pick a baked NeuroQuery task map for this overlay">Task map</label>
@@ -1774,6 +1776,9 @@ function initOverlayUI(){
   $('autoRange').addEventListener('click', ()=>edited(autoRange));
   $('ovAddTask').addEventListener('click', ()=>{ ovAdd('task'); ovSelect(selOv); $('taskMap').focus(); });
   $('ovAddFile').addEventListener('click', ()=>{ ovAdd('file'); ovSelect(selOv); $('statFile').value=''; $('statFile').click(); });
+  $('ovAddCsv').addEventListener('click', ()=>{ ovAdd('file'); ovSelect(selOv); $('csvFile').value=''; $('csvFile').click(); });
+  $('csvFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
+    rd.onload=()=>{ try{ loadRegionCSV(String(rd.result), f.name); }catch(err){ alert('Could not read CSV: '+err.message); } }; rd.readAsText(f); e.target.value=''; });
   $('statFile').addEventListener('change', e=>loadStatFile(e,'A'));
   window.updateColorbar=updateColorbar;
   syncStyleRows(); updateColorbar(); ovRender();
@@ -1793,6 +1798,48 @@ function applyOverlay(valsObj, name){   // a task map chosen for the selected ov
   ovApplySettings(o); $('ovTaskRow').style.display='flex';
   overlay.on=true; overlay.vals=valsObj; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
+}
+// ---- per-region CSV overlay (one value per atlas region: factor loadings, scores, …) ----
+function applyCsvVals(vals, name){ if(selOv<0) ovAdd('file'); const o=overlays[selOv];
+  o.kind='csv'; o.term=''; o.fileName=name; o.vals=vals; o.vol=null; o.volGrid=null;
+  if(/^Overlay \d+$/.test(o.name)) o.name=String(name).replace(/\.(csv|tsv|txt)$/i,'');
+  o.s.style='cmap';
+  overlay.on=true; overlay.vals=vals; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
+  ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
+  autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
+}
+// parse a CSV/TSV with one value per region and map it onto the current atlas
+// (by region name, by an id column, or — if the row count matches — in region-id order)
+function loadRegionCSV(text, fileName){
+  const lines=text.split(/\r?\n/).map(l=>l.replace(/^\uFEFF/,'')).filter(l=>l.trim().length);
+  if(!lines.length){ alert('Empty CSV.'); return; }
+  const delim = lines[0].indexOf('\t')>=0 ? '\t' : (lines[0].indexOf(';')>=0 && lines[0].indexOf(',')<0 ? ';' : ',');
+  const rows=lines.map(l=>l.split(delim).map(c=>c.trim().replace(/^"|"$/g,'')));
+  const ncol=Math.max(...rows.map(r=>r.length)), isNum=s=> s!=null && s!=='' && isFinite(+s);
+  const header = (rows[0].some(c=>!isNum(c)) && rows.length>1 && rows[1].some(isNum)) ? rows[0].map(h=>(h||'').toLowerCase()) : null;
+  const body = header?rows.slice(1):rows;
+  const numFrac=c=>{ let n=0,d=0; for(const r of body){ if(r[c]!=null&&r[c]!==''){ d++; if(isNum(r[c]))n++; } } return d?n/d:0; };
+  const numCols=[]; for(let c=0;c<ncol;c++){ if(numFrac(c)>=0.8) numCols.push(c); }
+  if(!numCols.length){ alert('No numeric value column found in the CSV.'); return; }
+  let idCol=-1, nameCol=-1, valCol=-1;
+  if(header){ header.forEach((h,i)=>{ if(idCol<0&&/^(id|roi|roi_?id|index|idx|node|region_?id|label_?id)$/.test(h)) idCol=i;
+      if(nameCol<0&&/(name|region|structure|abbr|label)/.test(h)&&numFrac(i)<0.5) nameCol=i;
+      if(valCol<0&&numCols.includes(i)&&/(value|val|score|loading|weight|stat|beta|tstat|^t$|^z$|^r$|mean|metric)/.test(h)) valCol=i; }); }
+  if(valCol<0){ valCol = numCols.find(c=>c!==idCol); if(valCol==null) valCol=numCols[0]; }
+  if(idCol<0 && numCols.length>1){ for(const c of numCols){ if(c===valCol) continue;
+      let allInt=true; for(const r of body){ if(r[c]!==''&&r[c]!=null&&!Number.isInteger(+r[c])){ allInt=false; break; } } if(allInt){ idCol=c; break; } } }
+  const N=byId.size, atlasIds=[...byId.keys()].sort((a,b)=>a-b);
+  if(body.length!==N){ const cand=(window.ATLAS_REGISTRY||[]).find(a=>a.nroi===body.length && a.id!==ATLAS_ID);
+    if(cand && confirm(`This CSV has ${body.length} rows — that matches atlas "${cand.name}", but the current atlas "${ATLAS_ID}" has ${N} regions.\n\nSwitch to ${cand.id} and reload? (then load the CSV again)`)){
+      location.href=location.pathname+'?atlas='+encodeURIComponent(cand.id); return; } }
+  const norm=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]/g,''), vals={}; let matched=0, how;
+  if(nameCol>=0){ const nameMap=new Map(); for(const m of meshes){ for(const f of [m.meta.name,m.meta.abbr,m.meta.node]) if(f) nameMap.set(norm(f),m.meta.id); }
+    for(const r of body){ const id=nameMap.get(norm(r[nameCol])); if(id!=null&&isNum(r[valCol])){ vals[id]=+r[valCol]; matched++; } } how='by region name'; }
+  else if(idCol>=0){ for(const r of body){ const id=+r[idCol]; if(byId.has(id)&&isNum(r[valCol])){ vals[id]=+r[valCol]; matched++; } } how='by id column'; }
+  else { const k=Math.min(body.length, atlasIds.length); for(let i=0;i<k;i++){ if(isNum(body[i][valCol])){ vals[atlasIds[i]]=+body[i][valCol]; matched++; } } how='in region-id order'; }
+  if(!matched){ alert('Could not match any CSV rows to atlas regions.\nExpected one value per region (currently '+N+' regions), or a region name/id column.'); return; }
+  applyCsvVals(vals, fileName||'data.csv');
+  if($('ovInfo')) $('ovInfo').textContent = `CSV: matched ${matched}/${N} regions ${how}`;
 }
 const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
 const _gray=new THREE.Color(NEUTRAL);
