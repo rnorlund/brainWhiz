@@ -203,3 +203,11 @@ A mosaic (lightbox) of a file overlay — run with `--root <folder containing th
   ]
 }
 ```
+
+## Self-contained Project files (`.bwzproj`)
+
+The panel builder's **💾 Project** button saves a *self-contained* file that embeds the actual
+overlay `.nii` bytes **and** the underlay (e.g. a subject T1), plus all viewer settings, the
+panel layout, and the figure-editor canvas. **📂 Project** reopens it and recreates the exact
+figure with no need for the original files — ideal for archiving or sharing a finished figure
+you can still edit. (The lightweight `.bwz` above stays for recipes that reference files by name.)

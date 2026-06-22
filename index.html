@@ -534,10 +534,13 @@
   <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
     <button class="sm" id="pbExport">⬇ Export</button>
     <button class="sm" id="pb6view" title="fill a 2×3 grid with 6 standard views of the current brain">⊞ 6-view</button>
-    <button class="sm" id="pbSaveBwz">💾 .bwz</button>
-    <button class="sm" id="pbLoadBwz">📂 .bwz</button>
+    <button class="sm" id="pbSaveBwz" title="Save a lightweight .bwz recipe (references .nii files by name)">💾 .bwz</button>
+    <button class="sm" id="pbLoadBwz" title="Open a .bwz recipe">📂 .bwz</button>
+    <button class="sm" id="pbSaveProj" title="Save a self-contained Project — embeds the overlay & underlay data + settings + panels + editor, so you can fully recreate/modify this figure later">💾 Project</button>
+    <button class="sm" id="pbLoadProj" title="Open a saved Project file">📂 Project</button>
     <button class="sm" id="pbClear">Clear</button>
     <input type="file" id="pbBwzFile" accept=".bwz,.json" style="display:none">
+    <input type="file" id="pbProjFile" accept=".bwzproj,.json" style="display:none">
   </div>
   <div style="font-size:10px;color:var(--muted);margin-top:4px">Click a tile to drop the current view in. Save a <b>.bwz</b> to share/recreate the whole figure.</div>
 </div>
@@ -1671,8 +1674,9 @@ function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
   $('ovInfo').textContent='reading '+file.name+' …';
   const fr=new FileReader();
-  fr.onload=()=>{ try{ applyStatVals(statBufferToVals(fr.result, file.name), file.name, which); }
-    catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; } };
+  fr.onload=()=>{ try{ applyStatVals(statBufferToVals(fr.result, file.name), file.name, which);
+      if(selOv>=0) overlays[selOv].raw=bufToB64(fr.result);   // keep raw bytes for self-contained Project files
+    } catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; } };
   fr.readAsArrayBuffer(file);
 }
 
@@ -1801,6 +1805,7 @@ window.brainAPI = {
   // load a NIfTI from raw bytes (base64) and apply as overlay A or B — for headless file overlays
   async loadStatArray(b64, which, name){
     const buf=b64ToBuf(b64); applyStatVals(statBufferToVals(buf, name||'map.nii'), name||'map.nii', which||'A');
+    if(selOv>=0) overlays[selOv].raw=b64;
     await nextFrames(2); return true; },
   // render the 3D scene at an exact size and return a PNG data URL (no UI chrome)
   renderTo(w=600,h=480,transparent=false){
@@ -1825,7 +1830,7 @@ window.brainAPI = {
   // load a NIfTI (base64) into a specific overlay-stack index — for headless multi-overlay figures
   async loadOverlayFile(idx, b64, name){ if(idx<0||idx>=overlays.length) return false;
     const r=statBufferToVals(b64ToBuf(b64), name||'map.nii'), o=overlays[idx];
-    o.vals=r.vals; o.vol=r.nii||null; o.needsFile=false; o.volStats=null; o.tfceCache=null;
+    o.vals=r.vals; o.vol=r.nii||null; o.needsFile=false; o.volStats=null; o.tfceCache=null; o.raw=b64;
     const tvox=window.MNI152?Math.abs(window.MNI152.affine[0][0]):2, ovmin=r.nii?Math.min(...r.nii.vox):tvox;
     o.volGrid=(r.nii&&window.MNI152&&ovmin>=tvox-0.1)?resliceToTemplate(r.nii):(r.nii||null);
     if(idx===selOv){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; overlay.on=!!o.vals; recolorOverlay(); updateColorbar(); }
@@ -1839,7 +1844,31 @@ window.brainAPI = {
   // describe the active overlay colorbar (for figure legends), or null
   colorbar(){ if(!overlay.on) return null;
     return { kind:'single', name:overlay.name, min:parseFloat($('cmin').value), max:parseFloat($('cmax').value),
-             cmap:$('cmap').value, style:$('ovStyle').value, color:$('ovColor').value }; }
+             cmap:$('cmap').value, style:$('ovStyle').value, color:$('ovColor').value }; },
+  // ---- self-contained Project file: embeds overlay + underlay data + settings + panels + editor ----
+  projectJSON(){
+    const data={ overlays:{}, underlay: underlayRaw?{name:underlayName,b64:underlayRaw}:null };
+    overlays.forEach((o,i)=>{ if(o.kind==='file' && o.raw) data.overlays[i]=o.raw; });
+    return { bwz:1, kind:'project', app:'brainWhiz', atlas:ATLAS_ID, viewer:captureViewerCfg(), data,
+      grid: pbDims().join('x'), figure: pbFigureSettings(),
+      panels: pbItems.map(it=> it?{label:it.label, cfg:it.cfg, dataURL:it.dataURL, cbar:it.cbar}:null),
+      editor: feCanvas?feCanvas.toJSON():null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
+  },
+  async loadProject(p){
+    if(!p||!p.viewer) return false;
+    if(p.atlas && p.atlas!==ATLAS_ID){ if(confirm(`This project was built on atlas "${p.atlas}". Switch & reload? (then open the project again)`)) location.href=location.pathname+'?atlas='+encodeURIComponent(p.atlas); return false; }
+    applyViewerCfg(p.viewer);
+    if(p.data){ if(p.data.underlay) this.setUnderlayBytes(p.data.underlay.b64, p.data.underlay.name);
+      if(p.data.overlays) for(const k in p.data.overlays){ const ovc=(p.viewer.overlays||[])[+k]||{}; await this.loadOverlayFile(+k, p.data.overlays[k], ovc.fileName||'overlay.nii'); } }
+    if(p.grid){ const [r,c]=p.grid.split('x').map(Number); if(r&&$('pbRows'))$('pbRows').value=r; if(c&&$('pbCols'))$('pbCols').value=c; }
+    if(p.figure){ const f=p.figure, set=(id,v)=>{ if(v!=null&&$(id)){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
+      set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
+      if(f.titleFont&&$('pbFont'))$('pbFont').value=f.titleFont; if(f.titleColor&&$('pbTitleColor'))$('pbTitleColor').value=f.titleColor; if(f.bg&&$('pbBg'))$('pbBg').value=f.bg; }
+    if(p.panels){ pbItems=p.panels.map(it=> it?{label:it.label,cfg:it.cfg,dataURL:it.dataURL,cbar:it.cbar}:null); pbRender(); }
+    window._projEditor=p.editor||null; window._projEditorSize=p.editorSize||null;
+    if(feCanvas && window._projEditor) feLoadProjectEditor();
+    return true;
+  }
 };
 
 // ================= IN-APP PANEL BUILDER =================
@@ -2117,6 +2146,12 @@ $('pbBgB').addEventListener('click',()=>{ $('pbBg').value='#000000'; $('pbTitleC
 $('pbSaveBwz').addEventListener('click',bwzExport);
 $('pbLoadBwz').addEventListener('click',()=>$('pbBwzFile').click());
 $('pbBwzFile').addEventListener('change',e=>{ if(e.target.files[0]) bwzImport(e.target.files[0]); e.target.value=''; });
+$('pbSaveProj').addEventListener('click',()=>{ const p=window.brainAPI.projectJSON();
+  const a=document.createElement('a'); a.download='figure.bwzproj';
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(p)],{type:'application/json'})); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); });
+$('pbLoadProj').addEventListener('click',()=>$('pbProjFile').click());
+$('pbProjFile').addEventListener('change',async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  try{ const p=JSON.parse(await f.text()); await window.brainAPI.loadProject(p); }catch(err){ alert('Could not load project: '+err.message); } });
 [['pbBrain','pbBrainV','px'],['pbTitle','pbTitleV','px'],['pbCbar','pbCbarV','px'],['pbGap','pbGapV','px']]
   .forEach(([id,vid,suf])=>{ const f=()=>$(vid).textContent=$(id).value+suf; $(id).addEventListener('input',f); f(); });
 $('panelBuilder').style.display='none';
@@ -2672,6 +2707,9 @@ function feApplyGradient(){ const o=feSel(); if(!o) return;
       coords:{x1:0.5-cx,y1:0.5-cy,x2:0.5+cx,y2:0.5+cy}, colorStops:[{offset:0,color:$('feColor').value},{offset:1,color:$('feGradC2').value}]})); }
   else o.set('fill', $('feColor').value);
   feCanvas.requestRenderAll(); }
+function feLoadProjectEditor(){ if(!feCanvas||!window._projEditor) return; const sz=window._projEditorSize||{w:1400,h:900};
+  feLock=true; feCanvas.setWidth(sz.w); feCanvas.setHeight(sz.h); $('feW').value=sz.w; $('feH').value=sz.h;
+  feCanvas.loadFromJSON(window._projEditor, ()=>{ feCanvas.backgroundColor=sz.bg||'#ffffff'; feCanvas.renderAll(); feLock=false; window._projEditor=null; }); }
 function feSyncStyleBar(){ const o=feSel(); if(!o) return;
   $('feStrokeW').value=o.strokeWidth||0; if(o.stroke&&typeof o.stroke==='string') $('feStrokeC').value=o.stroke;
   const sh=o.shadow; $('feShadow').checked=!!sh; if(sh){ $('feShBlur').value=sh.blur||0; const d=Math.round(Math.hypot(sh.offsetX||0,sh.offsetY||0)); $('feShDist').value=d; if(sh.color)$('feShColor').value=sh.color; }
@@ -2694,7 +2732,7 @@ async function openFigEditor(){
     feCanvas.on('object:removed', fePush);
     feCanvas.on('selection:created', feSyncStyleBar);
     feCanvas.on('selection:updated', feSyncStyleBar);
-    feImportPanels();   // seed with whatever's in the panel builder
+    if(window._projEditor) feLoadProjectEditor(); else feImportPanels();   // restore project layout, else seed from panels
     setTimeout(fePush, 400);   // initial history state (after imported images load)
   }
   feCanvas.requestRenderAll();
