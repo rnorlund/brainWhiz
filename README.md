@@ -143,6 +143,36 @@ Handles common label formats (`idx|abbr|name`, `idx,name`, FreeSurfer LUT, white
 Outputs `bundles/<id>/{data.js, samples.js, conn.js?, neuro.js?}` and updates `bundles/registry.js`.
 Requires `nibabel numpy scikit-image trimesh fast_simplification scipy` (+ `neuroquery nilearn` for task maps).
 
+### Your own atlas + per-region values (CSV)
+
+Have a parcellation **brainWhiz doesn't ship** and a CSV of one value per region (factor
+loadings, scores, betas…)? It's a two-step flow — build the bundle once (offline), then drop
+the CSV onto it in the browser (no rebuild needed when the values change):
+
+```bash
+# 1. one-time: turn your parcellation into a bundle (meshes can't be made in-browser)
+python build_bundle.py \
+  --atlas my_parc.nii.gz --labels my_labels.txt \
+  --id myatlas --name "My Parc (N)" --no-neuro
+python regen_registry.py            # make the viewer list it
+```
+
+```
+# 2. in the viewer: open  index.html?atlas=myatlas  →  Overlays ▸ ➕ Load .csv
+```
+
+The CSV loader maps values onto regions automatically:
+
+- a **region name / abbr** column → matched by name (must match the `--labels` names),
+- an **id / roi** column → matched by id,
+- otherwise, if the **row count equals the region count** → mapped in region-id order.
+
+So the safest CSV is either `id,value` (or `region,value`) with a header, or a single column
+of exactly *N* values in the same order as your labels file. The same CSV loads onto any
+**already-bundled** atlas too (it even offers to switch atlas if the row count matches a
+different one). Per-region CSV data colors the **3D mesh + mesh-region slices** (it has no
+voxel volume, so it doesn't appear in the voxel slice view).
+
 ---
 
 ## Project structure
