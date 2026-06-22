@@ -383,6 +383,13 @@
         <input type="range" id="cortexFade" min="0" max="1" step="0.05" value="0.75"></div>
       <div class="ctl"><div class="lab"><span title="Tract opacity — 3D meshes and 2D cross-section fill">Tract opacity</span><span id="tractOpV">0.85</span></div>
         <input type="range" id="tractOp" min="0.1" max="1" step="0.05" value="0.85"></div>
+      <div class="row"><label title="How tracts are drawn on 2D slices/mosaic">2D tracts</label>
+        <select id="tractRenderMode" style="font-size:11px" title="Outline = thin border so the map shows through · Fill = solid · Slab shadow = project tract points within ±mm to show the trajectory, not a thin cut"><option value="outline">Outline</option><option value="fill">Fill</option><option value="slab">Slab shadow</option></select>
+        <select id="tractColorMode" style="font-size:11px" title="Palette = distinct colors · Orientation = standard DTI direction color (R=L↔R, G=A↔P, B=S↔I)"><option value="palette">Palette</option><option value="orientation">Orientation</option></select></div>
+      <div class="ctl"><div class="lab"><span title="Outline thickness / slab dot size on 2D slices">Tract line</span><span id="tractLineWV">1.5</span></div>
+        <input type="range" id="tractLineW" min="0.5" max="5" step="0.5" value="1.5"></div>
+      <div class="ctl"><div class="lab"><span title="Slab shadow: project tract points within ±this many mm of the slice (0 = thin slice only)">Slab ± mm</span><span id="tractSlabMMV">6</span></div>
+        <input type="range" id="tractSlabMM" min="0" max="16" step="1" value="6"></div>
       <div class="ctl"><div class="lab"><span title="Smooth the chunky tract hull meshes (Taubin) — same as ROI mesh smoothing">Tract smoothing</span><span id="tractSmoothV">4</span></div>
         <input type="range" id="tractSmooth" min="0" max="12" step="1" value="4"></div>
       <div class="row"><label class="toggle"><input type="checkbox" id="tractExplode" checked> explode tracts with brain</label></div>
@@ -1287,7 +1294,8 @@ async function loadTracts(id){
   clearTracts();
   const sL=window.ATLAS_LABELS, sG=window.ATLAS_GLB_B64, sS=window.ATLAS_SAMPLES;   // borrow the bundle globals
   const ok=await loadScript(`bundles/${id}/data.js`);
-  const tLabels=window.ATLAS_LABELS, tGLB=window.ATLAS_GLB_B64;
+  await loadScript(`bundles/${id}/samples.js`);                                     // tract point clouds (slab shadow + orientation PCA)
+  const tLabels=window.ATLAS_LABELS, tGLB=window.ATLAS_GLB_B64, tSamp=window.ATLAS_SAMPLES||{};
   window.ATLAS_LABELS=sL; window.ATLAS_GLB_B64=sG; window.ATLAS_SAMPLES=sS;        // restore active atlas globals
   if(!ok||!tGLB){ alert('Could not load tract atlas "'+id+'".'); return; }
   const tMeta=tLabels||[], byNodeT=new Map(tMeta.map(m=>[m.node,m]));
@@ -1300,11 +1308,13 @@ async function loadTracts(id){
       o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.5, metalness:0.0, transparent:true, opacity:op0});
       o.renderOrder=2;
       const base=new THREE.Vector3(); g.boundingBox.getCenter(base);   // centroid -> explosion direction
-      tractRecs.push({mesh:o, meta, color:col, visible:true, base,
+      const pts=tSamp[meta.id]||tSamp[String(meta.id)]||tSamp[meta.node]||null;   // MNI mm point cloud
+      const dir=pts?tractDir(pts):null, oriColor=dir?dirToRGB(dir):col;           // DTI direction-encoded color
+      tractRecs.push({mesh:o, meta, color:col, drawColor:col, visible:true, base, pts, dir, oriColor,
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; applyTractSmooth(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
+    tractAtlasId=id; applyTractSmooth(); applyTractColorMode(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
   }, err=>alert('Tract mesh parse failed: '+err));
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
@@ -1325,19 +1335,48 @@ function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh
 function applyCortexFade(){ const f=+$('cortexFade').value; if(!tractRecs.length){ restoreCortex(); return; }
   meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=Math.max(0.04, 1-f); m.depthWrite=(f<0.5); }); requestRender(); }
 function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); }
+// principal direction (unit vector, MNI axes) of a tract's point cloud via power-iteration on the covariance
+function tractDir(pts){ const n=pts.length/3; if(n<3) return null;
+  let cx=0,cy=0,cz=0; for(let i=0;i<n;i++){ cx+=pts[3*i];cy+=pts[3*i+1];cz+=pts[3*i+2]; } cx/=n;cy/=n;cz/=n;
+  let xx=0,xy=0,xz=0,yy=0,yz=0,zz=0;
+  for(let i=0;i<n;i++){ const dx=pts[3*i]-cx,dy=pts[3*i+1]-cy,dz=pts[3*i+2]-cz; xx+=dx*dx;xy+=dx*dy;xz+=dx*dz;yy+=dy*dy;yz+=dy*dz;zz+=dz*dz; }
+  let vx=1,vy=0.3,vz=0.1;
+  for(let it=0;it<32;it++){ const nx=xx*vx+xy*vy+xz*vz, ny=xy*vx+yy*vy+yz*vz, nz=xz*vx+yz*vy+zz*vz; const l=Math.hypot(nx,ny,nz)||1; vx=nx/l;vy=ny/l;vz=nz/l; }
+  return [vx,vy,vz];
+}
+// standard DTI direction-encoded color: R=|L-R| (x), G=|A-P| (y), B=|S-I| (z)
+function dirToRGB(d){ const h=v=>Math.round(255*Math.min(1,Math.abs(v))).toString(16).padStart(2,'0'); return '#'+h(d[0])+h(d[1])+h(d[2]); }
+function applyTractColorMode(){ const ori = $('tractColorMode') && $('tractColorMode').value==='orientation';
+  for(const r of tractRecs){ const c=(ori&&r.oriColor)?r.oriColor:r.color; r.drawColor=c; r.mesh.material.color.set(c); r.mesh.material.needsUpdate=true; }
+  requestRender(); refreshSliceViews(); }
+// draw tracts on a 2D plane: Outline (map shows through) | Fill | Slab-shadow (point-cloud trajectory)
 function drawTracts(ctx, plane, toX, toY, fixedMNI){
   if(!tractRecs.length) return;
-  const axis = plane==='sag'?0 : plane==='cor'?2 : 1;
-  let fixed = (plane==='cor'? -fixedMNI : fixedMNI) + 1e-3;     // MNI fixed -> three.js coord
+  const mode = $('tractRenderMode') ? $('tractRenderMode').value : 'outline';
+  const op=+$('tractOp').value, lw=+($('tractLineW')?$('tractLineW').value:1.5), slab=+($('tractSlabMM')?$('tractSlabMM').value:6);
+  const mAxis = plane==='sag'?0 : plane==='cor'?1 : 2;          // MNI axis perpendicular to the plane (x/y/z)
+  const axis = plane==='sag'?0 : plane==='cor'?2 : 1;           // three.js section axis
+  const fixed = (plane==='cor'? -fixedMNI : fixedMNI) + 1e-3;   // MNI fixed -> three.js coord
   const hv = plane==='sag'?((x,y,z)=>[-z,y]) : plane==='cor'?((x,y,z)=>[x,y]) : ((x,y,z)=>[x,-z]);
-  const op=+$('tractOp').value;
-  for(const r of tractRecs){ if(!r.visible) continue; const geo=r.mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
+  const inPlane = plane==='sag'?((X,Y,Z)=>[Y,Z]) : plane==='cor'?((X,Y,Z)=>[X,Z]) : ((X,Y,Z)=>[X,Y]);
+  for(const r of tractRecs){ if(!r.visible) continue; const color=r.drawColor||r.color;
+    if(mode==='slab' && slab>0 && r.pts){                       // soft footprint from the point cloud within ±slab
+      const pts=r.pts, n=pts.length/3; ctx.globalAlpha=Math.min(1,op*0.6); ctx.fillStyle=color;
+      const rad=Math.max(1.1, lw*1.2);
+      for(let i=0;i<n;i++){ const X=pts[3*i],Y=pts[3*i+1],Z=pts[3*i+2]; const a=mAxis===0?X:mAxis===1?Y:Z;
+        if(Math.abs(a-fixedMNI)>slab) continue; const ip=inPlane(X,Y,Z); ctx.beginPath(); ctx.arc(toX(ip[0]),toY(ip[1]),rad,0,6.283185); ctx.fill(); }
+      ctx.globalAlpha=1; continue;
+    }
+    const geo=r.mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
     const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
     if(fixed<lo||fixed>hi) continue;
     const loops=sectionLoops(geo.attributes.position.array, axis, fixed, hv); if(!loops.length) continue;
-    ctx.globalAlpha=op; ctx.fillStyle=r.color; ctx.beginPath();
+    ctx.beginPath();
     for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); } ctx.closePath(); }
-    ctx.fill('evenodd'); ctx.globalAlpha=1;
+    if(mode==='outline'){ ctx.globalAlpha=Math.min(1,op*0.18); ctx.fillStyle=color; ctx.fill('evenodd');   // faint tint so it reads as filled-ish
+      ctx.globalAlpha=op; ctx.lineWidth=lw; ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
+    else { ctx.globalAlpha=op; ctx.fillStyle=color; ctx.fill('evenodd');
+      ctx.globalAlpha=Math.min(1,op+0.2); ctx.lineWidth=Math.max(0.6,lw*0.5); ctx.strokeStyle=color; ctx.lineJoin='round'; ctx.stroke(); ctx.globalAlpha=1; }
   }
 }
 $('tractLoad').addEventListener('click',()=>loadTracts($('tractAtlas').value));
@@ -1346,6 +1385,10 @@ $('cortexFade').addEventListener('input',e=>{ $('cortexFadeV').textContent=(+e.t
 $('tractOp').addEventListener('input',()=>{ setTractOpacity(); refreshSliceViews(); });
 $('tractSmooth').addEventListener('input',e=>{ $('tractSmoothV').textContent=e.target.value; });
 $('tractSmooth').addEventListener('change',applyTractSmooth);
+$('tractRenderMode').addEventListener('change',refreshSliceViews);
+$('tractColorMode').addEventListener('change',applyTractColorMode);
+$('tractLineW').addEventListener('input',e=>{ $('tractLineWV').textContent=(+e.target.value).toFixed(1); refreshSliceViews(); });
+$('tractSlabMM').addEventListener('input',e=>{ $('tractSlabMMV').textContent=e.target.value; refreshSliceViews(); });
 $('tractExplode').addEventListener('change',()=>setExplode(explodeAmt));
 $('tractAll').addEventListener('click',()=>setTractVis(()=>true));
 $('tractNone').addEventListener('click',()=>setTractVis(()=>false));
