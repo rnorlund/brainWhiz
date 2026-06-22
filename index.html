@@ -305,8 +305,8 @@
     <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
       <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
     <div class="row"><label class="toggle"><input type="checkbox" id="glass"> 🪟 Glass brain (fade uncolored to a shell)</label></div>
-    <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">0</span></div>
-      <input type="range" id="smooth" min="0" max="12" step="1" value="0"></div>
+    <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
+      <input type="range" id="smooth" min="0" max="12" step="1" value="4"></div>
     <div class="row"><label>Surface</label>
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
@@ -741,6 +741,7 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   const defScheme=(distinctLobes<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
   $('scheme').value=defScheme;
   applyScheme(defScheme);
+  if(+$('smooth').value>0) applySmoothing();   // default mesh smoothing on for a nicer startup look
   buildList();
   buildAxisLabels(box, sphere.radius);
   initOverlayUI();
