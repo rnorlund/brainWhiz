@@ -435,33 +435,54 @@
 
 <div id="figEditor">
   <div id="feBar">
-    <button class="febtn" id="feClose" title="back to viewer">✕ Close</button>
+    <button class="febtn" id="feClose" title="Close the editor and return to the brain viewer">✕ Close</button>
     <span class="fesep"></span>
-    <button class="febtn" id="feAddView" title="add the current 3D / slice / mosaic view">＋ Current view</button>
-    <button class="febtn" id="feAddPanels" title="import all tiles from the panel builder">＋ Panels</button>
-    <button class="febtn" id="feAddImg" title="add an image file">＋ Image…</button>
+    <button class="febtn" id="feAddView" title="Add the current viewer image (3D / slices / mosaic) as a movable picture">＋ View</button>
+    <button class="febtn" id="feAddPanels" title="Import every tile from the 🗔 Panels builder">＋ Panels</button>
+    <button class="febtn" id="feAddImg" title="Add an image file from your computer">＋ Image…</button>
     <input type="file" id="feImgFile" accept="image/*" style="display:none">
     <span class="fesep"></span>
-    <button class="febtn" id="feText" title="add a text label (double-click to edit)">T Text</button>
-    <button class="febtn" id="feArrow" title="add an arrow">↗ Arrow</button>
-    <button class="febtn" id="feLine" title="add a line with end dots">•— Line</button>
-    <button class="febtn" id="feBox" title="add a rectangle outline">▭ Box</button>
+    <button class="febtn" id="feText" title="Add an editable text label (double-click it to type)">T Text</button>
+    <button class="febtn" id="feArrow" title="Add an arrow — point at a structure">↗ Arrow</button>
+    <button class="febtn" id="feLine" title="Add a line with a dot on each end (connector)">•— Line</button>
+    <button class="febtn" id="feBox" title="Add a rectangle outline (highlight a region)">▭ Box</button>
     <span class="fesep"></span>
-    <label class="femut">Color</label><input type="color" id="feColor" value="#ff3b30" title="color of selected / new item">
-    <label class="femut">Size</label><input type="range" id="feSize" min="6" max="96" step="1" value="28" style="width:90px" title="text / line size"><span id="feSizeV" class="femut">28</span>
+    <label class="femut">Color</label><input type="color" id="feColor" value="#ff3b30" title="Color of the selected item (or the next item you add)">
+    <label class="femut">Size</label><input type="range" id="feSize" min="6" max="96" step="1" value="28" style="width:90px" title="Text font size for the selected/new label, and the thickness of new arrows / lines / boxes"><span id="feSizeV" class="femut">28</span>
     <span class="fesep"></span>
-    <button class="febtn" id="feDup" title="duplicate selected">⧉</button>
-    <button class="febtn" id="feFront" title="bring to front">⤒</button>
-    <button class="febtn" id="feBack" title="send to back">⤓</button>
-    <button class="febtn" id="feDel" title="delete selected (Del)">🗑</button>
+    <button class="febtn" id="feDup" title="Duplicate the selected item">⧉ Dup</button>
+    <button class="febtn" id="feFront" title="Bring the selected item to the front">⤒</button>
+    <button class="febtn" id="feBack" title="Send the selected item to the back">⤓</button>
+    <button class="febtn" id="feDel" title="Delete the selected item (Delete key)">🗑</button>
+    <span class="fesep"></span>
+    <button class="febtn" id="feCrop" title="Crop the canvas to fit your content — removes empty space after you've arranged things">⤢ Crop to fit</button>
+    <button class="febtn" id="feUndo" title="Undo (⌘/Ctrl-Z)">↶</button>
+    <button class="febtn" id="feRedo" title="Redo (⌘/Ctrl-Shift-Z)">↷</button>
     <span style="flex:1"></span>
-    <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:62px" title="width"> ×
-    <input type="number" id="feH" value="900" min="100" max="6000" style="width:62px" title="height">
-    <label class="femut">BG</label><input type="color" id="feBg" value="#ffffff" title="figure background"><label class="toggle femut"><input type="checkbox" id="feBgTransparent"> transp</label>
+    <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:60px" title="Canvas width in pixels"> ×
+    <input type="number" id="feH" value="900" min="100" max="6000" style="width:60px" title="Canvas height in pixels">
+    <label class="femut">BG</label><input type="color" id="feBg" value="#ffffff" title="Figure background color"><label class="toggle femut" title="Export with a transparent background (PNG only)"><input type="checkbox" id="feBgTransparent"> transp</label>
     <span class="fesep"></span>
-    <select id="feFormat" class="tbsel" style="font-size:11px"><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select>
-    <label class="femut">scale</label><select id="feScale" class="tbsel" style="font-size:11px"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option><option value="4">4×</option></select>
-    <button class="febtn" id="feExport" title="export the figure">⤓ Export</button>
+    <label class="femut">Format</label><select id="feFormat" class="tbsel" style="font-size:11px" title="Export file type"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="svg">SVG (vector)</option><option value="pdf">PDF</option></select>
+    <label class="femut" id="feQualWrap" style="display:none" title="JPG quality (higher = better, larger file)">q<input type="range" id="feQual" min="0.3" max="1" step="0.05" value="0.92" style="width:56px"></label>
+    <label class="femut">DPI</label><select id="feDpi" class="tbsel" style="font-size:11px" title="Export resolution — higher DPI = sharper & larger file (300 is typical for print)"><option>72</option><option>150</option><option selected>300</option><option>600</option></select>
+    <button class="febtn" id="feExport" title="Download the finished figure">⤓ Export</button>
+  </div>
+  <div id="feBar2">
+    <span class="femut">Selected item:</span>
+    <label class="femut" title="Outline thickness around the selected item (0 = no outline)">Outline</label>
+    <input type="range" id="feStrokeW" min="0" max="20" step="0.5" value="0" style="width:80px" title="Outline thickness (0 = none)">
+    <input type="color" id="feStrokeC" value="#000000" title="Outline color">
+    <span class="fesep"></span>
+    <label class="toggle femut" title="Add a drop shadow to the selected item"><input type="checkbox" id="feShadow"> Shadow</label>
+    <label class="femut" title="Shadow softness / blur">blur</label><input type="range" id="feShBlur" min="0" max="40" step="1" value="8" style="width:64px">
+    <label class="femut" title="How far the shadow is offset from the item">dist</label><input type="range" id="feShDist" min="0" max="40" step="1" value="6" style="width:64px">
+    <label class="femut" title="Shadow direction in degrees">dir</label><input type="range" id="feShAng" min="0" max="360" step="5" value="135" style="width:64px">
+    <input type="color" id="feShColor" value="#000000" title="Shadow color">
+    <span class="fesep"></span>
+    <label class="toggle femut" title="Fill the selected shape (box/arrow/dot) with a 2-color gradient"><input type="checkbox" id="feGrad"> Gradient fill</label>
+    <input type="color" id="feGradC2" value="#1f77b4" title="Second gradient color (the first color is the Color picker above)">
+    <label class="femut" title="Gradient angle in degrees">angle</label><input type="range" id="feGradAng" min="0" max="360" step="5" value="0" style="width:64px">
   </div>
   <div id="feStage"><canvas id="feCanvas"></canvas></div>
   <div id="feHint">Drag to move · handles to resize/rotate · double-click text to edit · Del removes · Ctrl/⌘ C/V copy-paste · paste an image from the clipboard</div>
@@ -1799,8 +1820,8 @@ window.brainAPI = {
     refreshSliceViews(); await nextFrames(2); return true; },
   // render the CURRENT view (3D mesh / ortho slices / mosaic) to a PNG data URL
   captureView(w=900,h=680,transparent=true){
-    if(mosaicMode){ renderMosaic(); return $('mosaicCanvas').toDataURL('image/png'); }
-    if(sliceMode){ sliceRenderAll(); return captureSlices2x2(w,h); }
+    if(mosaicMode){ viewTransparent=!!transparent; renderMosaic(); const u=$('mosaicCanvas').toDataURL('image/png'); viewTransparent=false; renderMosaic(); return u; }
+    if(sliceMode){ viewTransparent=!!transparent; sliceRenderAll(); const u=captureSlices2x2(w,h); viewTransparent=false; sliceRenderAll(); return u; }
     return this.renderTo(w,h,transparent);
   },
   // describe the active overlay colorbar (for figure legends), or null
@@ -1867,7 +1888,7 @@ async function pbResolveTile(i){
 // composite the current slice view (sag/cor/axi + 3D) into one 2x2 image for a figure tile
 function captureSlices2x2(W=900,H=680){
   const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
-  x.fillStyle=viewBg(); x.fillRect(0,0,W,H);
+  if(viewTransparent) x.clearRect(0,0,W,H); else { x.fillStyle=viewBg(); x.fillRect(0,0,W,H); }
   const qw=W/2, qh=H/2;
   const draw=(src,qx,qy)=>{ if(!src) return; const sw=src.width||src.naturalWidth, sh=src.height||src.naturalHeight;
     if(!sw||!sh) return; const s=Math.min(qw/sw,qh/sh), dw=sw*s, dh=sh*s; x.drawImage(src, qx+(qw-dw)/2, qy+(qh-dh)/2, dw, dh); };
@@ -2092,6 +2113,7 @@ $('panelBuilder').style.display='none';
 let sliceStat='raw';   // 'raw' | 'tfce'
 let sliceKind='voxel'; // 'voxel' | 'mesh'
 let sliceOrtho=null;
+let viewTransparent=false;   // when true, slice/mosaic capture leaves bg (outside-brain) transparent
 const sliceVP={ sag:{z:1,px:0,py:0}, cor:{z:1,px:0,py:0}, axi:{z:1,px:0,py:0} };   // per-plane zoom + pan(mm)
 const _clampI=(v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
 // MNI(x,y,z = R,A,S)  ->  three.js mesh axes (+X=R, +Y=Sup, -Z=Ant)
@@ -2164,7 +2186,7 @@ function renderMeshSlices(){
     const dpr=Math.min(window.devicePixelRatio||1,2);
     const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
     cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-    ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
+    if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
     const sc=Math.min(W/win.hr,H/win.vr), dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));
     const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
     const toX=h=>ox+((h-win.hmin)/win.hr)*dw, toY=v=>oy+((win.vmax-v)/win.vr)*dh;
@@ -2283,7 +2305,7 @@ function renderPlane(cv, plane){
   const dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
   cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
-  ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
+  if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
   const sc=Math.min(W/hr,H/vr), dw=Math.max(1,Math.round(hr*sc)), dh=Math.max(1,Math.round(vr*sc));
   const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
   const img=ctx.createImageData(dw,dh), D=img.data;
@@ -2291,9 +2313,9 @@ function renderPlane(cv, plane){
   const [bgR,bgG,bgB]=hex2rgb(viewBg());          // outside the brain = the background color
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
-      const tv=mni.sampleMM(w[0],w[1],w[2])||0; let r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
+      const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
       for(const p of ovs){ const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
-        const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue;
+        const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue; painted=true;
         let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
         let cr,cg,cb;
         if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; }
@@ -2305,7 +2327,7 @@ function renderPlane(cv, plane){
         const a=p.opacity*(0.2+0.8*ramp);
         r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
       }
-      const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
+      const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
   }}
   ctx.putImageData(img,ox,oy);
   if($('slCross').checked){ const c=crossInplane(plane);
@@ -2346,7 +2368,7 @@ function renderMosaic(){
   if(!mosaicMode) return; const mni=ensureMNI(); if(!mni) return;
   const cv=$('mosaicCanvas'), host=$('mosaicView'), dpr=Math.min(window.devicePixelRatio||1,2);
   const W=Math.round(Math.max(8,host.clientWidth)*dpr), H=Math.round(Math.max(8,host.clientHeight)*dpr);
-  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H);
+  cv.width=W; cv.height=H; const ctx=cv.getContext('2d'); if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
   const plane=mosaicPlane, b=mosaicInplane(plane), hr=b.hmax-b.hmin, vr=b.vmax-b.vmin;
   const [lo,hi]=mosaicRange(plane), N=+$('mosN').value, cols=Math.max(1,+$('mosCols').value), rows=Math.ceil(N/cols), gap=Math.round((+$('mosGap').value)*dpr);
   let tileW=(W-(cols+1)*gap)/cols, tileH=tileW*(vr/hr);
@@ -2361,16 +2383,16 @@ function renderMosaic(){
     const img=ctx.createImageData(dw,dh), D=img.data;
     for(let py=0;py<dh;py++){ const vW=b.vmax-(py/(dh-1||1))*vr;
       for(let px=0;px<dw;px++){ const hW=b.hmin+(px/(dw-1||1))*hr, w=worldAt(plane,hW,vW,fixed);
-        const tv=mni.sampleMM(w[0],w[1],w[2])||0; let r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
+        const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
         for(const p of ovs){ const vv=p.src.sampleMM(w[0],w[1],w[2]); if(vv===null||!isFinite(vv)) continue;
-          const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue;
+          const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue; painted=true;
           let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
           let cr,cg,cb; if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; } else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
           if(p.vivid!==1){ const L=0.3*cr+0.59*cg+0.11*cb; cr=L+(cr-L)*p.vivid; cg=L+(cg-L)*p.vivid; cb=L+(cb-L)*p.vivid; cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
           let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp; const a=p.opacity*(0.2+0.8*ramp);
           r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
         }
-        const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=255;
+        const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
       }}
     ctx.putImageData(img,dx,dy);
     if(labels){ const lz=+$('mosLabelSize').value, center=$('mosLabelCenter').checked;
@@ -2556,7 +2578,7 @@ function feResize(){ if(feCanvas){ feCanvas.setWidth(+$('feW').value); feCanvas.
 function feAddObj(o){ feCanvas.add(o); feCanvas.setActiveObject(o); feCanvas.requestRenderAll(); }
 function feImg(dataURL, opts){ fabric.Image.fromURL(dataURL, img=>{ img.set(Object.assign({left:30,top:30},opts||{}));
   const maxW=feCanvas.getWidth()*0.5; if(img.width>maxW) img.scaleToWidth(maxW); feAddObj(img); }); }
-function feAddCurrentView(){ let url; try{ url=window.brainAPI.captureView(900,680,false); }catch(e){ return; } feImg(url,{left:40,top:40}); }
+function feAddCurrentView(){ let url; try{ url=window.brainAPI.captureView(900,680,true); }catch(e){ return; } feImg(url,{left:40,top:40}); }   // transparent — no bg square
 function feImportPanels(){ const [rows,cols]=pbDims(), cw=feCanvas.getWidth(), gap=14, tw=(cw-gap*(cols+1))/cols, rh=tw*0.8+gap+26;
   pbItems.forEach((it,i)=>{ if(!it||!it.dataURL) return; const col=i%cols, row=(i/cols)|0;
     const x=gap+col*(tw+gap), y=gap+row*rh;
@@ -2578,16 +2600,50 @@ function feApplyColor(){ const o=feSel(); if(!o) return; const c=$('feColor').va
   else if(o.type==='rect') o.set('stroke',c);
   else if(o.type==='group') o.forEachObject(x=>x.set(x.type==='line'?'stroke':'fill',c));
   else o.set('stroke',c); feCanvas.requestRenderAll(); }
-function feExport(){ const fmt=$('feFormat').value, scale=+$('feScale').value, transp=$('feBgTransparent').checked;
-  const oldBg=feCanvas.backgroundColor; if(transp){ feCanvas.backgroundColor=null; feCanvas.renderAll(); }
+function feExport(){ const fmt=$('feFormat').value, dpi=+$('feDpi').value, mult=dpi/96, q=+$('feQual').value, transp=$('feBgTransparent').checked && fmt!=='jpeg';
+  const oldBg=feCanvas.backgroundColor;
+  if(transp){ feCanvas.backgroundColor=null; }                  // jpeg has no alpha → always keep bg
+  else if(fmt==='jpeg' && !feCanvas.backgroundColor){ feCanvas.backgroundColor='#ffffff'; }
+  feCanvas.renderAll();
   const restore=()=>{ feCanvas.backgroundColor=oldBg; feCanvas.renderAll(); };
   try{
     if(fmt==='svg'){ feDl('figure.svg','data:image/svg+xml;charset=utf-8,'+encodeURIComponent(feCanvas.toSVG())); return; }
-    const png=feCanvas.toDataURL({format:'png',multiplier:scale});
+    const img=feCanvas.toDataURL({format: fmt==='jpeg'?'jpeg':'png', quality:q, multiplier:mult});
     if(fmt==='pdf'){ const {jsPDF}=window.jspdf, w=feCanvas.getWidth(), h=feCanvas.getHeight();
-      const pdf=new jsPDF({orientation:w>h?'l':'p',unit:'pt',format:[w,h]}); pdf.addImage(png,'PNG',0,0,w,h); pdf.save('figure.pdf'); return; }
-    feDl('figure.png',png);
+      const pdf=new jsPDF({orientation:w>h?'l':'p',unit:'pt',format:[w,h]}); pdf.addImage(img,'PNG',0,0,w,h); pdf.save('figure.pdf'); return; }
+    feDl('figure.'+(fmt==='jpeg'?'jpg':'png'), img);
   }catch(e){ alert('Export failed: '+e.message); } finally{ restore(); } }
+// ---- crop to fit + undo/redo + per-object style (outline / shadow / gradient) ----
+function feCrop(){ const objs=feCanvas.getObjects(); if(!objs.length) return; const pad=16;
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  objs.forEach(o=>{ const b=o.getBoundingRect(true,true); x0=Math.min(x0,b.left); y0=Math.min(y0,b.top); x1=Math.max(x1,b.left+b.width); y1=Math.max(y1,b.top+b.height); });
+  const dx=pad-x0, dy=pad-y0;
+  objs.forEach(o=>{ o.left+=dx; o.top+=dy; o.setCoords(); });
+  $('feW').value=Math.round(x1-x0+2*pad); $('feH').value=Math.round(y1-y0+2*pad); feResize(); feCanvas.requestRenderAll(); fePush(); }
+let feHist=[], feHi=-1, feLock=false;
+function fePush(){ if(!feCanvas||feLock) return; feHist=feHist.slice(0,feHi+1);
+  feHist.push(JSON.stringify({json:feCanvas.toJSON(), w:feCanvas.getWidth(), h:feCanvas.getHeight(), bg:feCanvas.backgroundColor}));
+  if(feHist.length>150) feHist.shift(); feHi=feHist.length-1; }
+function feLoad(i){ const s=feHist[i]; if(!s) return; const st=JSON.parse(s); feLock=true;
+  feCanvas.setWidth(st.w); feCanvas.setHeight(st.h); $('feW').value=st.w; $('feH').value=st.h;
+  feCanvas.loadFromJSON(st.json, ()=>{ feCanvas.backgroundColor=st.bg; feCanvas.renderAll(); feLock=false; }); }
+function feUndo(){ if(feHi>0){ feHi--; feLoad(feHi); } }
+function feRedo(){ if(feHi<feHist.length-1){ feHi++; feLoad(feHi); } }
+function feApplyStroke(){ const o=feSel(); if(!o) return; o.set('stroke',$('feStrokeC').value); o.set('strokeWidth',+$('feStrokeW').value); feCanvas.requestRenderAll(); }
+function feApplyShadow(){ const o=feSel(); if(!o) return;
+  if($('feShadow').checked){ const a=(+$('feShAng').value)*Math.PI/180, d=+$('feShDist').value;
+    o.set('shadow', new fabric.Shadow({color:$('feShColor').value, blur:+$('feShBlur').value, offsetX:Math.cos(a)*d, offsetY:Math.sin(a)*d})); }
+  else o.set('shadow', null); feCanvas.requestRenderAll(); }
+function feApplyGradient(){ const o=feSel(); if(!o) return;
+  if($('feGrad').checked && o.width){ const a=(+$('feGradAng').value)*Math.PI/180, cx=Math.cos(a)/2, cy=Math.sin(a)/2;
+    o.set('fill', new fabric.Gradient({type:'linear', gradientUnits:'percentage',
+      coords:{x1:0.5-cx,y1:0.5-cy,x2:0.5+cx,y2:0.5+cy}, colorStops:[{offset:0,color:$('feColor').value},{offset:1,color:$('feGradC2').value}]})); }
+  else o.set('fill', $('feColor').value);
+  feCanvas.requestRenderAll(); }
+function feSyncStyleBar(){ const o=feSel(); if(!o) return;
+  $('feStrokeW').value=o.strokeWidth||0; if(o.stroke&&typeof o.stroke==='string') $('feStrokeC').value=o.stroke;
+  const sh=o.shadow; $('feShadow').checked=!!sh; if(sh){ $('feShBlur').value=sh.blur||0; const d=Math.round(Math.hypot(sh.offsetX||0,sh.offsetY||0)); $('feShDist').value=d; if(sh.color)$('feShColor').value=sh.color; }
+  $('feGrad').checked = !!(o.fill && o.fill.colorStops); }
 async function openFigEditor(){
   $('figEditor').classList.add('on');
   if(!await ensureFabric()){ alert('Could not load the figure-editor library (offline?).'); $('figEditor').classList.remove('on'); return; }
@@ -2597,10 +2653,17 @@ async function openFigEditor(){
     document.addEventListener('keydown',e=>{ if(!$('figEditor').classList.contains('on')) return; const o=feSel();
       if((e.key==='Delete'||e.key==='Backspace') && o && !o.isEditing){ feDelSel(); e.preventDefault(); }
       else if((e.metaKey||e.ctrlKey)&&e.key==='c'&&o){ o.clone(c=>feClip=c); }
-      else if((e.metaKey||e.ctrlKey)&&e.key==='v'&&feClip){ feClip.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); } });
+      else if((e.metaKey||e.ctrlKey)&&e.key==='v'&&feClip){ feClip.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); }
+      else if((e.metaKey||e.ctrlKey)&&e.key==='z'){ e.preventDefault(); e.shiftKey?feRedo():feUndo(); } });
     $('figEditor').addEventListener('paste',e=>{ const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
       for(const it of items){ if(it.type.indexOf('image')===0){ const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(it.getAsFile()); e.preventDefault(); } } });
+    feCanvas.on('object:modified', fePush);
+    feCanvas.on('object:added', fePush);
+    feCanvas.on('object:removed', fePush);
+    feCanvas.on('selection:created', feSyncStyleBar);
+    feCanvas.on('selection:updated', feSyncStyleBar);
     feImportPanels();   // seed with whatever's in the panel builder
+    setTimeout(fePush, 400);   // initial history state (after imported images load)
   }
   feCanvas.requestRenderAll();
 }
@@ -2624,6 +2687,13 @@ async function openFigEditor(){
   $('feAddImg').addEventListener('click', ()=>$('feImgFile').click());
   $('feImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(f); e.target.value=''; });
   $('feExport').addEventListener('click', feExport);
+  $('feCrop').addEventListener('click', feCrop);
+  $('feUndo').addEventListener('click', feUndo); $('feRedo').addEventListener('click', feRedo);
+  $('feFormat').addEventListener('change', ()=>{ $('feQualWrap').style.display = $('feFormat').value==='jpeg'?'inline-flex':'none'; });
+  // per-object style (outline / shadow / gradient)
+  $('feStrokeW').addEventListener('input', feApplyStroke); $('feStrokeC').addEventListener('input', feApplyStroke);
+  ['feShadow','feShBlur','feShDist','feShAng','feShColor'].forEach(id=>$(id).addEventListener('input', feApplyShadow));
+  ['feGrad','feGradC2','feGradAng'].forEach(id=>$(id).addEventListener('input', feApplyGradient));
 })();
 
 const clock=new THREE.Clock();
