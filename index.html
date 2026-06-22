@@ -394,6 +394,10 @@
       <div class="ctl"><div class="lab"><span title="'On tract' = within this many mm of the visible tracts (dilates the tract point cloud). Used by spotlight + the on-tract readout">Mask ± mm</span><span id="tractMaskRV">4</span></div>
         <input type="range" id="tractMaskR" min="2" max="10" step="1" value="4"></div>
       <div id="tractReadout" style="font-size:11px;opacity:.85;margin:2px 0;min-height:14px" title="Fraction of the active overlay's suprathreshold voxels that lie within the visible tracts"></div>
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <label class="toggle" title="Make the cortex a faint glass shell so the deep tracts read clearly in 3D"><input type="checkbox" id="tractGlass"> 🪟 Glass cortex</label>
+        <label class="toggle" title="Animate a pulse of light flowing along each tract (3D)"><input type="checkbox" id="tractFlow"> 🌊 Flow</label>
+        <label class="toggle" title="Cut the cortex away above the axial slice level (Z slider) so tracts are exposed; tracts are never clipped"><input type="checkbox" id="tractClip"> ✂️ Clip at slice</label></div>
       <div class="ctl"><div class="lab"><span title="Smooth the chunky tract hull meshes (Taubin) — same as ROI mesh smoothing">Tract smoothing</span><span id="tractSmoothV">4</span></div>
         <input type="range" id="tractSmooth" min="0" max="12" step="1" value="4"></div>
       <div class="row"><label class="toggle"><input type="checkbox" id="tractExplode" checked> explode tracts with brain</label></div>
@@ -1318,7 +1322,7 @@ async function loadTracts(id){
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); applyTractColorMode(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
+    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
   }, err=>alert('Tract mesh parse failed: '+err));
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
@@ -1337,9 +1341,9 @@ function setTractOpacity(){ const op=+$('tractOp').value; $('tractOpV').textCont
 // Taubin-smooth the chunky tract hulls (reuses the ROI mesh smoother); recompute bbox for cross-sections
 function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } refreshSliceViews(); requestRender(); }
 function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); invalidateTractMask(); refreshSliceViews(); requestRender(); }
-function applyCortexFade(){ const f=+$('cortexFade').value; if(!tractRecs.length){ restoreCortex(); return; }
-  meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=Math.max(0.04, 1-f); m.depthWrite=(f<0.5); }); requestRender(); }
-function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); }
+function applyCortexFade(){ const f=+$('cortexFade').value, glass=$('tractGlass')&&$('tractGlass').checked; if(!tractRecs.length){ restoreCortex(); return; }
+  meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=glass?0.05:Math.max(0.04, 1-f); m.depthWrite=glass?false:(f<0.5); }); requestRender(); }
+function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); meshes.forEach(o=>{ o.mesh.material.clippingPlanes=null; }); }
 // principal direction (unit vector, MNI axes) of a tract's point cloud via power-iteration on the covariance
 function tractDir(pts){ const n=pts.length/3; if(n<3) return null;
   let cx=0,cy=0,cz=0; for(let i=0;i<n;i++){ cx+=pts[3*i];cy+=pts[3*i+1];cz+=pts[3*i+2]; } cx/=n;cy/=n;cz/=n;
@@ -1354,6 +1358,38 @@ function dirToRGB(d){ const h=v=>Math.round(255*Math.min(1,Math.abs(v))).toStrin
 function applyTractColorMode(){ const ori = $('tractColorMode') && $('tractColorMode').value==='orientation';
   for(const r of tractRecs){ const c=(ori&&r.oriColor)?r.oriColor:r.color; r.drawColor=c; r.mesh.material.color.set(c); r.mesh.material.needsUpdate=true; }
   requestRender(); refreshSliceViews(); }
+// ---- 3D depth & flow: fresnel rim (always) + a pulse flowing along the tract core (toggle) ----
+const tractFX = { uTime:{value:0}, uPulse:{value:0}, uPulseSpeed:{value:0.9},
+  uPulseColor:{value:new THREE.Color('#ffffff')}, uRim:{value:0.35}, uRimColor:{value:new THREE.Color('#bfe0ff')} };
+function tractDirT(d){ return new THREE.Vector3(d[0], d[2], -d[1]).normalize(); }   // MNI dir -> three.js axes
+function attachTractFlow(mat){ if(mat.userData.__tfx) return; mat.userData.__tfx=true;
+  mat.onBeforeCompile=sh=>{ Object.assign(sh.uniforms,{uTime:tractFX.uTime,uPulse:tractFX.uPulse,uPulseSpeed:tractFX.uPulseSpeed,uPulseColor:tractFX.uPulseColor,uRim:tractFX.uRim,uRimColor:tractFX.uRimColor});
+    sh.vertexShader = 'attribute float aFlow;\nvarying float vFlow;\nvarying vec3 vNrmW;\nvarying vec3 vPosW;\n' + sh.vertexShader
+      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vFlow=aFlow;')
+      .replace('#include <worldpos_vertex>','#include <worldpos_vertex>\n  vNrmW=normalize(mat3(modelMatrix)*normal);\n  vPosW=(modelMatrix*vec4(transformed,1.0)).xyz;');
+    sh.fragmentShader = 'varying float vFlow;\nvarying vec3 vNrmW;\nvarying vec3 vPosW;\nuniform float uTime;\nuniform float uPulse;\nuniform float uPulseSpeed;\nuniform vec3 uPulseColor;\nuniform float uRim;\nuniform vec3 uRimColor;\n' + sh.fragmentShader
+      .replace('#include <dithering_fragment>',`#include <dithering_fragment>
+        vec3 _V=normalize(cameraPosition - vPosW); float _f=pow(1.0-max(dot(normalize(vNrmW),_V),0.0),3.0);
+        gl_FragColor.rgb += uRimColor*_f*uRim;
+        if(uPulse>0.5){ float _ph=fract(vFlow - uTime*uPulseSpeed); float _p=smoothstep(0.16,0.0,_ph)+smoothstep(0.16,0.0,1.0-_ph); gl_FragColor.rgb=mix(gl_FragColor.rgb,uPulseColor,clamp(_p,0.0,1.0)); }`);
+  };
+  mat.needsUpdate=true;
+}
+// per-vertex coordinate along the tract's principal axis (0..1) -> drives the flow pulse
+function setupTractFX(){ for(const r of tractRecs){ const geo=r.mesh.geometry, pos=geo.attributes.position.array, n=pos.length/3;
+    const dt = r.dir?tractDirT(r.dir):new THREE.Vector3(0,1,0); const proj=new Float32Array(n); let mn=1e9,mx=-1e9;
+    for(let i=0;i<n;i++){ const p=pos[3*i]*dt.x+pos[3*i+1]*dt.y+pos[3*i+2]*dt.z; proj[i]=p; if(p<mn)mn=p; if(p>mx)mx=p; }
+    const sp=(mx-mn)||1; for(let i=0;i<n;i++) proj[i]=(proj[i]-mn)/sp;
+    geo.setAttribute('aFlow', new THREE.BufferAttribute(proj,1)); attachTractFlow(r.mesh.material); }
+  requestRender(); }
+// cut the cortex away above the axial slice level so tracts are exposed (tracts themselves never clipped)
+let tractClipOn=false; const tractClipPlane=new THREE.Plane(new THREE.Vector3(0,-1,0),0);
+function updateTractClip(){ const on = !!($('tractClip') && $('tractClip').checked && tractRecs.length);
+  tractClipPlane.constant = sliceMM[2];               // axial cut level (three.js Y = MNI Z)
+  if(on) renderer.localClippingEnabled=true;
+  const changed = on!==tractClipOn; tractClipOn=on;
+  meshes.forEach(o=>{ const m=o.mesh.material; m.clippingPlanes = on?[tractClipPlane]:null; if(changed) m.needsUpdate=true; });
+  requestRender(); }
 // ---- tract MASK (dilated point cloud on the MNI grid) -> spotlight + "% activation on tract" ----
 let tractMaskVol=null;
 function invalidateTractMask(){ tractMaskVol=null; }
@@ -1425,6 +1461,9 @@ $('tractSlabMM').addEventListener('input',e=>{ $('tractSlabMMV').textContent=e.t
 $('tractSpotlight').addEventListener('change',()=>{ updateTractReadout(); refreshSliceViews(); });
 $('tractMaskR').addEventListener('input',e=>{ $('tractMaskRV').textContent=e.target.value; });
 $('tractMaskR').addEventListener('change',()=>{ invalidateTractMask(); updateTractReadout(); refreshSliceViews(); });
+$('tractGlass').addEventListener('change',applyCortexFade);
+$('tractFlow').addEventListener('change',e=>{ tractFX.uPulse.value=e.target.checked?1:0; requestRender(); });
+$('tractClip').addEventListener('change',updateTractClip);
 $('tractExplode').addEventListener('change',()=>setExplode(explodeAmt));
 $('tractAll').addEventListener('click',()=>setTractVis(()=>true));
 $('tractNone').addEventListener('click',()=>setTractVis(()=>false));
@@ -2710,7 +2749,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('meshBorderColor').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
-  ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); }));
+  ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); if(n===2) updateTractClip(); }));
   $('ulLoad').addEventListener('click', ()=>$('ulFile').click());
   $('ulFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
     rd.onload=()=>{ try{ const buf=rd.result; let b=buf; if(/\.gz$/i.test(f.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
@@ -2959,8 +2998,9 @@ function tick(){
   const dt=clock.getDelta();
   const spinOn = $('spin').checked && !controls.autoRotate;
   const pulseOn = connUniforms.uPulse.value>0.5;
+  const flowOn = tractFX.uPulse.value>0.5;
   // ongoing animations must keep rendering every frame
-  const continuous = playing || spinOn || controls.autoRotate || pulseOn;
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
@@ -2968,6 +3008,7 @@ function tick(){
   }
   if(spinOn){ group.rotation.y += dt*0.12; }
   if(pulseOn){ connUniforms.uTime.value += dt; }
+  if(flowOn){ tractFX.uTime.value += dt; }
   if(continuous) renderRequested=true;
   controls.update();   // cheap; emits 'change' -> requestRender while damping/auto-rotating
   if(renderRequested){
