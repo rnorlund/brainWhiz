@@ -355,6 +355,8 @@
       <input type="range" id="patScale" min="0.01" max="2.5" step="0.01" value="0.08"></div>
     <div class="ctl"><div class="lab"><span>Pattern strength</span><span id="patStrVal"></span></div>
       <input type="range" id="patStr" min="0" max="1" step="0.02" value="0.55"></div>
+    <div class="ctl"><div class="lab"><span title="Rotate the pattern — e.g. tilt the hatch / stripe angle">Pattern tilt</span><span id="patTiltV">0°</span></div>
+      <input type="range" id="patTilt" min="0" max="180" step="1" value="0"></div>
     <div class="ctl"><div class="lab"><span>Vividness</span><span id="vividVal"></span></div>
       <input type="range" id="vivid" min="1" max="2.5" step="0.05" value="1.3"></div>
     <div class="ctl"><div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
@@ -767,7 +769,7 @@ function applyScheme(scheme){
 
 // ---------- shared shader FX (patterns + vividness + rim glow) ----------
 const patternUniforms = {
-  uPattern:{value:0}, uScale:{value:0.08}, uContrast:{value:0.55}, uPatMode:{value:0},
+  uPattern:{value:0}, uScale:{value:0.08}, uContrast:{value:0.55}, uPatMode:{value:0}, uPatAngle:{value:0},
   uVivid:{value:1.3}, uRim:{value:0.3}, uRimColor:{value:new THREE.Color('#ffffff')},
   uWire:{value:0}, uWireWidth:{value:1.0}, uWireFill:{value:0}
 };
@@ -777,6 +779,7 @@ const COLOR_GLSL = `
     diffuseColor.rgb = clamp(mix(vec3(_l), diffuseColor.rgb, uVivid), 0.0, 1.0); }
   if(uPattern>0){
     vec3 q = vPatPos * uScale;
+    { float _ca=cos(uPatAngle), _sa=sin(uPatAngle); q.xy = mat2(_ca,-_sa,_sa,_ca)*q.xy; }   // tilt the pattern
     float on = 1.0;
     if(uPattern==1){ on = 1.0 - mod(floor(q.x)+floor(q.y)+floor(q.z),2.0); }
     else if(uPattern==2){ on = 1.0 - step(0.5, fract(q.x)); }
@@ -807,7 +810,7 @@ function attachFX(mat){
     for(const k of Object.keys(patternUniforms)) shader.uniforms[k]=patternUniforms[k];
     shader.vertexShader = 'varying vec3 vPatPos;\nattribute vec3 barycentric;\nvarying vec3 vBary;\n' + shader.vertexShader
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPatPos = position;\n  vBary = barycentric;');
-    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\n'
+    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\n'
       + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + COLOR_GLSL);
     if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + '\n#include <opaque_fragment>');
     shader.fragmentShader = f;
@@ -1112,6 +1115,7 @@ patternUniforms.uWireWidth.value=+$('wireWidth').value; $('wireWVal').textConten
 $('patMode').addEventListener('change', e=>{ patternUniforms.uPatMode.value=+e.target.value; setOpacities(); });
 $('patScale').addEventListener('input', e=>{ patternUniforms.uScale.value=+e.target.value; $('patScaleVal').textContent=(+e.target.value).toFixed(3); });
 $('patStr').addEventListener('input', e=>{ patternUniforms.uContrast.value=1-(+e.target.value); $('patStrVal').textContent=(+e.target.value).toFixed(2); });
+$('patTilt').addEventListener('input', e=>{ patternUniforms.uPatAngle.value=(+e.target.value)*Math.PI/180; $('patTiltV').textContent=e.target.value+'°'; requestRender(); });
 patternUniforms.uContrast.value = 1 - (+$('patStr').value);
 $('patScaleVal').textContent=(+$('patScale').value).toFixed(3);
 $('patStrVal').textContent=(+$('patStr').value).toFixed(2);
@@ -1696,7 +1700,7 @@ function initAtlasPicker(){
 // ================= SETTINGS PRESETS =================
 // Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
 // to a different overlay map. Excludes the data source itself (task/file/region).
-const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr',
+const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
