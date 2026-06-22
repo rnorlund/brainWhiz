@@ -1309,6 +1309,7 @@ async function loadTracts(id){
   window.ATLAS_LABELS=sL; window.ATLAS_GLB_B64=sG; window.ATLAS_SAMPLES=sS;        // restore active atlas globals
   if(!ok||!tGLB){ alert('Could not load tract atlas "'+id+'".'); return; }
   const tMeta=tLabels||[], byNodeT=new Map(tMeta.map(m=>[m.node,m]));
+  await new Promise(resolve=>{
   loader.parse(b64ToBuf(tGLB), '', gltf=>{ let i=0;
     gltf.scene.traverse(o=>{ if(!o.isMesh) return;
       const meta=byNodeT.get(o.name)||tMeta[i]||{node:o.name,name:o.name,abbr:o.name,id:i+1};
@@ -1324,8 +1325,9 @@ async function loadTracts(id){
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); rebuildBridges(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
-  }, err=>alert('Tract mesh parse failed: '+err));
+    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); rebuildBridges(); setExplode(explodeAmt); refreshSliceViews(); requestRender(); resolve();
+  }, err=>{ alert('Tract mesh parse failed: '+err); resolve(); });
+  });
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
   tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; $('tractCount').textContent=''; $('tractReadout').textContent='';
@@ -1439,6 +1441,37 @@ function drawBridge3D(aMNI, r, bMNI, color){ const A=mniToTjs(aMNI), B=mniToTjs(
   tube.renderOrder=3; bridgeGroup.add(tube);
   [A,B].forEach(P=>{ const s=new THREE.Mesh(new THREE.SphereGeometry(3.2,16,12), new THREE.MeshStandardMaterial({color:'#ffffff', emissive:0x444444, roughness:0.5}));
     s.position.copy(P); s.renderOrder=3; bridgeGroup.add(s); }); }
+// ---- LANGUAGE DEMO: Broca + Wernicke active, Arcuate Fasciculus highlighted between them ----
+const DEMO_FOCI={ broca:[-48,18,18], wernicke:[-50,-46,16] };
+function makeDemoOverlay(){ const mni=ensureMNI(); if(!mni) return false;
+  const [nx,ny,nz]=mni.dim, nxy=nx*ny, out=new Float32Array(nx*ny*nz), foci=[DEMO_FOCI.broca,DEMO_FOCI.wernicke], s2=2*11*11;
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){ const w=mni.worldOf(i,j,k); let v=0;
+    for(const f of foci){ const dx=w[0]-f[0],dy=w[1]-f[1],dz=w[2]-f[2]; v+=8*Math.exp(-(dx*dx+dy*dy+dz*dz)/s2); }
+    if(v>0.05) out[i+j*nx+k*nxy]=v; }
+  const vol=makeVol(out, mni.dim.slice(), mni.M.slice(), mni.T.slice());
+  const vals={}; for(const o2 of meshes){ const pts=SAMPLES[o2.meta.id]; if(!pts){ vals[o2.meta.id]=NaN; continue; }
+    let s=0,n=0; for(let p=0;p<pts.length;p+=3){ const vv=vol.sampleMM(pts[p],pts[p+1],pts[p+2]); if(vv!=null&&isFinite(vv)){ s+=vv; n++; } } vals[o2.meta.id]=n?s/n:NaN; }
+  if(selOv<0) ovAdd('file'); const o=overlays[selOv];
+  o.kind='file'; o.term=''; o.fileName='broca_wernicke.nii'; o.name='Broca + Wernicke'; o.vals=vals; o.vol=vol; o.volGrid=vol; o.volStats=null; o.tfceCache=null; o.raw=null; o.visible=true;
+  o.s.style='cmap'; o.s.cmap='hot'; o.s.cthresh='0.3'; o.s.cthreshMode='frac'; o.s.opacity='1'; o.s.vivid='1';
+  overlay.on=true; overlay.vals=vals; overlay.name=o.name; overlay.volA=vol; overlay.volA_grid=vol;
+  ovApplySettings(o); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews(); return true;
+}
+async function languageDemo(){ const btn=$('tractDemo'); if(btn){ btn.disabled=true; btn.textContent='Loading…'; }
+  try{
+    if(tractAtlasId!=='xtract'){ $('tractAtlas').value='xtract'; await loadTracts('xtract'); }
+    setTractVis(r=> r.meta.id===2 || r.meta.id===3);                 // Arcuate Fasciculus L (+R)
+    $('tractColorMode').value='orientation'; applyTractColorMode();
+    $('tractRenderMode').value='outline'; $('tractSlabMM').value='8'; $('tractSlabMMV').textContent='8';
+    $('tractFlow').checked=true; tractFX.uPulse.value=1; $('tractSpotlight').checked=true;
+    makeDemoOverlay();                                                // Broca + Wernicke blobs (colors the active regions)
+    $('glass').checked=true; setOpacities();                         // selective glass: fade only NON-active cortex so the AF shows through
+    $('tractBridge').checked=true; rebuildBridges();                  // ribbon: AF between the two foci
+    setViewMode('mesh');
+    const lv=document.querySelector('.vbtn[data-v="left"]'); if(lv) lv.click();
+    requestRender(); refreshSliceViews();
+  } finally { if(btn){ btn.disabled=false; btn.textContent='🗣 Language demo (Broca–Wernicke–Arcuate)'; } }
+}
 // ---- tract MASK (dilated point cloud on the MNI grid) -> spotlight + "% activation on tract" ----
 let tractMaskVol=null;
 function invalidateTractMask(){ tractMaskVol=null; }
@@ -1507,6 +1540,7 @@ function drawTracts(ctx, plane, toX, toY, fixedMNI){
 }
 $('tractLoad').addEventListener('click',()=>loadTracts($('tractAtlas').value));
 $('tractClear').addEventListener('click',clearTracts);
+$('tractDemo').addEventListener('click',languageDemo);
 $('cortexFade').addEventListener('input',e=>{ $('cortexFadeV').textContent=(+e.target.value).toFixed(2); applyCortexFade(); });
 $('tractOp').addEventListener('input',()=>{ setTractOpacity(); refreshSliceViews(); });
 $('tractSmooth').addEventListener('input',e=>{ $('tractSmoothV').textContent=e.target.value; });
