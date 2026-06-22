@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" type="image/png" href="favicon.png?v=2">
-<link rel="apple-touch-icon" href="favicon.png?v=2">
+<link rel="icon" type="image/png" href="favicon.png?v=3">
+<link rel="apple-touch-icon" href="favicon.png?v=3">
 <title>brainWhiz</title>
 <style>
   :root{
@@ -373,6 +373,23 @@
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🧬 Connectivity</summary><div class="accb">
+    <div style="border-bottom:1px solid var(--line);margin-bottom:8px;padding-bottom:8px">
+      <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">🧵 WM tracts</label>
+        <select id="tractAtlas" class="tbsel" style="font-size:11px" title="Tract atlas to load"><option value="xtract">XTRACT (42)</option><option value="catani">Catani (27)</option></select>
+        <button class="sm" id="tractLoad" title="Load this atlas's tract meshes as an overlay">Load</button>
+        <button class="sm" id="tractClear" title="Remove all loaded tracts">✕</button></div>
+      <div class="row" style="margin:4px 0"><button class="sm" id="tractDemo" title="Language-network demo: Broca + Wernicke active with the Arcuate Fasciculus highlighted between them" style="width:100%">🗣 Language demo (Broca–Wernicke–Arcuate)</button></div>
+      <div class="ctl"><div class="lab"><span title="Fade the cortical/region meshes so the deep tracts show through in 3D">Fade cortex (3D)</span><span id="cortexFadeV">0.75</span></div>
+        <input type="range" id="cortexFade" min="0" max="1" step="0.05" value="0.75"></div>
+      <div class="ctl"><div class="lab"><span title="Tract opacity — 3D meshes and 2D cross-section fill">Tract opacity</span><span id="tractOpV">0.85</span></div>
+        <input type="range" id="tractOp" min="0.1" max="1" step="0.05" value="0.85"></div>
+      <div class="ctl"><div class="lab"><span title="Smooth the chunky tract hull meshes (Taubin) — same as ROI mesh smoothing">Tract smoothing</span><span id="tractSmoothV">4</span></div>
+        <input type="range" id="tractSmooth" min="0" max="12" step="1" value="4"></div>
+      <div class="row"><label class="toggle"><input type="checkbox" id="tractExplode" checked> explode tracts with brain</label></div>
+      <div class="row" style="justify-content:space-between"><span id="tractCount" style="font-size:11px;opacity:.7"></span>
+        <span><button class="sm" id="tractAll" title="Show all loaded tracts">All</button><button class="sm" id="tractNone" title="Hide all tracts">None</button><button class="sm" id="tractInv" title="Invert visibility">Inv</button></span></div>
+      <div id="tractList" style="max-height:170px;overflow:auto;font-size:11px"></div>
+    </div>
     <div class="row"><label class="toggle"><input type="checkbox" id="connOn"> show connectivity</label></div>
     <div class="row"><label>Modality</label><select id="connType"></select></div>
     <div class="ctl"><div class="lab"><span>Min strength</span><span id="connThVal">40</span></div>
@@ -388,17 +405,6 @@
       <input type="color" id="connPulseColor" value="#ffffff" title="pulse color"></div>
     <div class="ctl"><div class="lab"><span>Pulse speed</span><span id="connPulseVal">0.8</span></div>
       <input type="range" id="connPulseSpeed" min="0.1" max="3" step="0.1" value="0.8"></div>
-    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
-      <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">🧵 WM tracts</label>
-        <select id="tractAtlas" class="tbsel" style="font-size:11px" title="Tract atlas to load"><option value="xtract">XTRACT (42)</option><option value="catani">Catani (27)</option></select>
-        <button class="sm" id="tractLoad" title="Load this atlas's tract meshes as an overlay">Load</button>
-        <button class="sm" id="tractClear" title="Remove all loaded tracts">✕</button></div>
-      <div class="ctl"><div class="lab"><span title="Fade the cortical/region meshes so the deep tracts show through in 3D">Fade cortex (3D)</span><span id="cortexFadeV">0.75</span></div>
-        <input type="range" id="cortexFade" min="0" max="1" step="0.05" value="0.75"></div>
-      <div class="ctl"><div class="lab"><span title="Tract fill opacity on the slice/mosaic cross-sections">Tract opacity</span><span id="tractOpV">0.8</span></div>
-        <input type="range" id="tractOp" min="0.1" max="1" step="0.05" value="0.8"></div>
-      <div id="tractList" style="max-height:170px;overflow:auto;font-size:11px"></div>
-    </div>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
@@ -855,6 +861,11 @@ function setExplode(v){
   for(const o of meshes){
     o.mesh.position.copy(o.base).multiplyScalar(off);
   }
+  // tracts follow the same explosion field (like connectivity edges) so they don't get left behind
+  if(typeof tractRecs!=='undefined' && tractRecs.length){
+    const te = $('tractExplode') && $('tractExplode').checked;
+    for(const tr of tractRecs){ if(te) tr.mesh.position.copy(tr.base).multiplyScalar(off); else tr.mesh.position.set(0,0,0); }
+  }
   $('expVal').textContent = Math.round(v*100) + '%';
   $('explode').value = v;
   updateConnTransforms();
@@ -1284,21 +1295,33 @@ async function loadTracts(id){
     gltf.scene.traverse(o=>{ if(!o.isMesh) return;
       const meta=byNodeT.get(o.name)||tMeta[i]||{node:o.name,name:o.name,abbr:o.name,id:i+1};
       let g=o.geometry; if(g.index) g=g.toNonIndexed(); if(!g.attributes.normal) g.computeVertexNormals(); o.geometry=g;
-      const col=TRACT_PAL[i%TRACT_PAL.length];
-      o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.5, metalness:0.0, transparent:true, opacity:0.95});
+      g.computeBoundingBox();
+      const col=TRACT_PAL[i%TRACT_PAL.length], op0=+$('tractOp').value;
+      o.material=new THREE.MeshStandardMaterial({color:col, roughness:0.5, metalness:0.0, transparent:true, opacity:op0});
       o.renderOrder=2;
-      tractRecs.push({mesh:o, meta, color:col, visible:true}); o.userData.meta=meta; i++; });
+      const base=new THREE.Vector3(); g.boundingBox.getCenter(base);   // centroid -> explosion direction
+      tractRecs.push({mesh:o, meta, color:col, visible:true, base,
+        origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
+      o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; buildTractList(); applyCortexFade(); refreshSliceViews(); requestRender();
+    tractAtlasId=id; applyTractSmooth(); buildTractList(); applyCortexFade(); setExplode(explodeAmt); refreshSliceViews(); requestRender();
   }, err=>alert('Tract mesh parse failed: '+err));
 }
 function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
   tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; restoreCortex(); refreshSliceViews(); requestRender(); }
 function buildTractList(){ const L=$('tractList'); L.innerHTML='';
+  const nv=tractRecs.filter(r=>r.visible).length;
+  $('tractCount').textContent = tractRecs.length ? `${nv}/${tractRecs.length} shown` : '';
   tractRecs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
     d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="ovdot" style="background:${r.color};width:11px;height:11px;border-radius:3px;flex:none"></span><span class="nm" style="flex:1" title="${r.meta.name}">${r.meta.name}</span>`;
-    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; refreshSliceViews(); requestRender(); });
+    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; refreshSliceViews(); requestRender(); });
     L.appendChild(d); }); }
+// one slider drives both 3D mesh opacity and 2D cross-section fill alpha
+function setTractOpacity(){ const op=+$('tractOp').value; $('tractOpV').textContent=op.toFixed(2);
+  for(const r of tractRecs){ r.mesh.material.opacity=op; r.mesh.material.transparent=(op<1); r.mesh.material.needsUpdate=true; } requestRender(); }
+// Taubin-smooth the chunky tract hulls (reuses the ROI mesh smoother); recompute bbox for cross-sections
+function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } refreshSliceViews(); requestRender(); }
+function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); refreshSliceViews(); requestRender(); }
 function applyCortexFade(){ const f=+$('cortexFade').value; if(!tractRecs.length){ restoreCortex(); return; }
   meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=Math.max(0.04, 1-f); m.depthWrite=(f<0.5); }); requestRender(); }
 function restoreCortex(){ if(typeof setOpacities==='function') setOpacities(); }
@@ -1320,7 +1343,13 @@ function drawTracts(ctx, plane, toX, toY, fixedMNI){
 $('tractLoad').addEventListener('click',()=>loadTracts($('tractAtlas').value));
 $('tractClear').addEventListener('click',clearTracts);
 $('cortexFade').addEventListener('input',e=>{ $('cortexFadeV').textContent=(+e.target.value).toFixed(2); applyCortexFade(); });
-$('tractOp').addEventListener('input',e=>{ $('tractOpV').textContent=(+e.target.value).toFixed(2); refreshSliceViews(); });
+$('tractOp').addEventListener('input',()=>{ setTractOpacity(); refreshSliceViews(); });
+$('tractSmooth').addEventListener('input',e=>{ $('tractSmoothV').textContent=e.target.value; });
+$('tractSmooth').addEventListener('change',applyTractSmooth);
+$('tractExplode').addEventListener('change',()=>setExplode(explodeAmt));
+$('tractAll').addEventListener('click',()=>setTractVis(()=>true));
+$('tractNone').addEventListener('click',()=>setTractVis(()=>false));
+$('tractInv').addEventListener('click',()=>setTractVis(r=>!r.visible));
 const axisLineGroup = new THREE.Group(); group.add(axisLineGroup);
 const axisLetterGroup = new THREE.Group(); group.add(axisLetterGroup);
 function makeTextSprite(txt, col){
