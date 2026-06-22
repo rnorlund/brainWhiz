@@ -1,11 +1,27 @@
 brainWhiz
-Copyright (c) 2026 Roger Newman-Norlund
+Copyright (c) 2026 Roger Newman-Norlund. All rights reserved except as
+expressly granted herein.
 
 This work is licensed under the Creative Commons Attribution-NonCommercial 4.0
 International License (CC BY-NC 4.0). To view a copy of this license, visit
 https://creativecommons.org/licenses/by-nc/4.0/
 
-The full legal code follows.
+ADDITIONAL TERMS (see NOTICE.md, which reinforces but does not contradict this
+license):
+  * NONCOMMERCIAL ONLY. Any commercial use -- including in or to build a product,
+    a paid / hosted / SaaS / ad-supported service, or a consulting deliverable --
+    requires a SEPARATE WRITTEN COMMERCIAL LICENSE from the copyright holder
+    (rnorlund@mailbox.sc.edu).
+  * ATTRIBUTION REQUIRED; copyright, attribution, and license notices must be kept
+    intact, and the origin of the work must not be misrepresented.
+  * NO SUBLICENSING, RESALE, OR RELICENSING of the software or substantial parts.
+  * Bundled atlases / NeuroQuery / connectivity are THIRD-PARTY data under their
+    OWN terms, included for noncommercial research use only -- cite the sources.
+  * PROVIDED "AS IS", NO WARRANTY; not a medical device; not for clinical use.
+  * Use outside these terms automatically terminates the license and may infringe
+    rights the copyright holder reserves the right to enforce.
+
+The full CC BY-NC 4.0 legal code follows.
 
 Attribution-NonCommercial 4.0 International
 

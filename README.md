@@ -250,15 +250,21 @@ issues a DOI. Add that DOI to `CITATION.cff` (`doi:` field) and the badge here o
 
 ## License
 
-© 2026 Roger Newman-Norlund. **Noncommercial use only** — licensed under
-[Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](LICENSE).
-Free for research, education, personal, and other noncommercial purposes (including academic
-papers and figures), with attribution. Commercial use is **not** permitted under this license —
-contact the author for commercial licensing.
+© 2026 Roger Newman-Norlund. **All rights reserved except as granted.** **Noncommercial use
+only** — licensed under [Creative Commons Attribution-NonCommercial 4.0 International
+(CC BY-NC 4.0)](LICENSE), reinforced by the explicit terms in [`NOTICE.md`](NOTICE.md).
 
-Note that the bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are
-third-party data with their own terms; they are included here for noncommercial research use —
-cite the original sources in any publication.
+Free for research, education, personal, and other noncommercial purposes (incl. academic papers
+and figures), **with attribution** and notices kept intact. **Not permitted without a separate
+written commercial license:** any commercial use — in/for a product, a paid or hosted/SaaS or
+ad-supported service, or a consulting deliverable — plus sublicensing, resale, relicensing, or
+stripping notices. For commercial licensing, contact **Roger Newman-Norlund
+(rnorlund@mailbox.sc.edu)**.
+
+The bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are **third-party
+data under their own terms**, included for noncommercial research use only — comply with and
+cite the original sources. Provided **"as is", no warranty**; not a medical device; not for
+clinical use.
 
 ## Notes & credits
 
