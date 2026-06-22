@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" type="image/png" href="favicon.png">
-<link rel="apple-touch-icon" href="favicon.png">
+<link rel="icon" type="image/png" href="favicon.png?v=2">
+<link rel="apple-touch-icon" href="favicon.png?v=2">
 <title>brainWhiz</title>
 <style>
   :root{
@@ -536,8 +536,8 @@
     <button class="sm" id="pb6view" title="fill a 2×3 grid with 6 standard views of the current brain">⊞ 6-view</button>
     <button class="sm" id="pbSaveBwz" title="Save a lightweight .bwz recipe (references .nii files by name)">💾 .bwz</button>
     <button class="sm" id="pbLoadBwz" title="Open a .bwz recipe">📂 .bwz</button>
-    <button class="sm" id="pbSaveProj" title="Save a self-contained Project — embeds the overlay & underlay data + settings + panels + editor, so you can fully recreate/modify this figure later">💾 Project</button>
-    <button class="sm" id="pbLoadProj" title="Open a saved Project file">📂 Project</button>
+    <button class="sm" id="pbSaveProj" title="Save a self-contained Project — embeds the overlay & underlay data + settings + panels + editor, so you can fully recreate/modify this figure later">💾 Save Project</button>
+    <button class="sm" id="pbLoadProj" title="Open a saved Project file (.bwzproj)">📂 Open Project</button>
     <button class="sm" id="pbClear">Clear</button>
     <input type="file" id="pbBwzFile" accept=".bwz,.json" style="display:none">
     <input type="file" id="pbProjFile" accept=".bwzproj,.json" style="display:none">
@@ -1754,15 +1754,21 @@ $('navToggleR').addEventListener('click',()=>{ document.body.classList.toggle('n
 $('navToggle').classList.add('tbon');
 // online / offline indicator (turns reddish when offline — CDN libs may be unavailable)
 function updateNet(){ const b=$('netBadge'), on=navigator.onLine, served=window.__served;
+  b.style.cursor='help';
   if(served){  // vendored libs -> fully functional regardless of network
     b.textContent = on ? '● online' : '● offline · local libs';
     b.classList.toggle('off', !on);   // reddish offline, but app still works
-    b.title = on ? 'online (running on bundled libraries)' : 'offline — running on bundled libraries, fully functional';
+    b.title = (on?'Online':'Offline')+' — status only, not a switch. Libraries are bundled, so brainWhiz works with no internet. Click for details.';
   } else {     // file:// double-click -> depends on the CDN
     b.textContent = on ? '● online' : '● offline';
     b.classList.toggle('off', !on);
-    b.title = on ? 'online — libraries loaded from CDN' : 'offline & opened from a file — CDN libraries unavailable. Serve the folder (e.g. python -m http.server) to run offline.';
+    b.title = (on?'Online':'Offline (opened from a file — CDN libraries unavailable; serve the folder to run offline)')+' — status only, not a switch. Click for details.';
   } }
+$('netBadge').addEventListener('click', ()=>{ const served=window.__served, on=navigator.onLine;
+  alert('Connection status (auto-detected — not a switch you set):\n\n● online = you have internet.\n● offline = no internet.\n\n'+
+    (served
+      ? 'This copy is SERVED, so the 3D/figure libraries are bundled locally — brainWhiz works fully even with no internet. You don’t need to do anything.'
+      : 'This page was opened directly from a file (file://), so libraries load from the internet (CDN). To use it fully offline, serve the folder instead — e.g. run "python -m http.server" in it and open http://localhost:8000.')); });
 window.addEventListener('online',updateNet); window.addEventListener('offline',updateNet); updateNet();
 
 // ================= SCRIPTING API (for headless figure panels) =================
