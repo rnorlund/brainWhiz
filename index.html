@@ -734,6 +734,7 @@ function applyScheme(scheme){
   });
   setOpacities();
   if(window.updateColorbar) updateColorbar();
+  refreshSliceViews();   // region fill colors changed -> update mesh-region slices
 }
 
 // ---------- shared shader FX (patterns + vividness + rim glow) ----------
@@ -1037,7 +1038,7 @@ function smoothMesh(rec, iters){
   for(let i=0;i<nv;i++){ const g=vg[i]; arr[3*i]=P[3*g];arr[3*i+1]=P[3*g+1];arr[3*i+2]=P[3*g+2]; }
   posAttr.needsUpdate=true; rebuildSmoothNormals(rec);
 }
-function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); }
+function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); }
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
