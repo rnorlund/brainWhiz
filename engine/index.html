@@ -264,6 +264,7 @@
   </span>
   <span class="tbsep"></span>
   <button id="snap" class="tbtn">📷 PNG</button>
+  <button id="recBtn" class="tbtn" title="Record the 3D viewport to a video (toolbars excluded). Click to start, click again to stop &amp; save .webm">⏺ Record</button>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
   <button id="feToggle" class="tbtn" title="Figure editor — arrange panels, add text / arrows / lines, export">📐 Editor</button>
   <span class="tbsep"></span>
@@ -1072,12 +1073,22 @@ $('zoomSpeed').addEventListener('input', e=>$('zoomSpdV').textContent=(+e.target
 // Mouse wheel drives the SAME setCamDistance() path as the slider/buttons, so the
 // feel is consistent. OrbitControls' own zoom is disabled to avoid a second path.
 controls.enableZoom = false;
+const _flyFwd=new THREE.Vector3();
 renderer.domElement.addEventListener('wheel', (e)=>{
   e.preventDefault();
   const sens = +$('zoomSpeed').value;                 // "Mouse zoom" slider
   const factor = Math.exp(e.deltaY * 0.001 * sens);   // >1 zoom out, <1 zoom in
-  const lo = modelRadius*0.4, hi = modelRadius*30;
-  setCamDistance(Math.max(lo, Math.min(hi, camDistance()*factor)));
+  const near = modelRadius*0.03, hi = modelRadius*30; // near = how close before we start flying THROUGH
+  const want = camDistance()*factor;
+  if(factor<1 && want<near){
+    // keep zooming IN past the center: hold a small standoff and push the orbit target
+    // forward along the view direction so the camera flies through the brain interior.
+    _flyFwd.subVectors(controls.target, camera.position).normalize();
+    controls.target.addScaledVector(_flyFwd, (near-want));
+    setCamDistance(near);
+  } else {
+    setCamDistance(Math.min(hi, want));               // normal dolly (no lower clamp -> can reach the interior)
+  }
 }, {passive:false});
 // keep both sliders in sync while wheel-zooming / buttons (unless being dragged)
 controls.addEventListener('change', ()=>{ const n=distToNorm(camDistance());
@@ -1557,6 +1568,34 @@ document.addEventListener('click', e=>{ const vm=$('viewMenu');
   if(vm && vm.classList.contains('on') && !vm.contains(e.target) && e.target!==$('viewMenuBtn')) vm.classList.remove('on'); });
 $('snap').onclick = ()=>{ const a=document.createElement('a');
   a.download='jhu_brain.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); };
+
+// ---- viewport video recording (just the WebGL canvas — no toolbars) ----
+let _recording=false, _mediaRec=null, _recChunks=[], _recStart=0, _recTimer=null;
+function _pickRecMime(){ const c=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'];
+  for(const m of c){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } return ''; }
+function startRecording(){
+  if(_recording) return;
+  if(!renderer.domElement.captureStream || !window.MediaRecorder){ alert('Video recording is not supported in this browser. Try Chrome.'); return; }
+  const stream = renderer.domElement.captureStream(60);   // capture only the 3D canvas
+  const mime=_pickRecMime();
+  try{ _mediaRec=new MediaRecorder(stream, mime?{mimeType:mime, videoBitsPerSecond:12_000_000}:undefined); }
+  catch(e){ alert('Could not start recorder: '+e.message); return; }
+  _recChunks=[];
+  _mediaRec.ondataavailable=e=>{ if(e.data && e.data.size) _recChunks.push(e.data); };
+  _mediaRec.onstop=()=>{ const blob=new Blob(_recChunks, {type:(_mediaRec.mimeType||'video/webm').split(';')[0]});
+    const ext=blob.type.includes('mp4')?'mp4':'webm';
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='brainwhiz_'+ATLAS_ID+'.'+ext; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000); };
+  _recording=true; renderRequested=true;          // keep the canvas painting every frame while recording
+  _mediaRec.start(250);
+  _recStart=performance.now();
+  const b=$('recBtn'); b.textContent='⏹ Stop'; b.classList.add('recauto'); b.style.color='#ff5b5b';
+  _recTimer=setInterval(()=>{ const s=Math.floor((performance.now()-_recStart)/1000); $('recBtn').textContent='⏹ Stop '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }, 500);
+}
+function stopRecording(){ if(!_recording) return; _recording=false;
+  try{ _mediaRec.stop(); }catch(e){} clearInterval(_recTimer);
+  const b=$('recBtn'); b.textContent='⏺ Record'; b.classList.remove('recauto'); b.style.color=''; }
+$('recBtn').addEventListener('click', ()=> _recording ? stopRecording() : startRecording());
 
 // color scheme
 $('scheme').addEventListener('change', e=>{
@@ -3699,7 +3738,7 @@ function tick(){
   if(projSpinOn){ _projT+=dt; PROJ_UN.uTime.value=_projT; }
   const projVidOn = projOnNow && projVideo && !projVideo.paused;
   // ongoing animations must keep rendering every frame
-  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim || projSpinOn || projVidOn;
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim || projSpinOn || projVidOn || _recording;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
