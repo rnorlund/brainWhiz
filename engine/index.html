@@ -488,7 +488,14 @@
         <input type="range" id="arcThick" min="0.4" max="6" step="0.1" value="1.6"></div>
       <div class="ctl"><div class="lab"><span title="How far the arc bows away from the brain">Arc height</span><span id="arcHeightV">35</span></div>
         <input type="range" id="arcHeight" min="0" max="100" step="1" value="35"></div>
-      <div class="row"><label>Arc color</label><input type="color" id="arcColor" value="#ffd60a"></div>
+      <div class="row"><label title="Shape at the SOURCE end">Start cap</label>
+        <select id="arcStartCap" style="font-size:11px"><option value="none">None</option><option value="dot">Dot</option><option value="arrow">Arrow</option></select>
+        <label title="Shape at the TARGET end" style="margin-left:4px">End</label>
+        <select id="arcEndCap" style="font-size:11px"><option value="arrow">Arrow</option><option value="dot">Dot</option><option value="none">None</option></select></div>
+      <div class="ctl"><div class="lab"><span title="Size of the start/end cap shapes">Cap size</span><span id="arcCapSizeV">9</span></div>
+        <input type="range" id="arcCapSize" min="3" max="22" step="0.5" value="9"></div>
+      <div class="row"><label>Arc color</label><input type="color" id="arcColor" value="#ffd60a">
+        <span style="flex:1"></span><span style="font-size:10px;opacity:.6">click an arc to label it</span></div>
       <div id="arcList" style="max-height:150px;overflow:auto;font-size:11px"></div>
     </div></details>
   </div></details>
@@ -508,6 +515,7 @@
       <select id="projMode"><option value="wrap">Wrap around</option><option value="projector">Projector (from view)</option><option value="decal">Decal stamps</option></select></div>
     <div class="row" id="projBlendRow"><label title="Blend over the region colors, or replace the surface entirely">Blend</label>
       <select id="projBlend"><option value="over">Blend over</option><option value="replace">Replace surface</option></select></div>
+    <div class="row" id="projRegionRow"><label class="toggle" title="Project only onto the regions currently visible (toggle regions in the Regions tab) instead of the whole brain"><input type="checkbox" id="projRegionsOnly"> only visible regions</label></div>
     <div class="ctl"><div class="lab"><span>Opacity</span><span id="projOpV">0.85</span></div>
       <input type="range" id="projOp" min="0" max="1" step="0.05" value="0.85"></div>
     <div class="ctl"><div class="lab"><span title="Zoom of the projected media">Scale</span><span id="projScaleV">1.0</span></div>
@@ -1223,9 +1231,10 @@ function smoothMesh(rec, iters){
 function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); if(typeof refreshGlassShellGeo==='function') refreshGlassShellGeo(); }
 // ---------- whole-brain glass shell (context "underlay", independent of which regions are toggled on) ----------
 let glassShell=null, glassShellGeo=null;
-function mergeAllRegions(){ let total=0; for(const o of meshes) total+=o.mesh.geometry.attributes.position.count;
+function mergeAllRegions(filter){ const list=meshes.filter(filter||(()=>true)); if(!list.length) list.push(...meshes);
+  let total=0; for(const o of list) total+=o.mesh.geometry.attributes.position.count;
   const pos=new Float32Array(total*3), nrm=new Float32Array(total*3); let off=0;
-  for(const o of meshes){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
+  for(const o of list){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
     pos.set(p,off); if(n) nrm.set(n,off); off+=p.length; }
   const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3)); return geo; }
 function disposeGlassShell(){ if(!glassShell) return; group.remove(glassShell); glassShell.material.dispose(); if(glassShellGeo) glassShellGeo.dispose(); glassShell=null; glassShellGeo=null; }
@@ -1280,8 +1289,10 @@ function ensureProjLayer(){ if(projLayer || !meshes.length) return;
         float op = uReplace>0.5 ? 1.0 : uOpacity;
         gl_FragColor=vec4(c.rgb, c.a*op); }`
   });
-  projLayer=new THREE.Mesh(mergeAllRegions(), mat); projLayer.renderOrder=2; group.add(projLayer);
+  projLayer=new THREE.Mesh(mergeAllRegions(projFilter()), mat); projLayer.renderOrder=2; group.add(projLayer);
 }
+function projFilter(){ return ($('projRegionsOnly') && $('projRegionsOnly').checked) ? (o=>o.mesh.visible) : (()=>true); }
+function refreshProjLayerGeo(){ if(!projLayer) return; const old=projLayer.geometry; projLayer.geometry=mergeAllRegions(projFilter()); if(old) old.dispose(); requestRender(); }
 function setDecalsVisible(v){ projDecals.forEach(d=>d.mesh.visible=v); }
 function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').value;
   $('projSpinRow').style.display = mode==='wrap'?'flex':'none';
@@ -1325,6 +1336,7 @@ $('projOffY').addEventListener('input', e=>{ $('projOffYV').textContent=(+e.targ
 $('projRot').addEventListener('input', e=>{ $('projRotV').textContent=e.target.value+'°'; updateProjector(); });
 $('projSpin').addEventListener('input', e=>{ $('projSpinV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
 $('projAim').addEventListener('click', aimProjector);
+$('projRegionsOnly').addEventListener('change', ()=>{ refreshProjLayerGeo(); updateProjector(); });
 $('projImgBtn').addEventListener('click', ()=>$('projImgFile').click());
 $('projVidBtn').addEventListener('click', ()=>$('projVidFile').click());
 $('projCamBtn').addEventListener('click', startWebcam);
@@ -1526,18 +1538,19 @@ function buildList(){
   }
   updateCount();
 }
+function projRegionsActive(){ return typeof projLayer!=='undefined' && projLayer && $('projOn') && $('projOn').checked && $('projRegionsOnly') && $('projRegionsOnly').checked; }
 function setVisible(o,vis,defer){
   o.mesh.visible=vis;
   const cb=document.querySelector(`.roi[data-node="${o.meta.node}"] input[type=checkbox]`);
   if(cb) cb.checked=vis;
-  if(!defer){ updateCount(); if($('connOn').checked) rebuildConn(); }
+  if(!defer){ updateCount(); if($('connOn').checked) rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); }
 }
 function updateCount(){
   const vis=meshes.filter(o=>o.mesh.visible).length;
   $('roiCount').textContent=`${vis}/${meshes.length} regions visible`;
 }
-$('showAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,true,true)); updateCount(); rebuildConn(); };
-$('hideAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,false,true)); updateCount(); rebuildConn(); };
+$('showAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,true,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
+$('hideAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,false,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
 $('search').addEventListener('input',e=>{
   const q=e.target.value.toLowerCase();
   document.querySelectorAll('.roi').forEach(r=>{
@@ -1600,6 +1613,10 @@ renderer.domElement.addEventListener('click',ev=>{
       placeDecalLocal(pL, nW.transformDirection(inv).normalize()); }
     projPick=false; projStatus(projDecals.length+' decal stamp(s).'); return; }
   if(arcPicking){ handleArcPick(hitRec); return; }   // arc-arrow source/target pick mode
+  if(arcGroup.children.length){                       // click an existing arc tube -> label it
+    const ah=ray.intersectObjects(arcGroup.children.filter(c=>c.userData&&c.userData.arcIdx!=null),false);
+    if(ah.length){ editArcLabel(ah[0].object.userData.arcIdx); return; }
+  }
   toggleSelect(hitRec);
 });
 // ===== arced 3D arrows between regions (manual connectivity annotation) =====
@@ -1618,34 +1635,53 @@ function handleArcPick(rec){
 }
 function clearArcs(){ arcs=[]; arcPicking=false; arcSrc=null; rebuildArcs(); buildArcList(); arcStatus(''); }
 function removeArc(k){ arcs.splice(k,1); rebuildArcs(); buildArcList(); }
-function disposeArcGroup(){ while(arcGroup.children.length){ const c=arcGroup.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); } }
+function editArcLabel(idx){ const a=arcs[idx]; if(!a) return; const t=prompt('Arc label (blank to remove):', a.label||''); if(t===null) return; a.label=(t.trim()||null); rebuildArcs(); buildArcList(); }
+function disposeArcGroup(){ while(arcGroup.children.length){ const c=arcGroup.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material&&c.material.map)c.material.map.dispose(); if(c.material)c.material.dispose(); } }
 const _Y=new THREE.Vector3(0,1,0);
+// start/end cap shapes: none | dot (sphere) | arrow (sharp cone, tip exactly at the endpoint)
+function addArcCap(kind, point, outTan, size, thick, mat){ if(kind==='none') return; const t=outTan.clone().normalize();
+  if(kind==='arrow'){ const h=size*1.6, r=Math.max(thick*1.25, size*0.6); const c=new THREE.Mesh(new THREE.ConeGeometry(r,h,28,1), mat);
+    c.quaternion.setFromUnitVectors(_Y, t); c.position.copy(point).addScaledVector(t, -h/2); c.renderOrder=2; arcGroup.add(c); }
+  else if(kind==='dot'){ const s=new THREE.Mesh(new THREE.SphereGeometry(Math.max(thick*1.2,size*0.7),20,16), mat); s.position.copy(point); s.renderOrder=2; arcGroup.add(s); }
+}
+function makeArcLabel(txt){ const fs=44, pad=14, mc=document.createElement('canvas'), mx=mc.getContext('2d');
+  mx.font=`bold ${fs}px system-ui`; const w=Math.ceil(mx.measureText(txt).width)+pad*2, hh=fs+pad*2;
+  mc.width=w; mc.height=hh; const x=mc.getContext('2d'); x.font=`bold ${fs}px system-ui`; x.textAlign='center'; x.textBaseline='middle';
+  x.fillStyle='rgba(14,19,27,0.8)'; x.fillRect(0,0,w,hh); x.lineWidth=6; x.strokeStyle='rgba(0,0,0,0.7)'; x.strokeText(txt,w/2,hh/2); x.fillStyle='#fff'; x.fillText(txt,w/2,hh/2);
+  const tex=new THREE.CanvasTexture(mc); tex.anisotropy=4;
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,depthWrite:false,transparent:true}));
+  s.scale.set((w/hh)*13, 13, 1); s.renderOrder=4; return s;
+}
 function rebuildArcs(){ disposeArcGroup();
-  const thick=+$('arcThick').value, h=+$('arcHeight').value, col=new THREE.Color($('arcColor').value);
-  for(const a of arcs){ const oi=byId.get(a.i), oj=byId.get(a.j); if(!oi||!oj) continue;
+  const thick=+$('arcThick').value, h=+$('arcHeight').value, col=new THREE.Color($('arcColor').value), capSz=+$('arcCapSize').value;
+  const gS=$('arcStartCap').value, gE=$('arcEndCap').value;
+  arcs.forEach((a,k)=>{ const oi=byId.get(a.i), oj=byId.get(a.j); if(!oi||!oj) return;
     const A=roiPos(oi,new THREE.Vector3()), B=roiPos(oj,new THREE.Vector3());
     const M=A.clone().add(B).multiplyScalar(0.5);
     const dir=M.clone().sub(sceneCenter); if(dir.lengthSq()<1e-6) dir.set(0,1,0); dir.normalize();   // away from brain center
     const ctrl=M.clone().addScaledVector(dir, h + 0.25*A.distanceTo(B));
     const curve=new THREE.QuadraticBezierCurve3(A, ctrl, B);
     const mat=new THREE.MeshStandardMaterial({color:col, emissive:col.clone().multiplyScalar(0.25), roughness:0.45, metalness:0});
-    const tube=new THREE.Mesh(new THREE.TubeGeometry(curve, 48, thick, 12, false), mat); tube.renderOrder=2; arcGroup.add(tube);
-    const tan=curve.getTangent(1).normalize(), hc=thick*7;                                            // arrowhead at the target
-    const cone=new THREE.Mesh(new THREE.ConeGeometry(thick*2.6, hc, 16), mat);
-    cone.quaternion.setFromUnitVectors(_Y, tan); cone.position.copy(B).addScaledVector(tan, -hc/2);
-    cone.renderOrder=2; arcGroup.add(cone);
-  }
+    const tube=new THREE.Mesh(new THREE.TubeGeometry(curve, 56, thick, 14, false), mat); tube.renderOrder=2; tube.userData.arcIdx=k; arcGroup.add(tube);
+    addArcCap(a.startCap||gS, A, curve.getTangent(0).negate(), capSz, thick, mat);   // start cap points back out of the source
+    addArcCap(a.endCap||gE,   B, curve.getTangent(1),          capSz, thick, mat);   // end cap (arrowhead) into the target
+    if(a.label){ const sp=makeArcLabel(a.label); sp.position.copy(curve.getPoint(0.5)).addScaledVector(dir, 7); arcGroup.add(sp); }
+  });
   requestRender();
 }
 function buildArcList(){ const L=$('arcList'); if(!L) return; L.innerHTML='';
   arcs.forEach((a,k)=>{ const oi=byId.get(a.i), oj=byId.get(a.j); const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
-    const sn=oi?oi.meta.abbr:a.i, tn=oj?oj.meta.abbr:a.j, full=(oi?oi.meta.name:a.i)+' → '+(oj?oj.meta.name:a.j);
-    d.innerHTML=`<span class="nm" style="flex:1" title="${full}">${sn} → ${tn}</span><span class="ovx" title="remove">✕</span>`;
+    const sn=oi?oi.meta.abbr:a.i, tn=oj?oj.meta.abbr:a.j, lbl=a.label?` · "${a.label}"`:'', full=(oi?oi.meta.name:a.i)+' → '+(oj?oj.meta.name:a.j);
+    d.innerHTML=`<span class="nm" style="flex:1;cursor:pointer" title="${full} — click to label">${sn} → ${tn}${lbl}</span><span class="ovx" title="remove">✕</span>`;
+    d.querySelector('.nm').addEventListener('click',()=>editArcLabel(k));
     d.querySelector('.ovx').addEventListener('click',()=>removeArc(k)); L.appendChild(d); }); }
 $('arcAdd').addEventListener('click', startArcPick);
 $('arcClear').addEventListener('click', clearArcs);
 $('arcThick').addEventListener('input', e=>{ $('arcThickV').textContent=(+e.target.value).toFixed(1); rebuildArcs(); });
 $('arcHeight').addEventListener('input', e=>{ $('arcHeightV').textContent=e.target.value; rebuildArcs(); });
+$('arcCapSize').addEventListener('input', e=>{ $('arcCapSizeV').textContent=(+e.target.value).toFixed(1); rebuildArcs(); });
+$('arcStartCap').addEventListener('change', rebuildArcs);
+$('arcEndCap').addEventListener('change', rebuildArcs);
 $('arcColor').addEventListener('input', rebuildArcs);
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
@@ -1982,7 +2018,7 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
-  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','shellOn','shellColor','shellOp','scheme','singleColor',
+  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
@@ -2572,7 +2608,7 @@ window.brainAPI = {
       spotlight:$('tractSpotlight').checked, bridge:$('tractBridge').checked, glass:$('tractGlass').checked,
       clip:$('tractClip').checked, flow:$('tractFlow').checked, explode:$('tractExplode').checked } : null;
     return { bwz:1, kind:'project', app:'brainWhiz', atlas:ATLAS_ID, viewer:captureViewerCfg(), data, tracts,
-      arcs: arcs.map(a=>({i:a.i,j:a.j})),
+      arcs: arcs.map(a=>({i:a.i,j:a.j,startCap:a.startCap,endCap:a.endCap,label:a.label})),
       grid: pbDims().join('x'), figure: pbFigureSettings(),
       panels: pbItems.map(it=> it?{label:it.label, cfg:it.cfg, dataURL:it.dataURL, cbar:it.cbar}:null),
       editor: feCanvas?feCanvas.toJSON():null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
@@ -2598,7 +2634,7 @@ window.brainAPI = {
       const vis=new Set(t.visible||[]); if(t.visible&&t.visible.length) setTractVis(r=> vis.has(r.meta.id));
       tractFX.uPulse.value = t.flow?1:0; updateTractClip(); rebuildBridges();
     }
-    if(Array.isArray(p.arcs)){ arcs = p.arcs.map(a=>({i:a.i,j:a.j})); rebuildArcs(); buildArcList(); }
+    if(Array.isArray(p.arcs)){ arcs = p.arcs.map(a=>({i:a.i,j:a.j,startCap:a.startCap,endCap:a.endCap,label:a.label})); rebuildArcs(); buildArcList(); }
     if(p.grid){ const [r,c]=p.grid.split('x').map(Number); if(r&&$('pbRows'))$('pbRows').value=r; if(c&&$('pbCols'))$('pbCols').value=c; }
     if(p.figure){ const f=p.figure, set=(id,v)=>{ if(v!=null&&$(id)){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
       set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
