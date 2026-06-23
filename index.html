@@ -669,9 +669,10 @@ if(ENTRY && ENTRY.has && (ENTRY.has.dti || ENTRY.has.rs)) await loadScript(BASE+
 if(ENTRY && ENTRY.has && ENTRY.has.neuro) await loadScript(BASE+'neuro.js');
 await loadScript('bundles/_mni152.js');   // shared MNI152 template for slice-view backgrounds
 
-const META = window.ATLAS_LABELS;
+const META = window.ATLAS_LABELS || [];                 // Engine Edition may ship no atlas data
+const NO_DATA = !window.ATLAS_GLB_B64 || META.length===0;
 const byNode = new Map(META.map(m => [m.node, m]));
-document.title = (ENTRY?ENTRY.name:ATLAS_ID)+' — brainWhiz';
+document.title = (NO_DATA ? 'brainWhiz' : (ENTRY?ENTRY.name:ATLAS_ID)+' — brainWhiz');
 
 // ---------- scene ----------
 const app = document.getElementById('app');
@@ -863,7 +864,54 @@ function b64ToBuf(b64){
 }
 function bufToB64(buf){ const u=new Uint8Array(buf), CH=0x8000; let s=''; for(let i=0;i<u.length;i+=CH) s+=String.fromCharCode.apply(null,u.subarray(i,i+CH)); return btoa(s); }
 const loader = new GLTFLoader();
-loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
+// shared init tail — runs whether or not an atlas was loaded (Engine Edition boots with no data)
+function finishInit(box, sphere){
+  modelRadius = sphere.radius;
+  sceneCenter.copy(sphere.center);
+  camDist = sphere.radius*2.6;
+  camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
+  if(meshes.length){
+    // default to lobe coloring, but if the atlas's names don't map to lobes well
+    // (e.g. Brodmann areas, tract atlases) everything lands in one bucket -> use
+    // a distinct per-ROI scheme instead so regions are actually distinguishable.
+    const lobeCount={}; meshes.forEach(o=>{ lobeCount[o.meta.lobe]=(lobeCount[o.meta.lobe]||0)+1; });
+    const distinctLobes=Object.keys(lobeCount).length;
+    const maxFrac=Math.max(...Object.values(lobeCount))/meshes.length;
+    const defScheme=(distinctLobes<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
+    $('scheme').value=defScheme;
+    applyScheme(defScheme);
+    if(+$('smooth').value>0) applySmoothing();   // default mesh smoothing on for a nicer startup look
+  }
+  buildList();
+  buildAxisLabels(box, sphere.radius);
+  initOverlayUI();
+  refreshSavedSets();
+  refreshPresets();
+  initAtlasPicker();
+  window.__DBG={meshes,scene,camera,renderer,group};
+  view([-1,0,0], camDist);  // DEFAULT: left-hemisphere sagittal view, default framing
+  home.copy(camera.position); homeTarget.copy(controls.target);
+  document.getElementById('loader').style.display='none';
+  if(NO_DATA) showEmptyState();
+  requestRender();   // meshes loaded async — render the initial scene
+  if(window.__brainReady) window.__brainReady();   // signal scripting API
+}
+function showEmptyState(){ if(document.getElementById('emptyState')) return;
+  const d=document.createElement('div'); d.id='emptyState';
+  d.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:5;text-align:center;padding:20px;pointer-events:none';
+  d.innerHTML='<div style="max-width:480px;pointer-events:auto;background:rgba(15,20,28,.78);border:1px solid var(--line,#26303d);border-radius:14px;padding:24px 28px;color:var(--muted,#9fb3c8);font-size:13.5px;line-height:1.55">'
+    +'<div style="font-size:34px;margin-bottom:8px">🧠✨</div>'
+    +'<b style="color:var(--txt,#e1e9f5);font-size:16px">brainWhiz — Engine Edition</b>'
+    +'<div style="margin-top:10px">No atlas is bundled in this edition. To begin:</div>'
+    +'<div style="margin-top:8px;text-align:left;display:inline-block">'
+    +'• Build an atlas bundle from your parcellation with <code>build_bundle.py</code>, then open <code>?atlas=&lt;id&gt;</code><br>'
+    +'• Add an <b>Overlay</b> — ➕ Load .nii or ➕ Load .csv<br>'
+    +'• Load a subject T1 as the slice underlay (Slices ▸ underlay)</div></div>';
+  document.getElementById('app').appendChild(d);
+}
+function clearEmptyState(){ const e=document.getElementById('emptyState'); if(e) e.remove(); }
+if(window.ATLAS_GLB_B64){
+  loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
   let i=0;
   gltf.scene.traverse(o=>{
     if(!o.isMesh) return;
@@ -886,40 +934,22 @@ loader.parse(b64ToBuf(window.ATLAS_GLB_B64), '', (gltf)=>{
     i++;
   });
   group.add(gltf.scene);
-
-  // fit camera
   const box = new THREE.Box3().setFromObject(group);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  modelRadius = sphere.radius;
-  sceneCenter.copy(sphere.center);
-  camDist = sphere.radius*2.6;
-  camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
-
-  // default to lobe coloring, but if the atlas's names don't map to lobes well
-  // (e.g. Brodmann areas, tract atlases) everything lands in one bucket -> use
-  // a distinct per-ROI scheme instead so regions are actually distinguishable.
-  const lobeCount={}; meshes.forEach(o=>{ lobeCount[o.meta.lobe]=(lobeCount[o.meta.lobe]||0)+1; });
-  const distinctLobes=Object.keys(lobeCount).length;
-  const maxFrac=Math.max(...Object.values(lobeCount))/meshes.length;
-  const defScheme=(distinctLobes<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
-  $('scheme').value=defScheme;
-  applyScheme(defScheme);
-  if(+$('smooth').value>0) applySmoothing();   // default mesh smoothing on for a nicer startup look
-  buildList();
-  buildAxisLabels(box, sphere.radius);
-  initOverlayUI();
-  refreshSavedSets();
-  refreshPresets();
-  initAtlasPicker();
-  window.__DBG={meshes,scene,camera,renderer,group};
-  view([-1,0,0], camDist);  // DEFAULT: left-hemisphere sagittal view, default framing
-  home.copy(camera.position); homeTarget.copy(controls.target);
-  document.getElementById('loader').style.display='none';
-  requestRender();   // meshes loaded async — render the initial scene
-  if(window.__brainReady) window.__brainReady();   // signal scripting API
+  finishInit(box, sphere);
 }, (err)=>{
   document.getElementById('loader').innerHTML='<b>Failed to load model.</b><br>'+err;
 });
+} else {
+  // Engine Edition: no atlas bundled — boot an empty scene with a default framing.
+  // Defer to the next tick so the rest of the module (incl. window.brainAPI) finishes evaluating
+  // first — mirrors the async timing of loader.parse's callback in the data path.
+  setTimeout(()=>{
+    const sphere = new THREE.Sphere(new THREE.Vector3(0,0,0), 100);
+    const box = new THREE.Box3(new THREE.Vector3(-90,-110,-90), new THREE.Vector3(90,110,90));
+    finishInit(box, sphere);
+  }, 0);
+}
 
 // ---------- explosion ----------
 let explodeAmt = 0;                       // 0..1 from slider
@@ -1891,7 +1921,7 @@ function applyOverlay(valsObj, name){   // a task map chosen for the selected ov
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
 }
 // ---- per-region CSV overlay (one value per atlas region: factor loadings, scores, …) ----
-function applyCsvVals(vals, name){ if(selOv<0) ovAdd('file'); const o=overlays[selOv];
+function applyCsvVals(vals, name){ clearEmptyState(); if(selOv<0) ovAdd('file'); const o=overlays[selOv];
   o.kind='csv'; o.term=''; o.fileName=name; o.vals=vals; o.vol=null; o.volGrid=null;
   if(/^Overlay \d+$/.test(o.name)) o.name=String(name).replace(/\.(csv|tsv|txt)$/i,'');
   o.s.style='cmap';
@@ -2098,6 +2128,7 @@ function mniWarning(r){
   return w;
 }
 function applyStatVals(r, name){   // a loaded .nii for the selected overlay
+  clearEmptyState();
   if(selOv<0) ovAdd('file');
   const o=overlays[selOv]; o.kind='file'; o.term=''; o.fileName=name; o.vals=r.vals; o.vol=r.nii||null;
   if(/^Overlay \d+$/.test(o.name)) o.name=name.replace(/\.nii(\.gz)?$/i,'');
@@ -2774,6 +2805,7 @@ function ensureMNI(){
 // load a NIfTI (parsed) as the slice/mosaic background underlay, normalized to 0..255 grayscale
 function setUnderlay(nii){
   if(!nii){ underlayVol=null; invalidateTractMask(); refreshSliceViews(); return; }
+  clearEmptyState();
   const d=nii.data, n=d.length, arr=[]; for(let i=0;i<n;i++){ if(d[i]>0&&isFinite(d[i])) arr.push(d[i]); }
   arr.sort((a,b)=>a-b); const hi=arr.length?arr[Math.floor(arr.length*0.99)]||arr[arr.length-1]:1;
   const sc=255/(hi||1), out=new Float32Array(n); for(let i=0;i<n;i++){ const v=d[i]; out[i]=(v>0&&isFinite(v))?Math.min(255,v*sc):0; }
