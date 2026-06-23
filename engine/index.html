@@ -264,7 +264,9 @@
   </span>
   <span class="tbsep"></span>
   <button id="snap" class="tbtn">📷 PNG</button>
-  <button id="recBtn" class="tbtn" title="Record the 3D viewport to a video (toolbars excluded). Click to start, click again to stop &amp; save .webm">⏺ Record</button>
+  <button id="recBtn" class="tbtn" title="Record the 3D viewport to a video (toolbars excluded). Click to start, click again to stop &amp; save">⏺ Record</button>
+  <select id="recFmt" class="tbsel" style="font-size:11px" title="Recording format. MP4 (H.264) drops straight into PowerPoint / Google Slides / Keynote. WebM is smaller but PPT/Slides often can't play it.">
+    <option value="mp4">MP4 (PPT/Slides)</option><option value="webm">WebM (smaller)</option></select>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
   <button id="feToggle" class="tbtn" title="Figure editor — arrange panels, add text / arrows / lines, export">📐 Editor</button>
   <span class="tbsep"></span>
@@ -282,9 +284,15 @@
   <details class="acc" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
     <div id="ovList"></div>
     <div class="row" style="gap:6px;flex-wrap:wrap">
-      <button class="sm" id="ovAddTask" title="Add an overlay from a baked NeuroQuery task map">➕ Task map</button>
-      <button class="sm" id="ovAddFile" title="Add an overlay from your own MNI .nii/.nii.gz">➕ Load .nii</button>
-      <button class="sm" id="ovAddCsv" title="Load a CSV/TSV with one value per region (factor loadings, scores…). Auto-matches to the atlas by region count, id column, or region names.">➕ Load .csv</button>
+      <button class="sm" id="ovAddFile" title="Load a voxelwise MNI-space statistical / activation map (.nii or .nii.gz) — e.g. a z/t-map or contrast. It is sampled onto the current atlas's regions and colored by the colorbar.">➕ Load .nii map</button>
+      <button class="sm" id="ovAddCsv" title="Load a CSV/TSV of per-region values that go WITH this atlas — one number per region (activations, factor loadings, scores…). Auto-matched to the atlas by region count, an id column, or region names.">➕ Load .csv values</button>
+      <span style="flex:1"></span>
+      <button class="sm" id="ovAddTask" title="Optional: add a built-in NeuroQuery task map (motor, language, …) instead of your own data" style="opacity:.85">🧠 Task map</button>
+    </div>
+    <div style="font-size:11px;opacity:.7;margin-top:4px;line-height:1.35">
+      Bring your own data: <b>Load .nii map</b> for a voxelwise MNI stat map, or <b>Load .csv values</b>
+      for one value per region. To use a different <i>parcellation</i> (.nii atlas), build a bundle with
+      <code>build_bundle.py</code> then pick it from the atlas dropdown.
     </div>
     <input type="file" id="statFile" accept=".nii,.nii.gz,.gz" style="display:none">
     <input type="file" id="csvFile" accept=".csv,.tsv,.txt" style="display:none">
@@ -1575,8 +1583,12 @@ $('snap').onclick = ()=>{ const a=document.createElement('a');
 
 // ---- viewport video recording (just the WebGL canvas — no toolbars) ----
 let _recording=false, _mediaRec=null, _recChunks=[], _recStart=0, _recTimer=null;
-function _pickRecMime(){ const c=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'];
-  for(const m of c){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } return ''; }
+function _pickRecMime(){
+  const pref = ($('recFmt') && $('recFmt').value)==='webm'
+    ? ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=avc1.42E01E','video/mp4']
+    // MP4/H.264 first -> plays directly in PowerPoint / Google Slides / Keynote
+    : ['video/mp4;codecs=avc1.42E01E','video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  for(const m of pref){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } return ''; }
 function startRecording(){
   if(_recording) return;
   if(!renderer.domElement.captureStream || !window.MediaRecorder){ alert('Video recording is not supported in this browser. Try Chrome.'); return; }
@@ -1663,9 +1675,20 @@ function updateCount(){
 }
 $('showAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,true,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
 $('hideAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,false,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
-// hemisphere visibility: 'all' shows everything; 'L'/'R' show that side + midline structures, hide the other
+// hemisphere of a region — classified from MESH GEOMETRY (three.js +X=Right, -X=Left), which is
+// ground truth for EVERY atlas. Many bundles tag hemi="M" for all ROIs (name-based hemi_of missed
+// their naming), so we don't trust meta.hemi here; the geometry centroid X always works. Regions
+// straddling the midline (corpus callosum, brainstem, vermis) fall in the band -> "M" (shown both).
+function regionSide(o){
+  if(o._side) return o._side;
+  const g=o.mesh.geometry; if(!g.boundingBox) g.computeBoundingBox();
+  const cx=(g.boundingBox.min.x+g.boundingBox.max.x)/2;
+  const band=Math.max(4, modelRadius*0.05);
+  return (o._side = cx < -band ? 'L' : cx > band ? 'R' : 'M');
+}
+// 'all' shows everything; 'L'/'R' show that side + midline structures, hide the other
 function setHemiVisible(which){
-  meshes.forEach(o=>{ const h=o.meta.hemi; const on = which==='all' || h===which || (h!=='L'&&h!=='R'); setVisible(o,on,true); });
+  meshes.forEach(o=>{ const s=regionSide(o); const on = which==='all' || s===which || s==='M'; setVisible(o,on,true); });
   updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); requestRender();
 }
 $('hemiAll').onclick=()=>setHemiVisible('all');
