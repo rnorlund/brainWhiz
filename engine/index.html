@@ -1246,17 +1246,18 @@ function setProjTexture(tex, name, video){
   projDecals.forEach(d=>{ d.mesh.material.map=tex; d.mesh.material.needsUpdate=true; });
   requestRender();
 }
-function loadProjImage(src, name){ new THREE.TextureLoader().load(src, t=>{ t.colorSpace=THREE.SRGBColorSpace; setProjTexture(t, name||'image'); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Image loaded.'); }, undefined, ()=>projStatus('Image load failed (CORS-blocked? try a file).')); }
+function loadProjImage(src, name){ new THREE.TextureLoader().load(src, t=>{ t.colorSpace=THREE.NoColorSpace; setProjTexture(t, name||'image'); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Image loaded.'); }, undefined, ()=>projStatus('Image load failed (CORS-blocked? try a file).')); }
 function loadProjVideo(url, name){ const v=document.createElement('video'); v.src=url; v.loop=true; v.muted=true; v.playsInline=true; v.crossOrigin='anonymous';
-  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.SRGBColorSpace; v.play().catch(()=>{});
+  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.NoColorSpace; v.play().catch(()=>{});
   setProjTexture(t, name||'video', v); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Video loaded.'); }
 async function startWebcam(){ try{ const s=await navigator.mediaDevices.getUserMedia({video:true});
   const v=document.createElement('video'); v.srcObject=s; v.muted=true; v.playsInline=true; await v.play();
-  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.SRGBColorSpace; projStream=s;
+  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.NoColorSpace; projStream=s;
   setProjTexture(t,'webcam',v); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Webcam live.'); }
   catch(e){ projStatus('Webcam unavailable / denied.'); } }
 function ensureProjLayer(){ if(projLayer || !meshes.length) return;
-  const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.FrontSide,
+  const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.DoubleSide,
+    polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3,   // sit just in front of the region meshes (kills z-fighting shards)
     vertexShader:`varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; uniform mat4 uProj;
       void main(){ vObj=normalize(position); vec4 wp=modelMatrix*vec4(position,1.0); vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
     fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vWN; varying vec4 vPP;
@@ -1271,7 +1272,9 @@ function ensureProjLayer(){ if(projLayer || !meshes.length) return;
         float op = uReplace>0.5 ? 1.0 : uOpacity;
         gl_FragColor=vec4(c.rgb, c.a*op); }`
   });
-  projLayer=new THREE.Mesh(mergeAllRegions(projFilter()), mat); projLayer.renderOrder=2; group.add(projLayer);
+  projLayer=new THREE.Mesh(mergeAllRegions(projFilter()), mat); projLayer.renderOrder=2;
+  const s=1.012; projLayer.scale.set(s,s,s); projLayer.position.copy(sceneCenter).multiplyScalar(1-s);   // lift a hair off the surface -> no coincident-depth shards
+  group.add(projLayer);
 }
 let projRegionSet=new Set(), projRegionPick=false;
 function projFilter(){ const t=$('projTarget')?$('projTarget').value:'all';
@@ -1295,6 +1298,7 @@ function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').val
   $('projPickRow').style.display = (mode!=='decal' && $('projTarget').value==='selected')?'flex':'none';
   if(mode==='decal'){ if(projLayer) projLayer.visible=false; setDecalsVisible(on); requestRender(); return; }
   if(on) ensureProjLayer(); setDecalsVisible(false);
+  if(mode==='projector' && on && !_projAimed) aimProjector();   // auto-aim so it projects immediately (no need to press 🎯 first)
   if(projLayer){ projLayer.visible=on;
     PROJ_UN.uMode.value = mode==='projector'?1:0;
     PROJ_UN.uOpacity.value=+$('projOp').value; PROJ_UN.uReplace.value = $('projBlend').value==='replace'?1:0;
@@ -1304,6 +1308,7 @@ function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').val
   }
   requestRender();
 }
+let _projAimed=false;
 function aimProjector(){ const dir=new THREE.Vector3(); camera.getWorldDirection(dir);   // projector casts along the current view
   PROJ_UN.uProjDir.value.copy(dir);
   const center=group.localToWorld(sceneCenter.clone()), r=Math.max(40,modelRadius)*1.25;
@@ -1311,7 +1316,7 @@ function aimProjector(){ const dir=new THREE.Vector3(); camera.getWorldDirection
   const camMat=new THREE.Matrix4().lookAt(eye,center,camera.up).setPosition(eye);
   const view=camMat.clone().invert();
   const proj=new THREE.Matrix4().makeOrthographic(-r,r,r,-r,0.01,r*6);
-  PROJ_UN.uProj.value.multiplyMatrices(proj, view); requestRender();
+  PROJ_UN.uProj.value.multiplyMatrices(proj, view); _projAimed=true; requestRender();
 }
 function makeProjQuad(){ return new THREE.Mesh(new THREE.PlaneGeometry(1,1),
   new THREE.MeshBasicMaterial({map:projTex, transparent:true, depthWrite:false, side:THREE.DoubleSide})); }
