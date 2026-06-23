@@ -938,6 +938,7 @@ function setExplode(v){
   $('expVal').textContent = Math.round(v*100) + '%';
   $('explode').value = v;
   updateConnTransforms();
+  if(typeof auraGroup!=='undefined' && auraGroup && $('auraOn').checked) layoutAura();   // each piece's aura rides its explosion
 }
 
 // ---------- UI: settings ----------
@@ -1026,36 +1027,35 @@ $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
-// ---------- aura glow: soft outward bloom — concentric additive shells of the brain, fading with distance ----------
-const AURA_LAYERS=6;
-let auraGroup=null, auraGeo=null, _auraT=0, _auraHue=0.58, _bcAura=null;
-function brainCenterAura(){ if(_bcAura) return _bcAura; const b=new THREE.Box3();
-  for(const o of meshes){ const g=o.mesh.geometry; if(!g.boundingBox) g.computeBoundingBox(); b.union(g.boundingBox); }
-  return (_bcAura = b.isEmpty()? new THREE.Vector3() : b.getCenter(new THREE.Vector3())); }
-function buildAuraGeo(){ let total=0; for(const o of meshes) total+=o.mesh.geometry.attributes.position.count;
-  const pos=new Float32Array(total*3), nrm=new Float32Array(total*3); let off=0;
-  for(const o of meshes){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
-    pos.set(p, off); if(n) nrm.set(n, off); off+=p.length; }
-  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3)); return geo; }
-function disposeAura(){ if(!auraGroup) return; group.remove(auraGroup); auraGroup.children.forEach(m=>m.material.dispose()); if(auraGeo) auraGeo.dispose(); auraGroup=null; auraGeo=null; }
-function ensureAura(){ if(auraGroup) return auraGroup; auraGeo=buildAuraGeo(); auraGroup=new THREE.Group();
-  for(let i=0;i<AURA_LAYERS;i++){ const mat=new THREE.MeshBasicMaterial({ color:new THREE.Color($('auraColor').value),
-      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:true, side:THREE.BackSide, opacity:0.1 });
-    const m=new THREE.Mesh(auraGeo, mat); m.renderOrder=-1; auraGroup.add(m); }
+// ---------- aura glow: soft outward bloom — PER-REGION concentric additive shells (each piece glows
+// and follows its own explosion offset), fading with distance ----------
+const AURA_LAYERS=4;
+let auraGroup=null, auraRecs=[], _auraT=0, _auraHue=0.58, _auraPulseMul=1, _auraSlAcc=0, _auraColorCur=null;
+function disposeAura(){ if(!auraGroup) return; group.remove(auraGroup); auraGroup.children.forEach(m=>m.material.dispose()); auraGroup=null; auraRecs=[]; }
+function ensureAura(){ if(auraGroup) return auraGroup; auraGroup=new THREE.Group(); auraRecs=[];
+  for(const o of meshes){ const g=o.mesh.geometry; if(!g.boundingBox) g.computeBoundingBox(); const C=g.boundingBox.getCenter(new THREE.Vector3());
+    const shells=[]; for(let i=0;i<AURA_LAYERS;i++){ const mat=new THREE.MeshBasicMaterial({ color:new THREE.Color($('auraColor').value),
+        transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:true, side:THREE.BackSide, opacity:0.1 });
+      const m=new THREE.Mesh(g, mat); m.renderOrder=-1; auraGroup.add(m); shells.push(m); }   // reuse the region geometry
+    auraRecs.push({o, C, shells}); }
   group.add(auraGroup); return auraGroup; }
-// inner shells sit just outside the brain (bright); outer shells reach to 'reach' and fade to 0 -> soft outward glow
-function positionAura(){ if(!auraGroup) return; const C=brainCenterAura(), maxS=+$('auraSize').value, I=+$('auraIntensity').value;
-  auraGroup.children.forEach((m,i)=>{ const t=(i+1)/AURA_LAYERS, s=1+(maxS-1)*t;
-    m.scale.set(s,s,s); m.position.copy(C).multiplyScalar(1-s);
-    m.material.opacity=Math.max(0, I*Math.pow(1-t,1.6)*0.32); }); }
+// each region's shells scale about its OWN centroid and ride its explosion offset (o.mesh.position)
+function layoutAura(){ if(!auraGroup) return; const maxS=+$('auraSize').value, I=(+$('auraIntensity').value)*_auraPulseMul;
+  for(const a of auraRecs){ const ep=a.o.mesh.position, vis=a.o.mesh.visible;
+    a.shells.forEach((m,i)=>{ const t=(i+1)/AURA_LAYERS, s=1+(maxS-1)*t;
+      m.visible=vis; m.scale.set(s,s,s);
+      m.position.set(a.C.x*(1-s)+ep.x, a.C.y*(1-s)+ep.y, a.C.z*(1-s)+ep.z);
+      m.material.opacity=Math.max(0, I*Math.pow(1-t,1.6)*0.4); }); } }
+function positionAura(){ layoutAura(); }
 function updateAura(){ const on=$('auraOn').checked; if(on) ensureAura();
-  if(auraGroup){ auraGroup.visible=on; if(!$('auraRainbow').checked){ const c=new THREE.Color($('auraColor').value); auraGroup.children.forEach(m=>m.material.color.copy(c)); } positionAura(); }
+  if(auraGroup){ auraGroup.visible=on; if(!$('auraRainbow').checked){ _auraColorCur=null; const c=new THREE.Color($('auraColor').value); auraGroup.children.forEach(m=>m.material.color.copy(c)); } layoutAura(); }
   requestRender(); refreshSliceViews(); }   // also updates the mesh-region slice edge-glow
-function refreshAuraGeo(){ if(auraGroup && $('auraOn').checked){ disposeAura(); _bcAura=null; ensureAura(); positionAura(); requestRender(); } }
+function refreshAuraGeo(){ if(auraGroup && $('auraOn').checked){ disposeAura(); ensureAura(); layoutAura(); requestRender(); } }
+function auraSliceColor(){ return _auraColorCur || $('auraColor').value; }   // current glow color (rainbow-aware) for slices
 $('auraOn').addEventListener('change', updateAura);
 $('auraColor').addEventListener('input', updateAura);
-$('auraSize').addEventListener('input', e=>{ $('auraSizeV').textContent=(+e.target.value).toFixed(2); positionAura(); requestRender(); refreshSliceViews(); });
-$('auraIntensity').addEventListener('input', e=>{ $('auraIntV').textContent=(+e.target.value).toFixed(2); positionAura(); requestRender(); refreshSliceViews(); });
+$('auraSize').addEventListener('input', e=>{ $('auraSizeV').textContent=(+e.target.value).toFixed(2); layoutAura(); requestRender(); refreshSliceViews(); });
+$('auraIntensity').addEventListener('input', e=>{ $('auraIntV').textContent=(+e.target.value).toFixed(2); layoutAura(); requestRender(); refreshSliceViews(); });
 $('auraPulse').addEventListener('input', e=>{ $('auraPulseV').textContent=(+e.target.value).toFixed(1); requestRender(); });
 $('auraRainbow').addEventListener('change', updateAura);
 $('vividVal').textContent=(+$('vivid').value).toFixed(2)+'×';
@@ -2749,9 +2749,9 @@ function renderMeshSlices(){
       if(bw>0){ G.lineWidth=bw; G.strokeStyle=bcol; G.lineJoin='round'; G.stroke(); }   // outline this region
       G.globalAlpha=1;
     }
-    if(auraOn){ const auraCol=$('auraColor').value, auraI=+$('auraIntensity').value, auraSz=+$('auraSize').value;
+    if(auraOn){ const auraCol=auraSliceColor(), auraI=(+$('auraIntensity').value)*_auraPulseMul, auraSz=+$('auraSize').value;
       ctx.save(); ctx.shadowColor=auraCol; ctx.shadowBlur=Math.max(2, auraSz*16*dpr);
-      const reps=Math.max(1,Math.round(1+auraI*2.5)); for(let i=0;i<reps;i++) ctx.drawImage(mcv,0,0);   // stacked shadow = outward glow
+      const reps=Math.max(1,Math.round(1+auraI*2.5)); for(let i=0;i<reps;i++) ctx.drawImage(mcv,0,0);   // stacked shadow = outward glow (pulses with _auraPulseMul)
       ctx.restore(); ctx.drawImage(mcv,0,0); }                        // crisp brain on top
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
@@ -3296,11 +3296,14 @@ function tick(){
   const pulseOn = connUniforms.uPulse.value>0.5;
   const flowOn = tractFX.uPulse.value>0.5;
   const auraAnim = auraGroup && $('auraOn').checked && (+$('auraPulse').value>0 || $('auraRainbow').checked);
-  if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value, I=+$('auraIntensity').value;
-    const pulse = ps>0 ? (0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8))) : 1;
-    let col=null; if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; col=new THREE.Color().setHSL(_auraHue,0.85,0.6); }
-    auraGroup.children.forEach((m,i)=>{ const t=(i+1)/AURA_LAYERS; m.material.opacity=Math.max(0, I*pulse*Math.pow(1-t,1.6)*0.32); if(col) m.material.color.copy(col); });
-  }
+  if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value;
+    _auraPulseMul = ps>0 ? (0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8))) : 1;
+    if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; const col=new THREE.Color().setHSL(_auraHue,0.85,0.6);
+      _auraColorCur='#'+col.getHexString(); auraGroup.children.forEach(m=>m.material.color.copy(col)); }
+    layoutAura();   // applies the pulse multiplier to every region's shells (3D)
+    // pulse the mesh-region SLICE glow too — re-composite throttled (reuses cached fills, cheap)
+    if(sliceMode && sliceKind==='mesh' && (ps>0 || $('auraRainbow').checked)){ _auraSlAcc+=dt; if(_auraSlAcc>0.07){ _auraSlAcc=0; renderMeshSlices(); } }
+  } else { _auraPulseMul=1; }
   // ongoing animations must keep rendering every frame
   const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim;
   if(playing){
