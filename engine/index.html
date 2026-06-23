@@ -460,7 +460,7 @@
       <input type="range" id="connScale" min="0.2" max="5" step="0.1" value="1"></div>
     <div class="row"><label class="toggle"><input type="checkbox" id="connAll"> connect hidden too</label></div>
     <div class="row"><label>Edge color</label>
-      <select id="connColorMode"><option value="strength">By strength (cmap)</option><option value="single">Single color</option></select></div>
+      <select id="connColorMode"><option value="strength">By strength (cmap)</option><option value="direction">By direction (DEC)</option><option value="single">Single color</option></select></div>
     <div class="row"><label>Colormap</label><select id="connCmap"></select></div>
     <div class="row"><label>Single</label><input type="color" id="connColor" value="#5db0ff"></div>
     <div class="row"><label class="toggle"><input type="checkbox" id="connPulse"> ⚡ Pulse</label>
@@ -1213,6 +1213,9 @@ function connColor(w, cmax){
   const t = Math.min(1, w/Math.max(1e-6,cmax));
   const c = sampleCmap($('connCmap').value, t); return new THREE.Color(c[0],c[1],c[2]);
 }
+// DTI direction-encoded color of an edge: R=L↔R, G=A↔P, B=S↔I  (three.js axes: x=L-R, y=S-I, -z=A-P)
+function connDirColor(oi,oj){ const a=oi.base, b=oj.base, dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+  const l=Math.hypot(dx,dy,dz)||1; return new THREE.Color(Math.abs(dx)/l, Math.abs(dz)/l, Math.abs(dy)/l); }
 function rebuildConn(){
   for(const c of connMeshes){ connGroup.remove(c.mesh); c.mesh.material.dispose(); }
   connMeshes = [];
@@ -1227,7 +1230,8 @@ function rebuildConn(){
     const oi=byId.get(i), oj=byId.get(j);
     if(!oi||!oj) continue;
     if(!inclHidden && (!oi.mesh.visible || !oj.mesh.visible)) continue;
-    const mat=new THREE.MeshBasicMaterial({color:connColor(w, cd.max), transparent:true, opacity:0.92});
+    const col = $('connColorMode').value==='direction' ? connDirColor(oi,oj) : connColor(w, cd.max);
+    const mat=new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:0.92});
     attachConnFX(mat);
     const mesh=new THREE.Mesh(cylGeo, mat);
     mesh.renderOrder=1;
@@ -3164,7 +3168,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     zoomSlider:'Zoom the camera', zoomSpeed:'Mouse-wheel zoom sensitivity', autoRotate:'Continuously rotate the brain', rotSpeed:'Auto-rotate speed', spin:'Slow idle spin',
     axisLines:'Show L/R · A/P · D/V axis lines', axisLetters:'Show axis direction letters', axisColor:'Axis color', axisWidth:'Axis line thickness',
     connOn:'Show structural/functional connectivity edges (atlases with data)', connType:'Connectivity modality (DTI / resting-state)', connTh:'Minimum edge strength to draw',
-    connScale:'Edge thickness scale', connAll:'Also connect hidden regions', connColorMode:'Color edges by strength, or one fixed color', connCmap:'Connectivity colormap', connColor:'Single edge color',
+    connScale:'Edge thickness scale', connAll:'Also connect hidden regions', connColorMode:'Color edges by strength (colormap), by direction (DEC: R=L↔R, G=A↔P, B=S↔I), or one fixed color', connCmap:'Connectivity colormap', connColor:'Single edge color',
     connPulse:'Animate a pulse of light along each edge', connPulseSpeed:'Pulse speed', connPulseColor:'Pulse color',
     slKindVox:'Slice view: voxel heatmap of the loaded stat map on the MNI template', slKindMesh:'Slice view: thin cross-section of the colored 3D regions',
     slPosX:'Move the slice along left↔right (X)', slPosY:'Move the slice along front↔back (Y)', slPosZ:'Move the slice along bottom↔top (Z)',
