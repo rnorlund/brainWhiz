@@ -412,6 +412,10 @@
     <div class="row"><button class="sm" id="saveSet">＋ Save current</button>
       <button class="sm" id="delSet">🗑 Delete saved</button></div>
     <div class="row"><button class="sm" id="saveColored">💾 Save colored regions as set</button></div>
+    <div class="row" style="gap:5px" title="Choose which hemisphere to visualize (midline structures stay shown)">
+      <button class="sm" id="hemiAll" style="flex:1">🧠 Whole brain</button>
+      <button class="sm" id="hemiL" style="flex:1">◧ LH only</button>
+      <button class="sm" id="hemiR" style="flex:1">◨ RH only</button></div>
     <input id="search" type="text" placeholder="Search regions…" autocomplete="off" autocorrect="off" spellcheck="false" />
     <div class="row" style="justify-content:space-between">
       <span id="roiCount"></span>
@@ -1659,6 +1663,14 @@ function updateCount(){
 }
 $('showAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,true,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
 $('hideAll').onclick=()=>{ meshes.forEach(o=>setVisible(o,false,true)); updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); };
+// hemisphere visibility: 'all' shows everything; 'L'/'R' show that side + midline structures, hide the other
+function setHemiVisible(which){
+  meshes.forEach(o=>{ const h=o.meta.hemi; const on = which==='all' || h===which || (h!=='L'&&h!=='R'); setVisible(o,on,true); });
+  updateCount(); rebuildConn(); if(projRegionsActive()) refreshProjLayerGeo(); requestRender();
+}
+$('hemiAll').onclick=()=>setHemiVisible('all');
+$('hemiL').onclick=()=>setHemiVisible('L');
+$('hemiR').onclick=()=>setHemiVisible('R');
 $('search').addEventListener('input',e=>{
   const q=e.target.value.toLowerCase();
   document.querySelectorAll('.roi').forEach(r=>{
@@ -1675,11 +1687,20 @@ let selected=null;
 function hudShow(m){ hud.querySelector('.t').textContent=m.name;
   hud.querySelector('.s').textContent=`${m.abbr} · ${m.lobe} · ${m.hemi==='L'?'left':m.hemi==='R'?'right':'midline'} hemisphere`;
   hud.style.opacity=1; }
+// selection highlight that works in EVERY surface/shading mode (incl. wireframe + matcap,
+// which have no .emissive): an additive translucent shell drawn over the picked region.
+let _selOverlay=null;
+const _selMat=new THREE.MeshBasicMaterial({color:0x66ccff, transparent:true, opacity:0.5,
+  blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide,
+  polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2});
+function clearSelOverlay(){ if(_selOverlay){ if(_selOverlay.parent) _selOverlay.parent.remove(_selOverlay); _selOverlay=null; } }
 function setSelected(o){
-  if(selected) selected.mesh.material.emissive.setHex(0x000000);
+  clearSelOverlay();
+  if(selected && selected.mesh.material.emissive) selected.mesh.material.emissive.setHex(0x000000);
   selected=o;
   document.querySelectorAll('.roi.sel').forEach(r=>r.classList.remove('sel'));
-  if(o){ o.mesh.material.emissive.setHex(0x3366aa);
+  if(o){ if(o.mesh.material.emissive) o.mesh.material.emissive.setHex(0x3366aa);   // bonus glow in Standard shading
+    _selOverlay=new THREE.Mesh(o.mesh.geometry, _selMat); _selOverlay.renderOrder=4; o.mesh.add(_selOverlay);  // glows the region in any mode
     const r=document.querySelector(`.roi[data-node="${o.meta.node}"]`);
     if(r){ r.classList.add('sel'); r.scrollIntoView({block:'nearest'}); }
     hudShow(o.meta);
