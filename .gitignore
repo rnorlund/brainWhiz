@@ -3,3 +3,19 @@ node_modules/
 .chrome*/
 *.log
 .DS_Store
+
+# Privacy: never auto-commit personal media or personal figure exports (a saved .bwz can
+# embed an overlay's basename). Already-tracked sample recipes (example.bwz, examples/*.bwz)
+# stay tracked — gitignore only blocks NEW untracked files. Use `git add -f` for a genuinely
+# shareable sample you intend to publish.
+*.bwz
+*.mp4
+*.mov
+*.webm
+*.m4v
+*.avi
+my_*.nii
+my_*.nii.gz
+my_*.png
+my_*.jpg
+my_*.jpeg

@@ -356,7 +356,7 @@
     <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
       <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
     <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
-      <input type="range" id="smooth" min="0" max="12" step="1" value="4"></div>
+      <input type="range" id="smooth" min="0" max="20" step="1" value="4"></div>
     <div class="row"><label>Surface</label>
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
@@ -411,7 +411,7 @@
     <div class="row"><button class="sm" id="saveSet">＋ Save current</button>
       <button class="sm" id="delSet">🗑 Delete saved</button></div>
     <div class="row"><button class="sm" id="saveColored">💾 Save colored regions as set</button></div>
-    <input id="search" type="text" placeholder="Search regions…" />
+    <input id="search" type="text" placeholder="Search regions…" autocomplete="off" autocorrect="off" spellcheck="false" />
     <div class="row" style="justify-content:space-between">
       <span id="roiCount"></span>
       <span><button class="sm" id="showAll">Show all</button><button class="sm" id="hideAll">Hide all</button></span>
@@ -493,12 +493,13 @@
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎬 Projector</summary><div class="accb">
-    <div class="row"><label class="toggle" title="Project an image, video, or webcam onto the 3D brain surface"><input type="checkbox" id="projOn"> Projector on</label></div>
+    <div class="row" style="justify-content:space-between"><label class="toggle" title="Project an image, video, or webcam onto the 3D brain surface"><input type="checkbox" id="projOn"> Projector on</label>
+      <button class="sm" id="projClearAll" title="Remove all projector media, the wrap/projector layer, and every decal stamp">🗑 Clear all</button></div>
     <div class="row" style="gap:6px;flex-wrap:wrap"><label style="min-width:auto">Media</label>
       <button class="sm" id="projImgBtn" title="Load an image file">🖼 Image</button>
       <button class="sm" id="projVidBtn" title="Load a video file (mp4 / webm)">🎞 Video</button>
       <button class="sm" id="projCamBtn" title="Use your webcam feed">📷 Webcam</button></div>
-    <div class="row"><input type="text" id="projUrl" placeholder="…or paste an image URL" style="flex:1;font-size:11px">
+    <div class="row"><input type="text" id="projUrl" placeholder="…or paste an image URL" autocomplete="off" spellcheck="false" style="flex:1;font-size:11px">
       <button class="sm" id="projUrlBtn">Use</button></div>
     <div id="projMediaName" style="font-size:11px;opacity:.75;min-height:13px"></div>
     <input type="file" id="projImgFile" accept="image/*" style="display:none">
@@ -548,6 +549,10 @@
     <div class="row"><label>Axis color</label><input type="color" id="axisColor" value="#9fb3c8"></div>
     <div class="ctl"><div class="lab"><span>Axis width</span><span id="axisWVal"></span></div>
       <input type="range" id="axisWidth" min="0.1" max="5" step="0.1" value="0.7"></div>
+    <div class="ctl"><div class="lab"><span>Letter size</span><span id="axisSizeVal"></span></div>
+      <input type="range" id="axisSize" min="0.3" max="3" step="0.05" value="1"></div>
+    <div class="ctl"><div class="lab"><span>Letters explode out</span><span id="axisExplodeVal"></span></div>
+      <input type="range" id="axisExplode" min="0" max="2" step="0.02" value="0"></div>
     <div class="row" style="flex-wrap:wrap;gap:5px"><label style="min-width:auto">View</label>
       <button class="sm vbtn" data-v="left">Left</button><button class="sm vbtn" data-v="right">Right</button>
       <button class="sm vbtn" data-v="superior">Top</button><button class="sm vbtn" data-v="inferior">Bottom</button>
@@ -933,6 +938,7 @@ const loader = new GLTFLoader();
 function finishInit(box, sphere){
   modelRadius = sphere.radius;
   sceneCenter.copy(sphere.center);
+  box.getSize(sceneHalf).multiplyScalar(0.5);   // per-axis half-extents for the symmetric-projector mapping
   camDist = sphere.radius*2.6;
   camera.near = sphere.radius/100; camera.far = sphere.radius*100; camera.updateProjectionMatrix();
   if(meshes.length){
@@ -1167,6 +1173,13 @@ function applySurfStyle(){
   meshes.forEach(o=>{ const m=o.mesh.material;
     if(m.flatShading !== !!s.flat){ m.flatShading = !!s.flat; m.needsUpdate=true; }
   });
+  // grey out controls that have no effect in the current style so it's clear what applies:
+  //  - Wire thickness only matters for the two Wireframe styles
+  //  - Pattern scale/strength/tilt only matter for the procedural patterns (uPattern>0)
+  const hasPattern = (s.p||0)>0, isWire = !!s.wire;
+  const setEnabled=(id,on)=>{ const el=$(id); if(!el) return; el.disabled=!on; const ctl=el.closest('.ctl'); if(ctl) ctl.style.opacity=on?'':'0.4'; };
+  setEnabled('wireWidth', isWire);
+  setEnabled('patScale', hasPattern); setEnabled('patStr', hasPattern); setEnabled('patTilt', hasPattern);
 }
 $('surfStyle').addEventListener('change', ()=>{ applySurfStyle(); setOpacities(); });
 
@@ -1244,7 +1257,8 @@ let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[]
 const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:new THREE.Vector2(1,1)}, uOffset:{value:new THREE.Vector2(0,0)},
   uRot:{value:0}, uSpin:{value:0}, uTime:{value:0}, uOpacity:{value:0.85}, uReplace:{value:0},
   uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)}, uProjCenter:{value:new THREE.Vector3()},
-  uMirror:{value:0}, uRimBoost:{value:0} };
+  uMirror:{value:0}, uRimBoost:{value:0},
+  uBoxC:{value:new THREE.Vector3()}, uBoxH:{value:new THREE.Vector3(1,1,1)} };
 function projStatus(t){ const e=$('projStatus'); if(e) e.textContent=t; }
 function setProjTexture(tex, name, video){
   if(projVideo){ try{projVideo.pause();}catch(e){} } projVideo=video||null;
@@ -1267,15 +1281,15 @@ async function startWebcam(){ try{ const s=await navigator.mediaDevices.getUserM
 function ensureProjLayer(){ if(projLayer || !meshes.length) return;
   const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.DoubleSide,
     polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3,   // sit just in front of the region meshes (kills z-fighting shards)
-    vertexShader:`varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld; uniform mat4 uProj;
-      void main(){ vObj=normalize(position); vec4 wp=modelMatrix*vec4(position,1.0); vWorld=wp.xyz; vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
-    fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld;
+    vertexShader:`varying vec3 vObj; varying vec3 vBox; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld; uniform mat4 uProj; uniform vec3 uBoxC,uBoxH;
+      void main(){ vObj=normalize(position); vBox=(position-uBoxC)/uBoxH; vec4 wp=modelMatrix*vec4(position,1.0); vWorld=wp.xyz; vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vBox; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld;
       uniform sampler2D uTex; uniform float uHasTex,uMode,uRot,uSpin,uTime,uOpacity,uReplace,uMirror,uRimBoost; uniform vec2 uOffset,uScale; uniform vec3 uProjDir,uProjCenter;
       #define PI 3.14159265
       vec2 xf(vec2 uv){ uv-=0.5; uv.x/=max(0.05,uScale.x); uv.y/=max(0.05,uScale.y); float c=cos(uRot),s=sin(uRot); uv=vec2(c*uv.x-s*uv.y,s*uv.x+c*uv.y); uv+=0.5; uv+=uOffset; return uv; }
       void main(){ if(uHasTex<0.5) discard; vec2 uv; bool clamp01=false;
         if(uMode<0.5){
-          if(uMirror>0.5){ float u=vObj.z*0.5+0.5+uSpin*uTime*0.05; float v=vObj.y*0.5+0.5; if(vObj.x<0.0) u=1.0-u; uv=xf(vec2(u,v)); clamp01=true; }
+          if(uMirror>0.5){ float u=vBox.z*0.5+0.5+uSpin*uTime*0.05; float v=vBox.y*0.5+0.5; if(vBox.x<0.0) u=1.0-u; uv=xf(vec2(u,v)); clamp01=true; }
           else { float u=atan(vObj.z,vObj.x)/(2.0*PI)+0.5+uSpin*uTime*0.05; float v=asin(clamp(vObj.y,-1.0,1.0))/PI+0.5; uv=fract(xf(vec2(u,v))); }
         } else { vec3 n=vPP.xyz/vPP.w; if(n.x<-1.0||n.x>1.0||n.y<-1.0||n.y>1.0||n.z>1.0) discard;
           if(dot(vWorld-uProjCenter, uProjDir) > 0.0) discard;   // keep only the camera-facing hemisphere
@@ -1322,6 +1336,7 @@ function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').val
     PROJ_UN.uScale.value.set(+$('projScale').value, +$('projScaleY').value); PROJ_UN.uOffset.value.set(+$('projOffX').value, +$('projOffY').value);
     PROJ_UN.uRot.value=(+$('projRot').value)*Math.PI/180; PROJ_UN.uSpin.value=+$('projSpin').value;
     PROJ_UN.uMirror.value = $('projMirror').checked?1:0; PROJ_UN.uRimBoost.value=+$('projRim').value;
+    PROJ_UN.uBoxC.value.copy(sceneCenter); PROJ_UN.uBoxH.value.set(Math.max(1,sceneHalf.x),Math.max(1,sceneHalf.y),Math.max(1,sceneHalf.z));
     projLayer.material.depthWrite = ($('projBlend').value==='replace' && on);
   }
   requestRender();
@@ -1360,6 +1375,18 @@ function placeDecal(hit){ if(!projTex){ projStatus('Load media first.'); return;
   const geo=new DecalGeometry(target, pL, orient.rotation, new THREE.Vector3(sz, sz, Math.max(28, sz*0.6)));   // group-local -> add to group directly
   const m=new THREE.Mesh(geo, decalMaterial(shape)); m.renderOrder=3; group.add(m); projDecals.push({mesh:m}); requestRender(); }
 function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); }); projDecals=[]; requestRender(); }
+// remove EVERYTHING the projector set up: media, wrap/projector layer, all decal stamps, webcam, picked set
+function clearProjectorAll(){
+  clearDecals();
+  setProjTexture(null,'');                                  // drops the texture + stops any webcam stream
+  if(projVideo){ try{projVideo.pause();}catch(e){} projVideo=null; }
+  if(projLayer){ group.remove(projLayer); projLayer.geometry.dispose(); projLayer.material.dispose(); projLayer=null; }
+  projClearSet();
+  $('projOn').checked=false; _projAimed=false;
+  if($('projImgFile')) $('projImgFile').value=''; if($('projVidFile')) $('projVidFile').value=''; if($('projUrl')) $('projUrl').value='';
+  $('projMediaName').textContent='';
+  updateProjector(); projStatus('Projector cleared.'); requestRender();
+}
 $('projOn').addEventListener('change', updateProjector);
 $('projMode').addEventListener('change', updateProjector);
 $('projBlend').addEventListener('change', updateProjector);
@@ -1387,6 +1414,7 @@ $('projPlay').addEventListener('click', ()=>{ if(!projVideo) return; if(projVide
 $('projVidSpeed').addEventListener('input', e=>{ $('projVidSpeedV').textContent=(+e.target.value)+'×'; if(projVideo) projVideo.playbackRate=+e.target.value; });
 $('projDecalAdd').addEventListener('click', ()=>{ if(!projTex){ projStatus('Load media first.'); return; } projPick=true; projStatus('Click a spot on the brain to stamp the media…'); });
 $('projDecalClear').addEventListener('click', clearDecals);
+$('projClearAll').addEventListener('click', clearProjectorAll);
 $('projDecalSize').addEventListener('input', e=>{ $('projDecalSizeV').textContent=e.target.value; });
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
@@ -1512,7 +1540,7 @@ $('connPulseSpeed').addEventListener('input', e=>{ connUniforms.uPulseSpeed.valu
 $('connPulseColor').addEventListener('input', e=>connUniforms.uPulseColor.value.set(e.target.value));
 
 const home=new THREE.Vector3(), homeTarget=new THREE.Vector3();
-const sceneCenter=new THREE.Vector3(); let camDist=320;
+const sceneCenter=new THREE.Vector3(); const sceneHalf=new THREE.Vector3(80,110,90); let camDist=320;
 $('reset').addEventListener('click', ()=>{ camera.position.copy(home); controls.target.copy(homeTarget); controls.update(); const vm=$('viewMenu'); if(vm) vm.classList.remove('on'); });
 function view(pos, dist){ // pos = direction the camera sits from center; dist defaults to CURRENT zoom
   const c=sceneCenter; controls.target.copy(c);
@@ -2012,11 +2040,13 @@ function buildAxisLabels(box, r){
   _axisBox=box; _axisR=r;
   while(axisLineGroup.children.length) axisLineGroup.remove(axisLineGroup.children[0]);
   while(axisLetterGroup.children.length) axisLetterGroup.remove(axisLetterGroup.children[0]);
-  const gap = r*0.05, sc = r*0.20;
+  const ex = (+($('axisExplode')?$('axisExplode').value:0))*r;     // push letters out from the brain
+  const sizeMul = +($('axisSize')?$('axisSize').value:1);
+  const gap = r*0.05, sc = r*0.20*sizeMul;
   const col = $('axisColor').value, wr = +$('axisWidth').value;
-  const hx = Math.max(Math.abs(box.min.x), Math.abs(box.max.x)) + gap;
-  const hy = Math.max(Math.abs(box.min.y), Math.abs(box.max.y)) + gap;
-  const hz = Math.max(Math.abs(box.min.z), Math.abs(box.max.z)) + gap;
+  const hx = Math.max(Math.abs(box.min.x), Math.abs(box.max.x)) + gap + ex;
+  const hy = Math.max(Math.abs(box.min.y), Math.abs(box.max.y)) + gap + ex;
+  const hz = Math.max(Math.abs(box.min.z), Math.abs(box.max.z)) + gap + ex;
   // three.js axes: +X=Right, -X=Left, +Y=Dorsal(sup), -Y=Ventral(inf), -Z=Anterior, +Z=Posterior
   const defs=[['R',[ hx,0,0]],['L',[-hx,0,0]],['D',[0, hy,0]],['V',[0,-hy,0]],['A',[0,0,-hz]],['P',[0,0, hz]]];
   for(const [t,p] of defs){
@@ -2035,6 +2065,9 @@ axisLineGroup.visible=$('axisLines').checked; axisLetterGroup.visible=$('axisLet
 function rebuildAxes(){ if(_axisBox) buildAxisLabels(_axisBox,_axisR); }
 $('axisColor').addEventListener('input', rebuildAxes);
 $('axisWidth').addEventListener('input', e=>{ $('axisWVal').textContent=(+e.target.value).toFixed(1); rebuildAxes(); });
+$('axisSize').addEventListener('input', e=>{ $('axisSizeVal').textContent=(+e.target.value).toFixed(2)+'×'; rebuildAxes(); });
+$('axisExplode').addEventListener('input', e=>{ $('axisExplodeVal').textContent=(+e.target.value).toFixed(2); rebuildAxes(); });
+$('axisSizeVal').textContent=(+$('axisSize').value).toFixed(2)+'×'; $('axisExplodeVal').textContent=(+$('axisExplode').value).toFixed(2);
 $('axisWVal').textContent=(+$('axisWidth').value).toFixed(1);
 
 // ================= ATLAS PICKER =================
@@ -2062,7 +2095,7 @@ function initAtlasPicker(){
 // Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
-  'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
+  'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
@@ -2785,7 +2818,11 @@ function captureViewerCfg(){
       manual:$('mosManual').checked, z0:+$('mosZ0').value, z1:+$('mosZ1').value,
       labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
     active: selOv,
-    overlays: overlays.map(o=>({ name:o.name, kind:o.kind, term:o.term||'', fileName:o.fileName||'', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} })) };
+    // privacy: only persist a fileName for overlays that are ACTUALLY in use right now —
+    // i.e. a file/csv overlay that currently holds data (o.vals) or is awaiting a relink
+    // (o.needsFile). Cleared/empty/stale slots save no path at all.
+    overlays: overlays.map(o=>{ const used=(o.kind==='file'||o.kind==='csv') && (!!o.vals || !!o.needsFile);
+      return { name:o.name, kind:o.kind, term:o.term||'', fileName: used ? (o.fileName||'') : '', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} }; }) };
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
