@@ -53,16 +53,21 @@ third-party open-source libraries, each under its own permissive license (commer
 The Matcap shading texture and the rendering shaders are generated procedurally in-app (no
 third-party asset). The brainWhiz logo and favicon are © Roger Newman-Norlund.
 
-NOTE: The Engine Edition ships **no** neuroimaging datasets. Atlases, parcellations, templates,
-task maps, and connectivity remain the property of their respective authors under their own
-licenses — bring your own (build a bundle with build_bundle.py, or load .nii / .csv overlays and
-a subject T1 underlay). You are responsible for the licensing of any data you load.
+NOTE: The Engine Edition ships **no third-party** neuroimaging datasets. The only included data is
+a **procedurally-generated synthetic atlas + template** (\`bundles/synth\`, \`bundles/_mni152.js\`)
+created by \`make_synth_atlas.py\` — 100% original, license-free, and clearly labelled "Synthetic"
+(it is an abstract demo parcellation, NOT real anatomy). All real atlases/parcellations/templates/
+task maps/connectivity remain the property of their authors under their own licenses — bring your
+own (build a bundle with build_bundle.py, or load .nii / .csv overlays and a subject T1 underlay).
+You are responsible for the licensing of any data you load.
 `;
 
 const README = `# brainWhiz — Engine Edition
 
-The same brainWhiz viewer/figure tool, shipped **without any bundled neuroimaging data** so it can
-be used and distributed commercially. You supply the data.
+The same brainWhiz viewer/figure tool, shipped **without any third-party neuroimaging data** so it
+can be used and distributed commercially. It includes one **procedurally-generated synthetic atlas**
+(license-free demo, clearly labelled "Synthetic" — not real anatomy) so it works out of the box;
+you supply your own real data.
 
 ## Getting started (bring your own data)
 - **Atlas / parcellation:** build a bundle from your MNI-space label NIfTI with
@@ -117,10 +122,25 @@ Provided "AS IS", without warranty of any kind. Not a medical device; not for cl
     if(await exists(src)){ await copyAny(src, path.join(OUT, item)); copied.push(item); }
   }
 
-  // 3. bundles/: ship NO data — only an empty registry (curate later if you add cleared atlases)
+  // 3. bundles/: NO third-party data. Ship ONLY the procedurally-generated synthetic atlas +
+  //    synthetic template (both 100% original / license-free) so the engine isn't empty.
   await fs.mkdir(path.join(OUT, 'bundles'), {recursive:true});
+  let registry = [];
+  const synthDir = path.join(ROOT, 'bundles', 'synth');
+  const synthTpl = path.join(ROOT, 'bundles', '_mni152_synth.js');
+  if(await exists(synthDir) && await exists(synthTpl)){
+    await copyAny(synthDir, path.join(OUT, 'bundles', 'synth'));               // synth atlas meshes
+    await fs.copyFile(synthTpl, path.join(OUT, 'bundles', '_mni152.js'));      // synth slice template (app expects this name)
+    // pull the 'synth' entry out of the main registry so badges/nroi match
+    const txt = await fs.readFile(path.join(ROOT,'bundles','registry.js'),'utf8');
+    const reg = new Function('return (function(){var window={};'+txt+';return window.ATLAS_REGISTRY||[];})()')();
+    const synth = reg.find(a=>a.id==='synth');
+    if(synth) registry = [synth];
+  } else {
+    console.warn('  ! bundles/synth not found — run `python3 make_synth_atlas.py` first. Shipping empty registry.');
+  }
   await fs.writeFile(path.join(OUT, 'bundles', 'registry.js'),
-    '// Engine Edition ships no atlases. Add cleared (CC0/CC-BY or licensed) atlases here.\nwindow.ATLAS_REGISTRY=[];\n');
+    '// Engine Edition: only the procedurally-generated synthetic atlas (license-free). Add your own cleared atlases here.\nwindow.ATLAS_REGISTRY='+JSON.stringify(registry)+';\n');
 
   // 4. edition docs / license
   await fs.writeFile(path.join(OUT, 'THIRD_PARTY.md'), THIRD_PARTY);
@@ -135,7 +155,7 @@ Provided "AS IS", without warranty of any kind. Not a medical device; not for cl
   ];
   console.log('Engine Edition regenerated -> engine/');
   console.log('  copied verbatim: ' + copied.join(', '));
-  console.log('  bundles/registry.js: empty (no atlases)');
+  console.log('  bundles: synthetic atlas ('+(registry[0]?registry[0].name:'none')+') + synthetic template only');
   console.log('  added: LICENSE (commercial), THIRD_PARTY.md, README.md');
   console.log('  EXCLUDED (not shipped):');
   for(const e of EXCLUDED) console.log('    - ' + e);

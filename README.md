@@ -8,6 +8,13 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 ![hero](docs/img/hero.png)
 
+> **Why "brainWhiz"?** There's a well-known finding ([McCabe & Castel, 2008, *Cognition*](https://doi.org/10.1016/j.cognition.2007.07.017))
+> that simply *adding a brain image* to a write-up makes the reasoning seem more credible — it
+> measurably nudged people toward believing (and editors toward publishing). It's the neuroscience
+> equivalent of squirting **Cheez Whiz on a cracker**: same cracker, but suddenly far more
+> appetizing. brainWhiz is the can of Cheez Whiz for your data — point it at your results and get a
+> figure that makes the whole thing go down easier. (Use the garnish responsibly. 🧠🧀)
+
 ---
 
 ## Highlights
@@ -247,6 +254,31 @@ context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or h
 are citable archives. To mint a permanent DOI, enable the repo in [Zenodo](https://zenodo.org/account/settings/github/)
 (GitHub login → flip the switch for `brainWhiz`), then publish/re-publish a release — Zenodo archives it and
 issues a DOI. Add that DOI to `CITATION.cff` (`doi:` field) and the badge here once issued.
+
+## Editions — Research vs. Engine
+
+This repo contains **two editions**:
+
+- **Research edition** (the repo root) — ships all 16 atlases + NeuroQuery task maps + ABC
+  connectivity + the MNI152 template. CC BY-NC 4.0 (noncommercial). This is what you use to test
+  and make figures.
+- **Engine edition** (`engine/`) — the *same app with no third-party data*, for commercial use.
+  It ships only a **procedurally-generated synthetic atlas + template** (`make_synth_atlas.py`,
+  100% original / license-free, clearly labelled "Synthetic" — not real anatomy) so it works out
+  of the box; users bring their own real atlas (`build_bundle.py`), overlays (`.nii`/`.csv`), and
+  slice underlay. See [`engine/README.md`](engine/README.md) and [`engine/THIRD_PARTY.md`](engine/THIRD_PARTY.md).
+
+`engine/` is **generated** — never hand-edit it. After changing the main app, resync with:
+
+```bash
+node build_engine.mjs              # regenerate engine/ (app minus data, + synthetic atlas)
+python build_bundle.py ...         # (only if you want to refresh the synthetic atlas:)
+python make_synth_atlas.py         #   regenerates bundles/synth + the synthetic template
+```
+
+Why an engine edition? Every code dependency is permissive (three.js/fabric.js/jsPDF/pako = MIT,
+colormaps = matplotlib BSD/CC0), so the *software* is fully ownable; the only commercial blockers
+are the bundled research **datasets**, which the engine edition simply doesn't ship.
 
 ## License
 

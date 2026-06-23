@@ -1,0 +1,18 @@
+brainWhiz — Engine Edition
+Copyright (c) 2026 Roger Newman-Norlund. All rights reserved.
+
+This is a COMMERCIAL edition. The brainWhiz application code (index.html, the build/tooling
+scripts, colormaps, and documentation authored by the copyright holder) is proprietary and may
+be licensed for commercial use under terms set by the copyright holder. Contact
+rnorlund@mailbox.sc.edu for licensing.
+
+Bundled third-party open-source libraries remain under their own licenses (MIT/BSD/CC0) — see
+THIRD_PARTY.md; their notices are retained.
+
+This edition ships NO neuroimaging datasets. Any atlas, template, parcellation, task map, or
+overlay loaded into the software is the property of its respective authors under its own license,
+and is the user's responsibility — nothing here grants rights to any such data.
+
+Provided "AS IS", without warranty of any kind. Not a medical device; not for clinical use.
+
+[Replace this file with your final EULA / commercial license text before distribution.]
