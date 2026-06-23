@@ -514,16 +514,21 @@
       <span id="projPickCount" style="font-size:11px;opacity:.7;margin-left:6px"></span></div>
     <div class="ctl"><div class="lab"><span>Opacity</span><span id="projOpV">0.85</span></div>
       <input type="range" id="projOp" min="0" max="1" step="0.05" value="0.85"></div>
-    <div class="ctl"><div class="lab"><span title="Zoom of the projected media">Scale</span><span id="projScaleV">1.0</span></div>
+    <div class="ctl"><div class="lab"><span title="Horizontal zoom of the projected media">Scale X</span><span id="projScaleV">1.0</span></div>
       <input type="range" id="projScale" min="0.2" max="4" step="0.05" value="1"></div>
+    <div class="ctl"><div class="lab"><span title="Vertical zoom of the projected media">Scale Y</span><span id="projScaleYV">1.0</span></div>
+      <input type="range" id="projScaleY" min="0.2" max="4" step="0.05" value="1"></div>
     <div class="ctl"><div class="lab"><span>Offset X</span><span id="projOffXV">0.00</span></div>
       <input type="range" id="projOffX" min="-1" max="1" step="0.02" value="0"></div>
     <div class="ctl"><div class="lab"><span>Offset Y</span><span id="projOffYV">0.00</span></div>
       <input type="range" id="projOffY" min="-1" max="1" step="0.02" value="0"></div>
     <div class="ctl"><div class="lab"><span>Rotation</span><span id="projRotV">0°</span></div>
       <input type="range" id="projRot" min="0" max="360" step="1" value="0"></div>
+    <div class="ctl"><div class="lab"><span title="Edge/border glow that shines through the projection (Fresnel rim)">Rim boost</span><span id="projRimV">0.0</span></div>
+      <input type="range" id="projRim" min="0" max="2" step="0.05" value="0"></div>
     <div class="ctl" id="projSpinRow"><div class="lab"><span title="Wrap mode: scroll the media around the brain">Wrap spin</span><span id="projSpinV">0.0</span></div>
       <input type="range" id="projSpin" min="0" max="3" step="0.1" value="0"></div>
+    <div class="row" id="projMirrorRow"><label class="toggle" title="Project the SAME video onto the left and right hemispheres, mirrored about the midline — clean symmetric split (great with rotation)"><input type="checkbox" id="projMirror"> 🪞 symmetric L/R (mirror)</label></div>
     <div class="row" id="projAimRow"><button class="sm" id="projAim" title="Aim the projector from the current camera view" style="flex:1">🎯 Aim from current view</button></div>
     <div class="row" id="projVidRow" style="display:none"><button class="sm" id="projPlay">⏸ Pause</button>
       <label style="margin-left:6px">speed</label><input type="range" id="projVidSpeed" min="0.25" max="3" step="0.25" value="1" style="flex:1"><span id="projVidSpeedV" style="min-width:24px;text-align:right">1×</span></div>
@@ -710,6 +715,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 
 // ---------- pick & load atlas bundle (dynamic, file://-friendly) ----------
 function loadScript(src){ return new Promise((res)=>{ const s=document.createElement('script');
@@ -1233,9 +1239,10 @@ $('shellColor').addEventListener('input', updateGlassShell);
 $('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
 // ================= PROJECTOR: image / video / webcam onto the brain =================
 let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[], projPick=false, _projT=0;
-const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:1}, uOffset:{value:new THREE.Vector2(0,0)},
+const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:new THREE.Vector2(1,1)}, uOffset:{value:new THREE.Vector2(0,0)},
   uRot:{value:0}, uSpin:{value:0}, uTime:{value:0}, uOpacity:{value:0.85}, uReplace:{value:0},
-  uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)} };
+  uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)}, uProjCenter:{value:new THREE.Vector3()},
+  uMirror:{value:0}, uRimBoost:{value:0} };
 function projStatus(t){ const e=$('projStatus'); if(e) e.textContent=t; }
 function setProjTexture(tex, name, video){
   if(projVideo){ try{projVideo.pause();}catch(e){} } projVideo=video||null;
@@ -1258,19 +1265,25 @@ async function startWebcam(){ try{ const s=await navigator.mediaDevices.getUserM
 function ensureProjLayer(){ if(projLayer || !meshes.length) return;
   const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.DoubleSide,
     polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3,   // sit just in front of the region meshes (kills z-fighting shards)
-    vertexShader:`varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; uniform mat4 uProj;
-      void main(){ vObj=normalize(position); vec4 wp=modelMatrix*vec4(position,1.0); vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
-    fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vWN; varying vec4 vPP;
-      uniform sampler2D uTex; uniform float uHasTex,uMode,uScale,uRot,uSpin,uTime,uOpacity,uReplace; uniform vec2 uOffset; uniform vec3 uProjDir;
+    vertexShader:`varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld; uniform mat4 uProj;
+      void main(){ vObj=normalize(position); vec4 wp=modelMatrix*vec4(position,1.0); vWorld=wp.xyz; vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; varying vec3 vWorld;
+      uniform sampler2D uTex; uniform float uHasTex,uMode,uRot,uSpin,uTime,uOpacity,uReplace,uMirror,uRimBoost; uniform vec2 uOffset,uScale; uniform vec3 uProjDir,uProjCenter;
       #define PI 3.14159265
-      vec2 xf(vec2 uv){ uv-=0.5; uv/=max(0.05,uScale); float c=cos(uRot),s=sin(uRot); uv=vec2(c*uv.x-s*uv.y,s*uv.x+c*uv.y); uv+=0.5; uv+=uOffset; return uv; }
-      void main(){ if(uHasTex<0.5) discard; vec2 uv;
-        if(uMode<0.5){ float u=atan(vObj.z,vObj.x)/(2.0*PI)+0.5+uSpin*uTime*0.05; float v=asin(clamp(vObj.y,-1.0,1.0))/PI+0.5; uv=fract(xf(vec2(u,v))); }
-        else { vec3 n=vPP.xyz/vPP.w; if(n.x<-1.0||n.x>1.0||n.y<-1.0||n.y>1.0||n.z<-1.0||n.z>1.0) discard;
-          if(dot(normalize(vWN),normalize(uProjDir))>0.0) discard; uv=xf(n.xy*0.5+0.5); if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0) discard; }
+      vec2 xf(vec2 uv){ uv-=0.5; uv.x/=max(0.05,uScale.x); uv.y/=max(0.05,uScale.y); float c=cos(uRot),s=sin(uRot); uv=vec2(c*uv.x-s*uv.y,s*uv.x+c*uv.y); uv+=0.5; uv+=uOffset; return uv; }
+      void main(){ if(uHasTex<0.5) discard; vec2 uv; bool clamp01=false;
+        if(uMode<0.5){
+          if(uMirror>0.5){ float u=vObj.z*0.5+0.5+uSpin*uTime*0.05; float v=vObj.y*0.5+0.5; if(vObj.x<0.0) u=1.0-u; uv=xf(vec2(u,v)); clamp01=true; }
+          else { float u=atan(vObj.z,vObj.x)/(2.0*PI)+0.5+uSpin*uTime*0.05; float v=asin(clamp(vObj.y,-1.0,1.0))/PI+0.5; uv=fract(xf(vec2(u,v))); }
+        } else { vec3 n=vPP.xyz/vPP.w; if(n.x<-1.0||n.x>1.0||n.y<-1.0||n.y>1.0||n.z>1.0) discard;
+          if(dot(vWorld-uProjCenter, uProjDir) > 0.0) discard;   // keep only the camera-facing hemisphere
+          uv=xf(n.xy*0.5+0.5); clamp01=true; }
+        if(clamp01 && (uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0)) discard;
         vec4 c=texture2D(uTex, uv); if(c.a<0.02) discard;
         float op = uReplace>0.5 ? 1.0 : uOpacity;
-        gl_FragColor=vec4(c.rgb, c.a*op); }`
+        gl_FragColor=vec4(c.rgb, c.a*op);
+        if(uRimBoost>0.0){ vec3 V=normalize(cameraPosition - vWorld); float fres=pow(1.0-abs(dot(normalize(vWN),V)),3.0);
+          gl_FragColor.rgb += fres*uRimBoost; gl_FragColor.a = clamp(max(gl_FragColor.a, fres*uRimBoost), 0.0, 1.0); } }`
   });
   projLayer=new THREE.Mesh(mergeAllRegions(projFilter()), mat); projLayer.renderOrder=2;
   const s=1.012; projLayer.scale.set(s,s,s); projLayer.position.copy(sceneCenter).multiplyScalar(1-s);   // lift a hair off the surface -> no coincident-depth shards
@@ -1291,6 +1304,7 @@ function projClearSet(){ projRegionSet.forEach(id=>{ const r=byId.get(id); projS
 function setDecalsVisible(v){ projDecals.forEach(d=>d.mesh.visible=v); }
 function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').value;
   $('projSpinRow').style.display = mode==='wrap'?'flex':'none';
+  $('projMirrorRow').style.display = mode==='wrap'?'flex':'none';
   $('projAimRow').style.display = mode==='projector'?'flex':'none';
   $('projDecalRow').style.display = mode==='decal'?'flex':'none';
   $('projBlendRow').style.display = mode==='decal'?'none':'flex';
@@ -1302,34 +1316,43 @@ function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').val
   if(projLayer){ projLayer.visible=on;
     PROJ_UN.uMode.value = mode==='projector'?1:0;
     PROJ_UN.uOpacity.value=+$('projOp').value; PROJ_UN.uReplace.value = $('projBlend').value==='replace'?1:0;
-    PROJ_UN.uScale.value=+$('projScale').value; PROJ_UN.uOffset.value.set(+$('projOffX').value, +$('projOffY').value);
+    PROJ_UN.uScale.value.set(+$('projScale').value, +$('projScaleY').value); PROJ_UN.uOffset.value.set(+$('projOffX').value, +$('projOffY').value);
     PROJ_UN.uRot.value=(+$('projRot').value)*Math.PI/180; PROJ_UN.uSpin.value=+$('projSpin').value;
+    PROJ_UN.uMirror.value = $('projMirror').checked?1:0; PROJ_UN.uRimBoost.value=+$('projRim').value;
     projLayer.material.depthWrite = ($('projBlend').value==='replace' && on);
   }
   requestRender();
 }
 let _projAimed=false;
-function aimProjector(){ const dir=new THREE.Vector3(); camera.getWorldDirection(dir);   // projector casts along the current view
+function aimProjector(){ camera.updateMatrixWorld();
+  const dir=new THREE.Vector3(); camera.getWorldDirection(dir);            // direction the camera looks (into the brain)
   PROJ_UN.uProjDir.value.copy(dir);
-  const center=group.localToWorld(sceneCenter.clone()), r=Math.max(40,modelRadius)*1.25;
-  const eye=center.clone().addScaledVector(dir, -r*2.5);
-  const camMat=new THREE.Matrix4().lookAt(eye,center,camera.up).setPosition(eye);
-  const view=camMat.clone().invert();
-  const proj=new THREE.Matrix4().makeOrthographic(-r,r,r,-r,0.01,r*6);
-  PROJ_UN.uProj.value.multiplyMatrices(proj, view); _projAimed=true; requestRender();
+  PROJ_UN.uProjCenter.value.copy(group.localToWorld(sceneCenter.clone())); // brain center in world
+  PROJ_UN.uProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);  // project exactly from the current view
+  _projAimed=true; requestRender();
 }
-function makeProjQuad(){ return new THREE.Mesh(new THREE.PlaneGeometry(1,1),
-  new THREE.MeshBasicMaterial({map:projTex, transparent:true, depthWrite:false, side:THREE.DoubleSide})); }
-function placeDecalLocal(pLocal, nLocal){ if(!projTex){ projStatus('Load media first.'); return; }
-  const q=makeProjQuad(), sz=+$('projDecalSize').value; q.scale.set(sz,sz,1);
-  q.position.copy(pLocal).addScaledVector(nLocal, 0.8); q.lookAt(pLocal.clone().add(nLocal));
-  q.renderOrder=2; group.add(q); projDecals.push({mesh:q}); requestRender(); }
+// decal material: raw shader sampling the media by the DecalGeometry uv (true color, surface-hugging)
+function decalMaterial(){ return new THREE.ShaderMaterial({ uniforms:{uTex:{value:projTex}},
+  transparent:true, depthWrite:false, depthTest:true, polygonOffset:true, polygonOffsetFactor:-6, polygonOffsetUnits:-6, side:THREE.DoubleSide,
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader:`uniform sampler2D uTex; varying vec2 vUv; void main(){ vec4 c=texture2D(uTex,vUv); if(c.a<0.02) discard; gl_FragColor=c; }` }); }
+// stamp the media onto the clicked region's actual surface (conforms to the cortex), not a flat card
+function placeDecal(hit){ if(!projTex){ projStatus('Load media first.'); return; }
+  const mesh=hit.object, sz=+$('projDecalSize').value;
+  const nW=hit.face ? hit.face.normal.clone().transformDirection(mesh.matrixWorld).normalize() : new THREE.Vector3(0,0,1);
+  const orient=new THREE.Object3D(); orient.position.copy(hit.point); orient.lookAt(hit.point.clone().add(nW)); orient.updateMatrix();
+  const geo=new DecalGeometry(mesh, hit.point.clone(), orient.rotation, new THREE.Vector3(sz, sz, Math.max(sz,16)));
+  geo.applyMatrix4(new THREE.Matrix4().copy(group.matrixWorld).invert());   // world -> group-local so it follows the brain
+  const m=new THREE.Mesh(geo, decalMaterial()); m.renderOrder=3; group.add(m); projDecals.push({mesh:m}); requestRender(); }
 function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); }); projDecals=[]; requestRender(); }
 $('projOn').addEventListener('change', updateProjector);
 $('projMode').addEventListener('change', updateProjector);
 $('projBlend').addEventListener('change', updateProjector);
 $('projOp').addEventListener('input', e=>{ $('projOpV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
 $('projScale').addEventListener('input', e=>{ $('projScaleV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
+$('projScaleY').addEventListener('input', e=>{ $('projScaleYV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
+$('projRim').addEventListener('input', e=>{ $('projRimV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
+$('projMirror').addEventListener('change', updateProjector);
 $('projOffX').addEventListener('input', e=>{ $('projOffXV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
 $('projOffY').addEventListener('input', e=>{ $('projOffYV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
 $('projRot').addEventListener('input', e=>{ $('projRotV').textContent=e.target.value+'°'; updateProjector(); });
@@ -1610,10 +1633,7 @@ renderer.domElement.addEventListener('click',ev=>{
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
   const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
   if(projRegionPick){ projToggleRegion(hitRec); return; }   // projector: build the selected-region set
-  if(projPick){ if(hits.length){ const h=hits[0], pL=group.worldToLocal(h.point.clone());
-      const inv=new THREE.Matrix4().copy(group.matrixWorld).invert();
-      const nW=h.face?h.face.normal.clone().transformDirection(h.object.matrixWorld):new THREE.Vector3(0,0,1);
-      placeDecalLocal(pL, nW.transformDirection(inv).normalize()); }
+  if(projPick){ if(hits.length) placeDecal(hits[0]);
     projPick=false; projStatus(projDecals.length+' decal stamp(s).'); return; }
   if(arcPicking){ handleArcPick(hitRec); return; }   // arc-arrow source/target pick mode
   if(arcGroup.children.length){                       // click an existing arc tube -> label it
