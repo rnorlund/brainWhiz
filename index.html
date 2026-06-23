@@ -532,9 +532,11 @@
     <div class="row" id="projAimRow"><button class="sm" id="projAim" title="Aim the projector from the current camera view" style="flex:1">🎯 Aim from current view</button></div>
     <div class="row" id="projVidRow" style="display:none"><button class="sm" id="projPlay">⏸ Pause</button>
       <label style="margin-left:6px">speed</label><input type="range" id="projVidSpeed" min="0.25" max="3" step="0.25" value="1" style="flex:1"><span id="projVidSpeedV" style="min-width:24px;text-align:right">1×</span></div>
-    <div class="row" id="projDecalRow" style="display:none"><button class="sm" id="projDecalAdd" title="Then click a spot on the brain to stamp the media">＋ Stamp (click brain)</button>
+    <div class="row" id="projDecalRow" style="display:none"><button class="sm" id="projDecalAdd" title="Then click a spot on the brain to stamp the media — it spans the cortex surface across regions">＋ Stamp (click brain)</button>
       <button class="sm" id="projDecalClear">✕</button>
-      <label style="margin-left:4px">size</label><input type="range" id="projDecalSize" min="4" max="60" step="1" value="22" style="flex:1"></div>
+      <select id="projDecalShape" title="Decal shape mask" style="font-size:11px;margin-left:4px"><option value="0">▭ Square</option><option value="1">● Circle</option><option value="2">⬭ Oval</option><option value="3">▬ Rectangle</option><option value="4">♥ Heart</option><option value="5">★ Star</option><option value="6">◆ Diamond</option><option value="7">⬢ Hexagon</option></select></div>
+    <div class="ctl" id="projDecalSizeRow" style="display:none"><div class="lab"><span title="Decal stamp size">Decal size</span><span id="projDecalSizeV">22</span></div>
+      <input type="range" id="projDecalSize" min="6" max="120" step="1" value="22"></div>
     <div id="projStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-top:2px"></div>
   </div></details>
 
@@ -1307,6 +1309,7 @@ function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').val
   $('projMirrorRow').style.display = mode==='wrap'?'flex':'none';
   $('projAimRow').style.display = mode==='projector'?'flex':'none';
   $('projDecalRow').style.display = mode==='decal'?'flex':'none';
+  $('projDecalSizeRow').style.display = mode==='decal'?'flex':'none';
   $('projBlendRow').style.display = mode==='decal'?'none':'flex';
   $('projRegionRow').style.display = mode==='decal'?'none':'flex';
   $('projPickRow').style.display = (mode!=='decal' && $('projTarget').value==='selected')?'flex':'none';
@@ -1331,19 +1334,31 @@ function aimProjector(){ camera.updateMatrixWorld();
   PROJ_UN.uProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);  // project exactly from the current view
   _projAimed=true; requestRender();
 }
-// decal material: raw shader sampling the media by the DecalGeometry uv (true color, surface-hugging)
-function decalMaterial(){ return new THREE.ShaderMaterial({ uniforms:{uTex:{value:projTex}},
+// decal material: raw shader sampling the media by the DecalGeometry uv (true color, surface-hugging),
+// with a SHAPE mask (0 square · 1 circle · 2 heart · 3 star · 4 diamond · 5 hexagon)
+function decalMaterial(shape){ return new THREE.ShaderMaterial({ uniforms:{uTex:{value:projTex}, uShape:{value:shape|0}},
   transparent:true, depthWrite:false, depthTest:true, polygonOffset:true, polygonOffsetFactor:-6, polygonOffsetUnits:-6, side:THREE.DoubleSide,
   vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader:`uniform sampler2D uTex; varying vec2 vUv; void main(){ vec4 c=texture2D(uTex,vUv); if(c.a<0.02) discard; gl_FragColor=c; }` }); }
-// stamp the media onto the clicked region's actual surface (conforms to the cortex), not a flat card
+  fragmentShader:`uniform sampler2D uTex; uniform int uShape; varying vec2 vUv;
+    void main(){ vec2 p=vUv-0.5;
+      if(uShape==1){ if(length(p)>0.5) discard; }                          // circle
+      else if(uShape==2){ if(length(p/vec2(0.5,0.32))>1.0) discard; }       // oval
+      else if(uShape==3){ if(abs(p.x)>0.5||abs(p.y)>0.3) discard; }         // rectangle
+      else if(uShape==4){ vec2 q=vec2(p.x*2.6,-p.y*2.6); float a=q.x*q.x+q.y*q.y-1.0; if(a*a*a - q.x*q.x*q.y*q.y*q.y > 0.0) discard; }  // heart
+      else if(uShape==5){ float ang=atan(p.y,p.x); float rad=0.5*(0.60+0.32*cos(ang*5.0)); if(length(p)>rad) discard; }  // star
+      else if(uShape==6){ if(abs(p.x)+abs(p.y)>0.5) discard; }              // diamond
+      else if(uShape==7){ vec2 q=abs(p); if(max(q.x*0.8660+q.y*0.5, q.y)>0.45) discard; }  // hexagon
+      vec4 c=texture2D(uTex,vUv); if(c.a<0.02) discard; gl_FragColor=c; }` }); }
+// stamp the media onto the WHOLE-BRAIN surface (spans regions), conforming to the cortex
 function placeDecal(hit){ if(!projTex){ projStatus('Load media first.'); return; }
-  const mesh=hit.object, sz=+$('projDecalSize').value;
-  const nW=hit.face ? hit.face.normal.clone().transformDirection(mesh.matrixWorld).normalize() : new THREE.Vector3(0,0,1);
-  const orient=new THREE.Object3D(); orient.position.copy(hit.point); orient.lookAt(hit.point.clone().add(nW)); orient.updateMatrix();
-  const geo=new DecalGeometry(mesh, hit.point.clone(), orient.rotation, new THREE.Vector3(sz, sz, Math.max(sz,16)));
-  geo.applyMatrix4(new THREE.Matrix4().copy(group.matrixWorld).invert());   // world -> group-local so it follows the brain
-  const m=new THREE.Mesh(geo, decalMaterial()); m.renderOrder=3; group.add(m); projDecals.push({mesh:m}); requestRender(); }
+  const sz=+$('projDecalSize').value, shape=+($('projDecalShape').value||0);
+  const target=new THREE.Mesh(mergeAllRegions()); target.updateMatrixWorld(true);   // merged shell in group-local coords (identity world)
+  const pL=group.worldToLocal(hit.point.clone());
+  const nW=hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize() : new THREE.Vector3(0,0,1);
+  const nL=nW.transformDirection(new THREE.Matrix4().copy(group.matrixWorld).invert()).normalize();
+  const orient=new THREE.Object3D(); orient.position.copy(pL); orient.lookAt(pL.clone().add(nL)); orient.updateMatrix();
+  const geo=new DecalGeometry(target, pL, orient.rotation, new THREE.Vector3(sz, sz, Math.max(28, sz*0.6)));   // group-local -> add to group directly
+  const m=new THREE.Mesh(geo, decalMaterial(shape)); m.renderOrder=3; group.add(m); projDecals.push({mesh:m}); requestRender(); }
 function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); }); projDecals=[]; requestRender(); }
 $('projOn').addEventListener('change', updateProjector);
 $('projMode').addEventListener('change', updateProjector);
@@ -1372,6 +1387,7 @@ $('projPlay').addEventListener('click', ()=>{ if(!projVideo) return; if(projVide
 $('projVidSpeed').addEventListener('input', e=>{ $('projVidSpeedV').textContent=(+e.target.value)+'×'; if(projVideo) projVideo.playbackRate=+e.target.value; });
 $('projDecalAdd').addEventListener('click', ()=>{ if(!projTex){ projStatus('Load media first.'); return; } projPick=true; projStatus('Click a spot on the brain to stamp the media…'); });
 $('projDecalClear').addEventListener('click', clearDecals);
+$('projDecalSize').addEventListener('input', e=>{ $('projDecalSizeV').textContent=e.target.value; });
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
