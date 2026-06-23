@@ -372,16 +372,15 @@
       <button class="sm" id="bgWhite" title="white">▢</button>
       <button class="sm" id="bgBlack" title="black">▣</button></div>
     <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
-      <div class="row"><label class="toggle" title="A glowing halo radiating off the brain (additive glow). Just for fun."><input type="checkbox" id="auraOn"> ✨ Aura glow</label>
-        <input type="color" id="auraColor" value="#5db0ff" title="Aura color"></div>
-      <div class="ctl"><div class="lab"><span title="Halo size relative to the brain">Aura size</span><span id="auraSizeV">1.35</span></div>
-        <input type="range" id="auraSize" min="0.6" max="2.6" step="0.05" value="1.35"></div>
-      <div class="ctl"><div class="lab"><span title="Aura brightness">Aura intensity</span><span id="auraIntV">0.85</span></div>
+      <div class="row"><label class="toggle" title="A soft glow radiating outward from the brain (Unity-style bloom). Just for fun."><input type="checkbox" id="auraOn"> ✨ Aura glow</label>
+        <input type="color" id="auraColor" value="#5db0ff" title="Aura color">
+        <label class="toggle" title="Rainbow: cycle the aura color automatically" style="margin-left:2px"><input type="checkbox" id="auraRainbow"> 🌈</label></div>
+      <div class="ctl"><div class="lab"><span title="How far the glow reaches out from the brain">Aura reach</span><span id="auraSizeV">1.35</span></div>
+        <input type="range" id="auraSize" min="1.05" max="2.2" step="0.05" value="1.35"></div>
+      <div class="ctl"><div class="lab"><span title="Glow brightness">Aura intensity</span><span id="auraIntV">0.85</span></div>
         <input type="range" id="auraIntensity" min="0" max="2" step="0.05" value="0.85"></div>
       <div class="ctl"><div class="lab"><span title="Pulsing/breathing speed (0 = steady)">Aura pulse</span><span id="auraPulseV">0.0</span></div>
         <input type="range" id="auraPulse" min="0" max="4" step="0.1" value="0"></div>
-      <div class="row"><label class="toggle" title="Continuously cycle the aura hue"><input type="checkbox" id="auraRainbow"> 🌈 rainbow cycle</label>
-        <label class="toggle" title="Slowly rotate the halo"><input type="checkbox" id="auraSpin"> ⟳ spin</label></div>
     </div>
   </div></details>
 
@@ -1016,32 +1015,38 @@ $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
-// ---------- aura glow: an additive fresnel SHELL of the brain — glows off the silhouette edges ----------
-let auraGroup=null, auraMat=null, _auraT=0, _auraHue=0.58, _bcAura=null;
+// ---------- aura glow: soft outward bloom — concentric additive shells of the brain, fading with distance ----------
+const AURA_LAYERS=6;
+let auraGroup=null, auraGeo=null, _auraT=0, _auraHue=0.58, _bcAura=null;
 function brainCenterAura(){ if(_bcAura) return _bcAura; const b=new THREE.Box3();
   for(const o of meshes){ const g=o.mesh.geometry; if(!g.boundingBox) g.computeBoundingBox(); b.union(g.boundingBox); }
   return (_bcAura = b.isEmpty()? new THREE.Vector3() : b.getCenter(new THREE.Vector3())); }
-function ensureAura(){ if(auraGroup) return auraGroup;
-  auraMat=new THREE.ShaderMaterial({ uniforms:{ uColor:{value:new THREE.Color($('auraColor').value)}, uIntensity:{value:+$('auraIntensity').value}, uPower:{value:2.2} },
-    vertexShader:`varying vec3 vN; varying vec3 vV; void main(){ vec4 wp=modelMatrix*vec4(position,1.0); vV=normalize(cameraPosition-wp.xyz); vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*wp; }`,
-    fragmentShader:`uniform vec3 uColor; uniform float uIntensity; uniform float uPower; varying vec3 vN; varying vec3 vV;
-      void main(){ float f=pow(1.0-abs(dot(normalize(vN),normalize(vV))), uPower); float a=clamp(f*uIntensity,0.0,1.0); if(a<0.01) discard; gl_FragColor=vec4(uColor*a, a); }`,
-    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:true, side:THREE.BackSide });
-  auraGroup=new THREE.Group();
-  for(const o of meshes){ const m=new THREE.Mesh(o.mesh.geometry, auraMat); m.renderOrder=-1; auraGroup.add(m); }  // reuse geometry (cheap)
+function buildAuraGeo(){ let total=0; for(const o of meshes) total+=o.mesh.geometry.attributes.position.count;
+  const pos=new Float32Array(total*3), nrm=new Float32Array(total*3); let off=0;
+  for(const o of meshes){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
+    pos.set(p, off); if(n) nrm.set(n, off); off+=p.length; }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3)); return geo; }
+function disposeAura(){ if(!auraGroup) return; group.remove(auraGroup); auraGroup.children.forEach(m=>m.material.dispose()); if(auraGeo) auraGeo.dispose(); auraGroup=null; auraGeo=null; }
+function ensureAura(){ if(auraGroup) return auraGroup; auraGeo=buildAuraGeo(); auraGroup=new THREE.Group();
+  for(let i=0;i<AURA_LAYERS;i++){ const mat=new THREE.MeshBasicMaterial({ color:new THREE.Color($('auraColor').value),
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, depthTest:true, side:THREE.BackSide, opacity:0.1 });
+    const m=new THREE.Mesh(auraGeo, mat); m.renderOrder=-1; auraGroup.add(m); }
   group.add(auraGroup); return auraGroup; }
-function positionAura(){ if(!auraGroup) return; const s=+$('auraSize').value, C=brainCenterAura();
-  auraGroup.scale.set(s,s,s); auraGroup.position.copy(C).multiplyScalar(1-s); }   // expand the shell about the brain center
+// inner shells sit just outside the brain (bright); outer shells reach to 'reach' and fade to 0 -> soft outward glow
+function positionAura(){ if(!auraGroup) return; const C=brainCenterAura(), maxS=+$('auraSize').value, I=+$('auraIntensity').value;
+  auraGroup.children.forEach((m,i)=>{ const t=(i+1)/AURA_LAYERS, s=1+(maxS-1)*t;
+    m.scale.set(s,s,s); m.position.copy(C).multiplyScalar(1-s);
+    m.material.opacity=Math.max(0, I*Math.pow(1-t,1.6)*0.32); }); }
 function updateAura(){ const on=$('auraOn').checked; if(on) ensureAura();
-  if(auraGroup){ auraGroup.visible=on; if(auraMat){ if(!$('auraRainbow').checked) auraMat.uniforms.uColor.value.set($('auraColor').value); auraMat.uniforms.uIntensity.value=+$('auraIntensity').value; } positionAura(); }
+  if(auraGroup){ auraGroup.visible=on; if(!$('auraRainbow').checked){ const c=new THREE.Color($('auraColor').value); auraGroup.children.forEach(m=>m.material.color.copy(c)); } positionAura(); }
   requestRender(); refreshSliceViews(); }   // also updates the mesh-region slice edge-glow
+function refreshAuraGeo(){ if(auraGroup && $('auraOn').checked){ disposeAura(); _bcAura=null; ensureAura(); positionAura(); requestRender(); } }
 $('auraOn').addEventListener('change', updateAura);
 $('auraColor').addEventListener('input', updateAura);
 $('auraSize').addEventListener('input', e=>{ $('auraSizeV').textContent=(+e.target.value).toFixed(2); positionAura(); requestRender(); refreshSliceViews(); });
-$('auraIntensity').addEventListener('input', e=>{ $('auraIntV').textContent=(+e.target.value).toFixed(2); updateAura(); });
+$('auraIntensity').addEventListener('input', e=>{ $('auraIntV').textContent=(+e.target.value).toFixed(2); positionAura(); requestRender(); refreshSliceViews(); });
 $('auraPulse').addEventListener('input', e=>{ $('auraPulseV').textContent=(+e.target.value).toFixed(1); requestRender(); });
 $('auraRainbow').addEventListener('change', updateAura);
-$('auraSpin').addEventListener('change', requestRender);
 $('vividVal').textContent=(+$('vivid').value).toFixed(2)+'×';
 $('rimVal').textContent=(+$('rim').value).toFixed(2);
 $('coloredOpVal').textContent=(+$('coloredOp').value).toFixed(2);
@@ -1113,7 +1118,7 @@ function smoothMesh(rec, iters){
   for(let i=0;i<nv;i++){ const g=vg[i]; arr[3*i]=P[3*g];arr[3*i+1]=P[3*g+1];arr[3*i+2]=P[3*g+2]; }
   posAttr.needsUpdate=true; rebuildSmoothNormals(rec);
 }
-function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); }
+function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); }
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
@@ -1711,7 +1716,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
-  'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow','auraSpin'];
+  'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
   const p={};
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
@@ -3282,12 +3287,11 @@ function tick(){
   const spinOn = $('spin').checked && !controls.autoRotate;
   const pulseOn = connUniforms.uPulse.value>0.5;
   const flowOn = tractFX.uPulse.value>0.5;
-  const auraAnim = auraGroup && auraMat && $('auraOn').checked && (+$('auraPulse').value>0 || $('auraRainbow').checked || $('auraSpin').checked);
-  if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value;
-    let inten=+$('auraIntensity').value; if(ps>0) inten*= 0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8));
-    auraMat.uniforms.uIntensity.value=inten;
-    if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; auraMat.uniforms.uColor.value.setHSL(_auraHue,0.85,0.6); }
-    if($('auraSpin').checked) auraGroup.rotation.y += dt*0.4;
+  const auraAnim = auraGroup && $('auraOn').checked && (+$('auraPulse').value>0 || $('auraRainbow').checked);
+  if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value, I=+$('auraIntensity').value;
+    const pulse = ps>0 ? (0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8))) : 1;
+    let col=null; if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; col=new THREE.Color().setHSL(_auraHue,0.85,0.6); }
+    auraGroup.children.forEach((m,i)=>{ const t=(i+1)/AURA_LAYERS; m.material.opacity=Math.max(0, I*pulse*Math.pow(1-t,1.6)*0.32); if(col) m.material.color.copy(col); });
   }
   // ongoing animations must keep rendering every frame
   const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim;
