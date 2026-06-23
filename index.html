@@ -493,6 +493,42 @@
     </div></details>
   </div></details>
 
+  <details class="acc"><summary><span class="chev">▸</span>🎬 Projector</summary><div class="accb">
+    <div class="row"><label class="toggle" title="Project an image, video, or webcam onto the 3D brain surface"><input type="checkbox" id="projOn"> Projector on</label></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><label style="min-width:auto">Media</label>
+      <button class="sm" id="projImgBtn" title="Load an image file">🖼 Image</button>
+      <button class="sm" id="projVidBtn" title="Load a video file (mp4 / webm)">🎞 Video</button>
+      <button class="sm" id="projCamBtn" title="Use your webcam feed">📷 Webcam</button></div>
+    <div class="row"><input type="text" id="projUrl" placeholder="…or paste an image URL" style="flex:1;font-size:11px">
+      <button class="sm" id="projUrlBtn">Use</button></div>
+    <div id="projMediaName" style="font-size:11px;opacity:.75;min-height:13px"></div>
+    <input type="file" id="projImgFile" accept="image/*" style="display:none">
+    <input type="file" id="projVidFile" accept="video/*" style="display:none">
+    <div class="row"><label title="Wrap = spherical map over the whole brain · Projector = cast from a direction · Decal = stamp where you click">Style</label>
+      <select id="projMode"><option value="wrap">Wrap around</option><option value="projector">Projector (from view)</option><option value="decal">Decal stamps</option></select></div>
+    <div class="row" id="projBlendRow"><label title="Blend over the region colors, or replace the surface entirely">Blend</label>
+      <select id="projBlend"><option value="over">Blend over</option><option value="replace">Replace surface</option></select></div>
+    <div class="ctl"><div class="lab"><span>Opacity</span><span id="projOpV">0.85</span></div>
+      <input type="range" id="projOp" min="0" max="1" step="0.05" value="0.85"></div>
+    <div class="ctl"><div class="lab"><span title="Zoom of the projected media">Scale</span><span id="projScaleV">1.0</span></div>
+      <input type="range" id="projScale" min="0.2" max="4" step="0.05" value="1"></div>
+    <div class="ctl"><div class="lab"><span>Offset X</span><span id="projOffXV">0.00</span></div>
+      <input type="range" id="projOffX" min="-1" max="1" step="0.02" value="0"></div>
+    <div class="ctl"><div class="lab"><span>Offset Y</span><span id="projOffYV">0.00</span></div>
+      <input type="range" id="projOffY" min="-1" max="1" step="0.02" value="0"></div>
+    <div class="ctl"><div class="lab"><span>Rotation</span><span id="projRotV">0°</span></div>
+      <input type="range" id="projRot" min="0" max="360" step="1" value="0"></div>
+    <div class="ctl" id="projSpinRow"><div class="lab"><span title="Wrap mode: scroll the media around the brain">Wrap spin</span><span id="projSpinV">0.0</span></div>
+      <input type="range" id="projSpin" min="0" max="3" step="0.1" value="0"></div>
+    <div class="row" id="projAimRow"><button class="sm" id="projAim" title="Aim the projector from the current camera view" style="flex:1">🎯 Aim from current view</button></div>
+    <div class="row" id="projVidRow" style="display:none"><button class="sm" id="projPlay">⏸ Pause</button>
+      <label style="margin-left:6px">speed</label><input type="range" id="projVidSpeed" min="0.25" max="3" step="0.25" value="1" style="flex:1"><span id="projVidSpeedV" style="min-width:24px;text-align:right">1×</span></div>
+    <div class="row" id="projDecalRow" style="display:none"><button class="sm" id="projDecalAdd" title="Then click a spot on the brain to stamp the media">＋ Stamp (click brain)</button>
+      <button class="sm" id="projDecalClear">✕</button>
+      <label style="margin-left:4px">size</label><input type="range" id="projDecalSize" min="4" max="60" step="1" value="22" style="flex:1"></div>
+    <div id="projStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-top:2px"></div>
+  </div></details>
+
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
     <!-- axis options first -->
     <div class="row" style="gap:14px">
@@ -1204,6 +1240,101 @@ function refreshGlassShellGeo(){ if(glassShell && $('shellOn').checked){ dispose
 $('shellOn').addEventListener('change', updateGlassShell);
 $('shellColor').addEventListener('input', updateGlassShell);
 $('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
+// ================= PROJECTOR: image / video / webcam onto the brain =================
+let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[], projPick=false, _projT=0;
+const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:1}, uOffset:{value:new THREE.Vector2(0,0)},
+  uRot:{value:0}, uSpin:{value:0}, uTime:{value:0}, uOpacity:{value:0.85}, uReplace:{value:0},
+  uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)} };
+function projStatus(t){ const e=$('projStatus'); if(e) e.textContent=t; }
+function setProjTexture(tex, name, video){
+  if(projVideo){ try{projVideo.pause();}catch(e){} } projVideo=video||null;
+  if(projStream && (!video || !video.srcObject)){ projStream.getTracks().forEach(t=>t.stop()); projStream=null; }
+  if(tex){ tex.wrapS=tex.wrapT=THREE.RepeatWrapping; }
+  projTex=tex; PROJ_UN.uTex.value=tex; PROJ_UN.uHasTex.value=tex?1:0;
+  $('projMediaName').textContent=name||''; $('projVidRow').style.display=video?'flex':'none';
+  projDecals.forEach(d=>{ d.mesh.material.map=tex; d.mesh.material.needsUpdate=true; });
+  requestRender();
+}
+function loadProjImage(src, name){ new THREE.TextureLoader().load(src, t=>{ t.colorSpace=THREE.SRGBColorSpace; setProjTexture(t, name||'image'); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Image loaded.'); }, undefined, ()=>projStatus('Image load failed (CORS-blocked? try a file).')); }
+function loadProjVideo(url, name){ const v=document.createElement('video'); v.src=url; v.loop=true; v.muted=true; v.playsInline=true; v.crossOrigin='anonymous';
+  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.SRGBColorSpace; v.play().catch(()=>{});
+  setProjTexture(t, name||'video', v); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Video loaded.'); }
+async function startWebcam(){ try{ const s=await navigator.mediaDevices.getUserMedia({video:true});
+  const v=document.createElement('video'); v.srcObject=s; v.muted=true; v.playsInline=true; await v.play();
+  const t=new THREE.VideoTexture(v); t.colorSpace=THREE.SRGBColorSpace; projStream=s;
+  setProjTexture(t,'webcam',v); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Webcam live.'); }
+  catch(e){ projStatus('Webcam unavailable / denied.'); } }
+function ensureProjLayer(){ if(projLayer || !meshes.length) return;
+  const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.FrontSide,
+    vertexShader:`varying vec3 vObj; varying vec3 vWN; varying vec4 vPP; uniform mat4 uProj;
+      void main(){ vObj=normalize(position); vec4 wp=modelMatrix*vec4(position,1.0); vWN=normalize(mat3(modelMatrix)*normal); vPP=uProj*wp; gl_Position=projectionMatrix*viewMatrix*wp; }`,
+    fragmentShader:`precision highp float; varying vec3 vObj; varying vec3 vWN; varying vec4 vPP;
+      uniform sampler2D uTex; uniform float uHasTex,uMode,uScale,uRot,uSpin,uTime,uOpacity,uReplace; uniform vec2 uOffset; uniform vec3 uProjDir;
+      #define PI 3.14159265
+      vec2 xf(vec2 uv){ uv-=0.5; uv/=max(0.05,uScale); float c=cos(uRot),s=sin(uRot); uv=vec2(c*uv.x-s*uv.y,s*uv.x+c*uv.y); uv+=0.5; uv+=uOffset; return uv; }
+      void main(){ if(uHasTex<0.5) discard; vec2 uv;
+        if(uMode<0.5){ float u=atan(vObj.z,vObj.x)/(2.0*PI)+0.5+uSpin*uTime*0.05; float v=asin(clamp(vObj.y,-1.0,1.0))/PI+0.5; uv=fract(xf(vec2(u,v))); }
+        else { vec3 n=vPP.xyz/vPP.w; if(n.x<-1.0||n.x>1.0||n.y<-1.0||n.y>1.0||n.z<-1.0||n.z>1.0) discard;
+          if(dot(normalize(vWN),normalize(uProjDir))>0.0) discard; uv=xf(n.xy*0.5+0.5); if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0) discard; }
+        vec4 c=texture2D(uTex, uv); if(c.a<0.02) discard;
+        float op = uReplace>0.5 ? 1.0 : uOpacity;
+        gl_FragColor=vec4(c.rgb, c.a*op); }`
+  });
+  projLayer=new THREE.Mesh(mergeAllRegions(), mat); projLayer.renderOrder=2; group.add(projLayer);
+}
+function setDecalsVisible(v){ projDecals.forEach(d=>d.mesh.visible=v); }
+function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').value;
+  $('projSpinRow').style.display = mode==='wrap'?'flex':'none';
+  $('projAimRow').style.display = mode==='projector'?'flex':'none';
+  $('projDecalRow').style.display = mode==='decal'?'flex':'none';
+  $('projBlendRow').style.display = mode==='decal'?'none':'flex';
+  if(mode==='decal'){ if(projLayer) projLayer.visible=false; setDecalsVisible(on); requestRender(); return; }
+  if(on) ensureProjLayer(); setDecalsVisible(false);
+  if(projLayer){ projLayer.visible=on;
+    PROJ_UN.uMode.value = mode==='projector'?1:0;
+    PROJ_UN.uOpacity.value=+$('projOp').value; PROJ_UN.uReplace.value = $('projBlend').value==='replace'?1:0;
+    PROJ_UN.uScale.value=+$('projScale').value; PROJ_UN.uOffset.value.set(+$('projOffX').value, +$('projOffY').value);
+    PROJ_UN.uRot.value=(+$('projRot').value)*Math.PI/180; PROJ_UN.uSpin.value=+$('projSpin').value;
+    projLayer.material.depthWrite = ($('projBlend').value==='replace' && on);
+  }
+  requestRender();
+}
+function aimProjector(){ const dir=new THREE.Vector3(); camera.getWorldDirection(dir);   // projector casts along the current view
+  PROJ_UN.uProjDir.value.copy(dir);
+  const center=group.localToWorld(sceneCenter.clone()), r=Math.max(40,modelRadius)*1.25;
+  const eye=center.clone().addScaledVector(dir, -r*2.5);
+  const camMat=new THREE.Matrix4().lookAt(eye,center,camera.up).setPosition(eye);
+  const view=camMat.clone().invert();
+  const proj=new THREE.Matrix4().makeOrthographic(-r,r,r,-r,0.01,r*6);
+  PROJ_UN.uProj.value.multiplyMatrices(proj, view); requestRender();
+}
+function makeProjQuad(){ return new THREE.Mesh(new THREE.PlaneGeometry(1,1),
+  new THREE.MeshBasicMaterial({map:projTex, transparent:true, depthWrite:false, side:THREE.DoubleSide})); }
+function placeDecalLocal(pLocal, nLocal){ if(!projTex){ projStatus('Load media first.'); return; }
+  const q=makeProjQuad(), sz=+$('projDecalSize').value; q.scale.set(sz,sz,1);
+  q.position.copy(pLocal).addScaledVector(nLocal, 0.8); q.lookAt(pLocal.clone().add(nLocal));
+  q.renderOrder=2; group.add(q); projDecals.push({mesh:q}); requestRender(); }
+function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); }); projDecals=[]; requestRender(); }
+$('projOn').addEventListener('change', updateProjector);
+$('projMode').addEventListener('change', updateProjector);
+$('projBlend').addEventListener('change', updateProjector);
+$('projOp').addEventListener('input', e=>{ $('projOpV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
+$('projScale').addEventListener('input', e=>{ $('projScaleV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
+$('projOffX').addEventListener('input', e=>{ $('projOffXV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
+$('projOffY').addEventListener('input', e=>{ $('projOffYV').textContent=(+e.target.value).toFixed(2); updateProjector(); });
+$('projRot').addEventListener('input', e=>{ $('projRotV').textContent=e.target.value+'°'; updateProjector(); });
+$('projSpin').addEventListener('input', e=>{ $('projSpinV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
+$('projAim').addEventListener('click', aimProjector);
+$('projImgBtn').addEventListener('click', ()=>$('projImgFile').click());
+$('projVidBtn').addEventListener('click', ()=>$('projVidFile').click());
+$('projCamBtn').addEventListener('click', startWebcam);
+$('projImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ loadProjImage(URL.createObjectURL(f), f.name); } e.target.value=''; });
+$('projVidFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ loadProjVideo(URL.createObjectURL(f), f.name); } e.target.value=''; });
+$('projUrlBtn').addEventListener('click', ()=>{ const u=$('projUrl').value.trim(); if(u) loadProjImage(u, u.split('/').pop()); });
+$('projPlay').addEventListener('click', ()=>{ if(!projVideo) return; if(projVideo.paused){ projVideo.play(); $('projPlay').textContent='⏸ Pause'; } else { projVideo.pause(); $('projPlay').textContent='▶ Play'; } });
+$('projVidSpeed').addEventListener('input', e=>{ $('projVidSpeedV').textContent=(+e.target.value)+'×'; if(projVideo) projVideo.playbackRate=+e.target.value; });
+$('projDecalAdd').addEventListener('click', ()=>{ if(!projTex){ projStatus('Load media first.'); return; } projPick=true; projStatus('Click a spot on the brain to stamp the media…'); });
+$('projDecalClear').addEventListener('click', clearDecals);
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
@@ -1463,6 +1594,11 @@ renderer.domElement.addEventListener('click',ev=>{
   ray.setFromCamera(mouse,camera);
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
   const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
+  if(projPick){ if(hits.length){ const h=hits[0], pL=group.worldToLocal(h.point.clone());
+      const inv=new THREE.Matrix4().copy(group.matrixWorld).invert();
+      const nW=h.face?h.face.normal.clone().transformDirection(h.object.matrixWorld):new THREE.Vector3(0,0,1);
+      placeDecalLocal(pL, nW.transformDirection(inv).normalize()); }
+    projPick=false; projStatus(projDecals.length+' decal stamp(s).'); return; }
   if(arcPicking){ handleArcPick(hitRec); return; }   // arc-arrow source/target pick mode
   toggleSelect(hitRec);
 });
@@ -3439,8 +3575,13 @@ function tick(){
     // pulse the mesh-region SLICE glow too — re-composite throttled (reuses cached fills, cheap)
     if(sliceMode && sliceKind==='mesh' && (ps>0 || $('auraRainbow').checked)){ _auraSlAcc+=dt; if(_auraSlAcc>0.07){ _auraSlAcc=0; renderMeshSlices(); } }
   } else { _auraPulseMul=1; }
+  // projector: advance wrap-spin time; video texture needs continuous rendering to update
+  const projOnNow = $('projOn') && $('projOn').checked;
+  const projSpinOn = projOnNow && projLayer && $('projMode').value==='wrap' && +$('projSpin').value>0;
+  if(projSpinOn){ _projT+=dt; PROJ_UN.uTime.value=_projT; }
+  const projVidOn = projOnNow && projVideo && !projVideo.paused;
   // ongoing animations must keep rendering every frame
-  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim;
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim || projSpinOn || projVidOn;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
