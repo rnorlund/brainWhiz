@@ -467,6 +467,18 @@
       <input type="color" id="connPulseColor" value="#ffffff" title="pulse color"></div>
     <div class="ctl"><div class="lab"><span>Pulse speed</span><span id="connPulseVal">0.8</span></div>
       <input type="range" id="connPulseSpeed" min="0.1" max="3" step="0.1" value="0.8"></div>
+    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      <div class="row"><label title="Hand-drawn arced 3D arrows between two regions (mesh view) to annotate a connection">🏹 Arc arrows</label>
+        <button class="sm" id="arcAdd" title="Click, then pick a source region and a target region in the 3D view">＋ Add</button>
+        <button class="sm" id="arcClear" title="Remove all arcs">✕</button></div>
+      <div id="arcStatus" style="font-size:11px;opacity:.8;min-height:14px;margin:2px 0"></div>
+      <div class="ctl"><div class="lab"><span title="Arrow tube thickness">Arc thickness</span><span id="arcThickV">1.6</span></div>
+        <input type="range" id="arcThick" min="0.4" max="6" step="0.1" value="1.6"></div>
+      <div class="ctl"><div class="lab"><span title="How far the arc bows away from the brain">Arc height</span><span id="arcHeightV">35</span></div>
+        <input type="range" id="arcHeight" min="0" max="100" step="1" value="35"></div>
+      <div class="row"><label>Arc color</label><input type="color" id="arcColor" value="#ffd60a"></div>
+      <div id="arcList" style="max-height:150px;overflow:auto;font-size:11px"></div>
+    </div>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
@@ -969,6 +981,7 @@ function setExplode(v){
   $('explode').value = v;
   updateConnTransforms();
   if(typeof auraGroup!=='undefined' && auraGroup && $('auraOn').checked) layoutAura();   // each piece's aura rides its explosion
+  if(typeof arcs!=='undefined' && arcs.length) rebuildArcs();                            // arcs re-anchor to exploded centroids
 }
 
 // ---------- UI: settings ----------
@@ -1418,8 +1431,55 @@ renderer.domElement.addEventListener('click',ev=>{
   mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(mouse,camera);
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
-  toggleSelect(hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null);
+  const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
+  if(arcPicking){ handleArcPick(hitRec); return; }   // arc-arrow source/target pick mode
+  toggleSelect(hitRec);
 });
+// ===== arced 3D arrows between regions (manual connectivity annotation) =====
+const arcGroup=new THREE.Group(); group.add(arcGroup);
+let arcs=[];                       // {i, j} source/target region ids
+let arcPicking=false, arcSrc=null;
+function arcStatus(t){ const e=$('arcStatus'); if(e) e.textContent=t; }
+function startArcPick(){ if(!meshes.length){ arcStatus('Load an atlas first.'); return; } arcPicking=true; arcSrc=null; arcStatus('Click the SOURCE region in the 3D view…'); }
+function handleArcPick(rec){
+  if(!rec){ arcPicking=false; arcSrc=null; setSelected(null); arcStatus('Cancelled (clicked empty space).'); return; }
+  if(!arcSrc){ arcSrc=rec; setSelected(rec); arcStatus(`Source: ${rec.meta.name}. Now click the TARGET region…`); return; }
+  if(rec===arcSrc){ arcStatus('Pick a different region for the target…'); return; }
+  arcs.push({i:arcSrc.meta.id, j:rec.meta.id});
+  arcPicking=false; arcSrc=null; setSelected(null);
+  rebuildArcs(); buildArcList(); arcStatus(`Added arc (${arcs.length} total).`);
+}
+function clearArcs(){ arcs=[]; arcPicking=false; arcSrc=null; rebuildArcs(); buildArcList(); arcStatus(''); }
+function removeArc(k){ arcs.splice(k,1); rebuildArcs(); buildArcList(); }
+function disposeArcGroup(){ while(arcGroup.children.length){ const c=arcGroup.children.pop(); if(c.geometry)c.geometry.dispose(); if(c.material)c.material.dispose(); } }
+const _Y=new THREE.Vector3(0,1,0);
+function rebuildArcs(){ disposeArcGroup();
+  const thick=+$('arcThick').value, h=+$('arcHeight').value, col=new THREE.Color($('arcColor').value);
+  for(const a of arcs){ const oi=byId.get(a.i), oj=byId.get(a.j); if(!oi||!oj) continue;
+    const A=roiPos(oi,new THREE.Vector3()), B=roiPos(oj,new THREE.Vector3());
+    const M=A.clone().add(B).multiplyScalar(0.5);
+    const dir=M.clone().sub(sceneCenter); if(dir.lengthSq()<1e-6) dir.set(0,1,0); dir.normalize();   // away from brain center
+    const ctrl=M.clone().addScaledVector(dir, h + 0.25*A.distanceTo(B));
+    const curve=new THREE.QuadraticBezierCurve3(A, ctrl, B);
+    const mat=new THREE.MeshStandardMaterial({color:col, emissive:col.clone().multiplyScalar(0.25), roughness:0.45, metalness:0});
+    const tube=new THREE.Mesh(new THREE.TubeGeometry(curve, 48, thick, 12, false), mat); tube.renderOrder=2; arcGroup.add(tube);
+    const tan=curve.getTangent(1).normalize(), hc=thick*7;                                            // arrowhead at the target
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(thick*2.6, hc, 16), mat);
+    cone.quaternion.setFromUnitVectors(_Y, tan); cone.position.copy(B).addScaledVector(tan, -hc/2);
+    cone.renderOrder=2; arcGroup.add(cone);
+  }
+  requestRender();
+}
+function buildArcList(){ const L=$('arcList'); if(!L) return; L.innerHTML='';
+  arcs.forEach((a,k)=>{ const oi=byId.get(a.i), oj=byId.get(a.j); const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
+    const sn=oi?oi.meta.abbr:a.i, tn=oj?oj.meta.abbr:a.j, full=(oi?oi.meta.name:a.i)+' → '+(oj?oj.meta.name:a.j);
+    d.innerHTML=`<span class="nm" style="flex:1" title="${full}">${sn} → ${tn}</span><span class="ovx" title="remove">✕</span>`;
+    d.querySelector('.ovx').addEventListener('click',()=>removeArc(k)); L.appendChild(d); }); }
+$('arcAdd').addEventListener('click', startArcPick);
+$('arcClear').addEventListener('click', clearArcs);
+$('arcThick').addEventListener('input', e=>{ $('arcThickV').textContent=(+e.target.value).toFixed(1); rebuildArcs(); });
+$('arcHeight').addEventListener('input', e=>{ $('arcHeightV').textContent=e.target.value; rebuildArcs(); });
+$('arcColor').addEventListener('input', rebuildArcs);
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
 // ---- white-matter tract overlay (loaded from a tract atlas, on top of the current atlas) ----
@@ -1755,7 +1815,7 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
-  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','scheme','singleColor',
+  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
@@ -2302,6 +2362,10 @@ window.brainAPI = {
     return url;
   },
   screenshot(){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); },
+  // arced connectivity arrows (region id -> region id). Scriptable for figures.
+  addArc(i,j){ arcs.push({i:+i,j:+j}); rebuildArcs(); buildArcList(); return arcs.length; },
+  clearArcs(){ clearArcs(); },
+  arcCount(){ return arcs.length; },
   setViewMode(m){ setViewMode(m); },
   // set (or clear) the slice/mosaic anatomical underlay from NIfTI bytes (base64)
   setUnderlayBytes(b64, name){
@@ -2341,6 +2405,7 @@ window.brainAPI = {
       spotlight:$('tractSpotlight').checked, bridge:$('tractBridge').checked, glass:$('tractGlass').checked,
       clip:$('tractClip').checked, flow:$('tractFlow').checked, explode:$('tractExplode').checked } : null;
     return { bwz:1, kind:'project', app:'brainWhiz', atlas:ATLAS_ID, viewer:captureViewerCfg(), data, tracts,
+      arcs: arcs.map(a=>({i:a.i,j:a.j})),
       grid: pbDims().join('x'), figure: pbFigureSettings(),
       panels: pbItems.map(it=> it?{label:it.label, cfg:it.cfg, dataURL:it.dataURL, cbar:it.cbar}:null),
       editor: feCanvas?feCanvas.toJSON():null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
@@ -2366,6 +2431,7 @@ window.brainAPI = {
       const vis=new Set(t.visible||[]); if(t.visible&&t.visible.length) setTractVis(r=> vis.has(r.meta.id));
       tractFX.uPulse.value = t.flow?1:0; updateTractClip(); rebuildBridges();
     }
+    if(Array.isArray(p.arcs)){ arcs = p.arcs.map(a=>({i:a.i,j:a.j})); rebuildArcs(); buildArcList(); }
     if(p.grid){ const [r,c]=p.grid.split('x').map(Number); if(r&&$('pbRows'))$('pbRows').value=r; if(c&&$('pbCols'))$('pbCols').value=c; }
     if(p.figure){ const f=p.figure, set=(id,v)=>{ if(v!=null&&$(id)){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
       set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
