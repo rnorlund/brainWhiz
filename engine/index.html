@@ -87,6 +87,12 @@
   .acc>summary .chev{color:var(--muted);transition:transform .15s;font-size:10px}
   .acc[open]>summary .chev{transform:rotate(90deg)}
   .accb{padding:4px 12px 12px}
+  .sub{border:1px solid var(--line);border-radius:8px;margin:7px 0;background:rgba(255,255,255,.018)}
+  .sub>summary{cursor:pointer;padding:7px 9px;list-style:none;font-weight:600;font-size:12px;display:flex;align-items:center;gap:6px}
+  .sub>summary::-webkit-details-marker{display:none}
+  .sub>summary .chev{color:var(--muted);transition:transform .15s;font-size:10px}
+  .sub[open]>summary .chev{transform:rotate(90deg)}
+  .subb{padding:2px 9px 9px}
   .row{display:flex;gap:8px;align-items:center;margin:6px 0}
   .row label{color:var(--muted);min-width:70px}
   select,input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
@@ -353,7 +359,11 @@
       <input type="range" id="grayOp" min="0" max="1" step="0.02" value="1"></div>
     <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
       <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
-    <div class="row"><label class="toggle"><input type="checkbox" id="glass"> 🪟 Glass brain (fade uncolored to a shell)</label></div>
+    <div class="row"><label class="toggle" title="Fade the VISIBLE uncolored/inactive regions to a faint shell (only affects regions that are toggled on)"><input type="checkbox" id="glass"> 🪟 Glass: fade uncolored regions</label></div>
+    <div class="row"><label class="toggle" title="Whole-brain translucent shell as anatomical context — independent of which regions are toggled on. Use it to show a few highlighted regions + arcs 'inside' a glass brain."><input type="checkbox" id="shellOn"> 🫧 Glass brain shell (context)</label>
+      <input type="color" id="shellColor" value="#aebfd4" title="Shell color"></div>
+    <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
+      <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
     <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
       <input type="range" id="smooth" min="0" max="12" step="1" value="4"></div>
     <div class="row"><label>Surface</label>
@@ -419,8 +429,8 @@
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🧬 Connectivity</summary><div class="accb">
-    <div style="border-bottom:1px solid var(--line);margin-bottom:8px;padding-bottom:8px">
-      <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">🧵 WM tracts</label>
+    <details class="sub"><summary><span class="chev">▸</span>🧵 WM tracts</summary><div class="subb">
+      <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">Tract atlas</label>
         <select id="tractAtlas" class="tbsel" style="font-size:11px" title="Tract atlas to load"><option value="xtract">XTRACT (42)</option><option value="catani">Catani (27)</option></select>
         <button class="sm" id="tractLoad" title="Load this atlas's tract meshes as an overlay">Load</button>
         <button class="sm" id="tractClear" title="Remove all loaded tracts">✕</button></div>
@@ -451,7 +461,8 @@
       <div class="row" style="justify-content:space-between"><span id="tractCount" style="font-size:11px;opacity:.7"></span>
         <span><button class="sm" id="tractAll" title="Show all loaded tracts">All</button><button class="sm" id="tractNone" title="Hide all tracts">None</button><button class="sm" id="tractInv" title="Invert visibility">Inv</button></span></div>
       <div id="tractList" style="max-height:170px;overflow:auto;font-size:11px"></div>
-    </div>
+    </div></details>
+    <details class="sub" open><summary><span class="chev">▸</span>🧬 Connectivity edges</summary><div class="subb">
     <div class="row"><label class="toggle"><input type="checkbox" id="connOn"> show connectivity</label></div>
     <div class="row"><label>Modality</label><select id="connType"></select></div>
     <div class="ctl"><div class="lab"><span>Min strength</span><span id="connThVal">40</span></div>
@@ -467,8 +478,9 @@
       <input type="color" id="connPulseColor" value="#ffffff" title="pulse color"></div>
     <div class="ctl"><div class="lab"><span>Pulse speed</span><span id="connPulseVal">0.8</span></div>
       <input type="range" id="connPulseSpeed" min="0.1" max="3" step="0.1" value="0.8"></div>
-    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
-      <div class="row"><label title="Hand-drawn arced 3D arrows between two regions (mesh view) to annotate a connection">🏹 Arc arrows</label>
+    </div></details>
+    <details class="sub"><summary><span class="chev">▸</span>🏹 Arc arrows</summary><div class="subb">
+      <div class="row"><span style="flex:1;font-size:11px;opacity:.8">Pick source → target in 3D</span>
         <button class="sm" id="arcAdd" title="Click, then pick a source region and a target region in the 3D view">＋ Add</button>
         <button class="sm" id="arcClear" title="Remove all arcs">✕</button></div>
       <div id="arcStatus" style="font-size:11px;opacity:.8;min-height:14px;margin:2px 0"></div>
@@ -478,7 +490,7 @@
         <input type="range" id="arcHeight" min="0" max="100" step="1" value="35"></div>
       <div class="row"><label>Arc color</label><input type="color" id="arcColor" value="#ffd60a"></div>
       <div id="arcList" style="max-height:150px;overflow:auto;font-size:11px"></div>
-    </div>
+    </div></details>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
@@ -1172,7 +1184,26 @@ function smoothMesh(rec, iters){
   for(let i=0;i<nv;i++){ const g=vg[i]; arr[3*i]=P[3*g];arr[3*i+1]=P[3*g+1];arr[3*i+2]=P[3*g+2]; }
   posAttr.needsUpdate=true; rebuildSmoothNormals(rec);
 }
-function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); }
+function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); if(typeof refreshGlassShellGeo==='function') refreshGlassShellGeo(); }
+// ---------- whole-brain glass shell (context "underlay", independent of which regions are toggled on) ----------
+let glassShell=null, glassShellGeo=null;
+function mergeAllRegions(){ let total=0; for(const o of meshes) total+=o.mesh.geometry.attributes.position.count;
+  const pos=new Float32Array(total*3), nrm=new Float32Array(total*3); let off=0;
+  for(const o of meshes){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
+    pos.set(p,off); if(n) nrm.set(n,off); off+=p.length; }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3)); return geo; }
+function disposeGlassShell(){ if(!glassShell) return; group.remove(glassShell); glassShell.material.dispose(); if(glassShellGeo) glassShellGeo.dispose(); glassShell=null; glassShellGeo=null; }
+function ensureGlassShell(){ if(glassShell || !meshes.length) return; glassShellGeo=mergeAllRegions();
+  const mat=new THREE.MeshStandardMaterial({color:new THREE.Color($('shellColor').value), transparent:true, opacity:+$('shellOp').value,
+    depthWrite:false, roughness:0.55, metalness:0, side:THREE.DoubleSide, envMapIntensity:0.4});
+  glassShell=new THREE.Mesh(glassShellGeo, mat); glassShell.renderOrder=-3; group.add(glassShell); }   // whole brain at rest positions = context
+function updateGlassShell(){ const on=$('shellOn').checked; if(on) ensureGlassShell();
+  if(glassShell){ glassShell.visible=on; glassShell.material.color.set($('shellColor').value); glassShell.material.opacity=+$('shellOp').value; }
+  requestRender(); }
+function refreshGlassShellGeo(){ if(glassShell && $('shellOn').checked){ disposeGlassShell(); ensureGlassShell(); requestRender(); } }
+$('shellOn').addEventListener('change', updateGlassShell);
+$('shellColor').addEventListener('input', updateGlassShell);
+$('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
@@ -1815,7 +1846,7 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','spin','autoRotate','rotSpeed',
-  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','scheme','singleColor',
+  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
