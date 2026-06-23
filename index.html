@@ -65,6 +65,12 @@
   .tbmuted{color:var(--muted);font-size:11px}
   .netbadge{font-size:11px;color:#3fb950;border:1px solid #2a3346;border-radius:10px;padding:2px 8px;white-space:nowrap}
   .netbadge.off{color:#ff7a59;border-color:#ff7a5955;background:#ff7a5915}
+  .vmwrap{position:relative;display:inline-flex}
+  .viewmenu{display:none;position:absolute;top:32px;left:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:6px;grid-template-columns:repeat(3,52px);gap:5px;z-index:60;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .viewmenu.on{display:grid}
+  .viewmenu .vm{width:100%;text-align:center}
+  .viewmenu .vmwide{grid-column:1 / span 3}
 
   /* ---- left accordion ---- */
   #sidebar{position:absolute;top:46px;left:0;bottom:0;width:316px;background:var(--panel);
@@ -247,13 +253,18 @@
   <button id="modeSlice" class="tbtn" title="ortho slice view (axial · sagittal · coronal + 3D)">🔪 Slices</button>
   <button id="modeMosaic" class="tbtn" title="mosaic / lightbox: evenly-spaced slices tiled in one figure">▦ Mosaic</button>
   <span class="tbsep"></span>
-  <button id="vSide" class="tbtn">Left</button>
-  <button id="vRight" class="tbtn">Right</button>
-  <button id="vTop" class="tbtn">Top</button>
-  <button id="vBottom" class="tbtn">Bottom</button>
-  <button id="vFront" class="tbtn">Front</button>
-  <button id="vBack" class="tbtn">Back</button>
-  <button id="reset" class="tbtn">Reset</button>
+  <span class="vmwrap">
+    <button id="viewMenuBtn" class="tbtn" title="Camera orientation (left / right / top / bottom / front / back)">🧭 View ▾</button>
+    <div id="viewMenu" class="viewmenu">
+      <button class="sm vm" data-v="left" title="From the left">Left</button>
+      <button class="sm vm" data-v="superior" title="From above">Top</button>
+      <button class="sm vm" data-v="anterior" title="From the front">Front</button>
+      <button class="sm vm" data-v="right" title="From the right">Right</button>
+      <button class="sm vm" data-v="inferior" title="From below">Bottom</button>
+      <button class="sm vm" data-v="posterior" title="From behind">Back</button>
+      <button class="sm vm vmwide" id="reset" title="Reset the camera">⟲ Reset</button>
+    </div>
+  </span>
   <span class="tbsep"></span>
   <button id="snap" class="tbtn">📷 PNG</button>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
@@ -1240,23 +1251,20 @@ $('connPulseColor').addEventListener('input', e=>connUniforms.uPulseColor.value.
 
 const home=new THREE.Vector3(), homeTarget=new THREE.Vector3();
 const sceneCenter=new THREE.Vector3(); let camDist=320;
-$('reset').addEventListener('click', ()=>{ camera.position.copy(home); controls.target.copy(homeTarget); controls.update(); });
+$('reset').addEventListener('click', ()=>{ camera.position.copy(home); controls.target.copy(homeTarget); controls.update(); const vm=$('viewMenu'); if(vm) vm.classList.remove('on'); });
 function view(pos, dist){ // pos = direction the camera sits from center; dist defaults to CURRENT zoom
   const c=sceneCenter; controls.target.copy(c);
   const d = (dist!=null) ? dist : camDistance();   // preserve the user's current zoom (so 6-view matches it)
   camera.position.set(c.x+pos[0]*d, c.y+pos[1]*d, c.z+pos[2]*d);
   camera.up.set(0,1,0); controls.update();
 }
-$('vTop').onclick   = ()=>view([0,1,0.0001]);   // superior
-$('vSide').onclick  = ()=>view([-1,0,0]);        // left sagittal
-$('vRight').onclick = ()=>view([1,0,0]);         // right sagittal
-$('vBottom').onclick= ()=>view([0,-1,0.0001]);   // inferior
-$('vFront').onclick = ()=>view([0,0,-1]);        // anterior (face)
-$('vBack').onclick  = ()=>view([0,0,1]);         // posterior
-// extra standard-view buttons (View & motion section)
-document.querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>{
-  const V={left:[-1,0,0],right:[1,0,0],superior:[0,1,0.0001],inferior:[0,-1,0.0001],anterior:[0,0,-1],posterior:[0,0,1]};
-  view(V[b.dataset.v]||V.left); }));
+// six standard orientations — shared by the top-bar View popover (.vm) and the View & motion list (.vbtn)
+const VIEW_DIRS={left:[-1,0,0],right:[1,0,0],superior:[0,1,0.0001],inferior:[0,-1,0.0001],anterior:[0,0,-1],posterior:[0,0,1]};
+document.querySelectorAll('.vbtn, .vm').forEach(b=>{ if(!b.dataset.v) return;
+  b.addEventListener('click',()=>{ view(VIEW_DIRS[b.dataset.v]||VIEW_DIRS.left); $('viewMenu').classList.remove('on'); }); });
+$('viewMenuBtn').addEventListener('click', e=>{ e.stopPropagation(); $('viewMenu').classList.toggle('on'); });
+document.addEventListener('click', e=>{ const vm=$('viewMenu');
+  if(vm && vm.classList.contains('on') && !vm.contains(e.target) && e.target!==$('viewMenuBtn')) vm.classList.remove('on'); });
 $('snap').onclick = ()=>{ const a=document.createElement('a');
   a.download='jhu_brain.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); };
 
