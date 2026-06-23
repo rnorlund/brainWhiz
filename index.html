@@ -2749,10 +2749,12 @@ function renderMeshSlices(){
       if(bw>0){ G.lineWidth=bw; G.strokeStyle=bcol; G.lineJoin='round'; G.stroke(); }   // outline this region
       G.globalAlpha=1;
     }
-    if(auraOn){ const auraCol=auraSliceColor(), auraI=(+$('auraIntensity').value)*_auraPulseMul, auraSz=+$('auraSize').value;
+    if(auraOn){ const auraCol=auraSliceColor(), baseI=+$('auraIntensity').value, auraSz=+$('auraSize').value;
       ctx.save(); ctx.shadowColor=auraCol; ctx.shadowBlur=Math.max(2, auraSz*16*dpr);
-      const reps=Math.max(1,Math.round(1+auraI*2.5)); for(let i=0;i<reps;i++) ctx.drawImage(mcv,0,0);   // stacked shadow = outward glow (pulses with _auraPulseMul)
-      ctx.restore(); ctx.drawImage(mcv,0,0); }                        // crisp brain on top
+      const reps=Math.max(1,Math.round(1+baseI*2.5));
+      ctx.globalAlpha=Math.max(0,Math.min(1,_auraPulseMul));          // pulse modulates the glow smoothly (not quantized)
+      for(let i=0;i<reps;i++) ctx.drawImage(mcv,0,0);                 // stacked shadow = outward glow
+      ctx.globalAlpha=1; ctx.restore(); ctx.drawImage(mcv,0,0); }     // crisp brain on top
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
@@ -3297,7 +3299,7 @@ function tick(){
   const flowOn = tractFX.uPulse.value>0.5;
   const auraAnim = auraGroup && $('auraOn').checked && (+$('auraPulse').value>0 || $('auraRainbow').checked);
   if(auraAnim){ _auraT+=dt; const ps=+$('auraPulse').value;
-    _auraPulseMul = ps>0 ? (0.55+0.45*(0.5+0.5*Math.sin(_auraT*ps*1.8))) : 1;
+    _auraPulseMul = ps>0 ? (0.35+0.65*(0.5+0.5*Math.sin(_auraT*ps*1.8))) : 1;
     if($('auraRainbow').checked){ _auraHue=(_auraHue+dt*0.08)%1; const col=new THREE.Color().setHSL(_auraHue,0.85,0.6);
       _auraColorCur='#'+col.getHexString(); auraGroup.children.forEach(m=>m.material.color.copy(col)); }
     layoutAura();   // applies the pulse multiplier to every region's shells (3D)
