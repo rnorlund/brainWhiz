@@ -484,8 +484,9 @@
         <button class="sm" id="arcAdd" title="Click, then pick a source region and a target region in the 3D view">＋ Add</button>
         <button class="sm" id="arcClear" title="Remove all arcs">✕</button></div>
       <div id="arcStatus" style="font-size:11px;opacity:.8;min-height:14px;margin:2px 0"></div>
-      <div class="ctl"><div class="lab"><span title="Arrow tube thickness">Arc thickness</span><span id="arcThickV">1.6</span></div>
+      <div class="ctl"><div class="lab"><span title="Arrow tube thickness (base, or the scale when thickness ∝ strength is on)">Arc thickness</span><span id="arcThickV">1.6</span></div>
         <input type="range" id="arcThick" min="0.4" max="6" step="0.1" value="1.6"></div>
+      <div class="row"><label class="toggle" title="Scale each arc's thickness by the connectivity strength between its two regions (uses the current Connectivity modality; needs an atlas with DTI/RS)"><input type="checkbox" id="arcStrength"> thickness ∝ connectivity strength</label></div>
       <div class="ctl"><div class="lab"><span title="How far the arc bows away from the brain">Arc height</span><span id="arcHeightV">35</span></div>
         <input type="range" id="arcHeight" min="0" max="100" step="1" value="35"></div>
       <div class="row"><label title="Shape at the SOURCE end">Start cap</label>
@@ -515,7 +516,11 @@
       <select id="projMode"><option value="wrap">Wrap around</option><option value="projector">Projector (from view)</option><option value="decal">Decal stamps</option></select></div>
     <div class="row" id="projBlendRow"><label title="Blend over the region colors, or replace the surface entirely">Blend</label>
       <select id="projBlend"><option value="over">Blend over</option><option value="replace">Replace surface</option></select></div>
-    <div class="row" id="projRegionRow"><label class="toggle" title="Project only onto the regions currently visible (toggle regions in the Regions tab) instead of the whole brain"><input type="checkbox" id="projRegionsOnly"> only visible regions</label></div>
+    <div class="row" id="projRegionRow"><label title="Project onto the whole brain, only the currently-visible regions, or a set you pick by clicking">Onto</label>
+      <select id="projTarget"><option value="all">Whole brain</option><option value="visible">Visible regions</option><option value="selected">Selected set</option></select></div>
+    <div class="row" id="projPickRow" style="display:none"><button class="sm" id="projPickRegions" title="Toggle region-pick mode, then click regions in 3D to add/remove them from the projection set">🎯 Pick regions</button>
+      <button class="sm" id="projPickClear" title="Clear the projection set">✕</button>
+      <span id="projPickCount" style="font-size:11px;opacity:.7;margin-left:6px"></span></div>
     <div class="ctl"><div class="lab"><span>Opacity</span><span id="projOpV">0.85</span></div>
       <input type="range" id="projOp" min="0" max="1" step="0.05" value="0.85"></div>
     <div class="ctl"><div class="lab"><span title="Zoom of the projected media">Scale</span><span id="projScaleV">1.0</span></div>
@@ -1291,14 +1296,26 @@ function ensureProjLayer(){ if(projLayer || !meshes.length) return;
   });
   projLayer=new THREE.Mesh(mergeAllRegions(projFilter()), mat); projLayer.renderOrder=2; group.add(projLayer);
 }
-function projFilter(){ return ($('projRegionsOnly') && $('projRegionsOnly').checked) ? (o=>o.mesh.visible) : (()=>true); }
+let projRegionSet=new Set(), projRegionPick=false;
+function projFilter(){ const t=$('projTarget')?$('projTarget').value:'all';
+  if(t==='visible') return o=>o.mesh.visible;
+  if(t==='selected') return o=>projRegionSet.has(o.meta.id);
+  return ()=>true; }
 function refreshProjLayerGeo(){ if(!projLayer) return; const old=projLayer.geometry; projLayer.geometry=mergeAllRegions(projFilter()); if(old) old.dispose(); requestRender(); }
+function projSetEmissive(o,on){ if(o&&o.mesh.material&&o.mesh.material.emissive) o.mesh.material.emissive.setHex(on?0x244a88:0x000000); }
+function projToggleRegion(rec){ if(!rec) return; const id=rec.meta.id;
+  if(projRegionSet.has(id)){ projRegionSet.delete(id); projSetEmissive(rec,false); } else { projRegionSet.add(id); projSetEmissive(rec,true); }
+  $('projPickCount').textContent=projRegionSet.size+' region(s)';
+  if($('projTarget').value==='selected') refreshProjLayerGeo(); requestRender(); }
+function projClearSet(){ projRegionSet.forEach(id=>{ const r=byId.get(id); projSetEmissive(r,false); }); projRegionSet.clear(); $('projPickCount').textContent=''; if($('projTarget').value==='selected') refreshProjLayerGeo(); requestRender(); }
 function setDecalsVisible(v){ projDecals.forEach(d=>d.mesh.visible=v); }
 function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').value;
   $('projSpinRow').style.display = mode==='wrap'?'flex':'none';
   $('projAimRow').style.display = mode==='projector'?'flex':'none';
   $('projDecalRow').style.display = mode==='decal'?'flex':'none';
   $('projBlendRow').style.display = mode==='decal'?'none':'flex';
+  $('projRegionRow').style.display = mode==='decal'?'none':'flex';
+  $('projPickRow').style.display = (mode!=='decal' && $('projTarget').value==='selected')?'flex':'none';
   if(mode==='decal'){ if(projLayer) projLayer.visible=false; setDecalsVisible(on); requestRender(); return; }
   if(on) ensureProjLayer(); setDecalsVisible(false);
   if(projLayer){ projLayer.visible=on;
@@ -1336,7 +1353,10 @@ $('projOffY').addEventListener('input', e=>{ $('projOffYV').textContent=(+e.targ
 $('projRot').addEventListener('input', e=>{ $('projRotV').textContent=e.target.value+'°'; updateProjector(); });
 $('projSpin').addEventListener('input', e=>{ $('projSpinV').textContent=(+e.target.value).toFixed(1); updateProjector(); });
 $('projAim').addEventListener('click', aimProjector);
-$('projRegionsOnly').addEventListener('change', ()=>{ refreshProjLayerGeo(); updateProjector(); });
+$('projTarget').addEventListener('change', ()=>{ refreshProjLayerGeo(); updateProjector(); });
+$('projPickRegions').addEventListener('click', ()=>{ projRegionPick=!projRegionPick; arcPicking=false; projPick=false;
+  $('projPickRegions').classList.toggle('tbon', projRegionPick); projStatus(projRegionPick?'Click regions to add/remove from the projection set…':''); });
+$('projPickClear').addEventListener('click', projClearSet);
 $('projImgBtn').addEventListener('click', ()=>$('projImgFile').click());
 $('projVidBtn').addEventListener('click', ()=>$('projVidFile').click());
 $('projCamBtn').addEventListener('click', startWebcam);
@@ -1538,7 +1558,7 @@ function buildList(){
   }
   updateCount();
 }
-function projRegionsActive(){ return typeof projLayer!=='undefined' && projLayer && $('projOn') && $('projOn').checked && $('projRegionsOnly') && $('projRegionsOnly').checked; }
+function projRegionsActive(){ return typeof projLayer!=='undefined' && projLayer && $('projOn') && $('projOn').checked && $('projTarget') && $('projTarget').value==='visible'; }
 function setVisible(o,vis,defer){
   o.mesh.visible=vis;
   const cb=document.querySelector(`.roi[data-node="${o.meta.node}"] input[type=checkbox]`);
@@ -1607,6 +1627,7 @@ renderer.domElement.addEventListener('click',ev=>{
   ray.setFromCamera(mouse,camera);
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
   const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
+  if(projRegionPick){ projToggleRegion(hitRec); return; }   // projector: build the selected-region set
   if(projPick){ if(hits.length){ const h=hits[0], pL=group.worldToLocal(h.point.clone());
       const inv=new THREE.Matrix4().copy(group.matrixWorld).invert();
       const nW=h.face?h.face.normal.clone().transformDirection(h.object.matrixWorld):new THREE.Vector3(0,0,1);
@@ -1655,16 +1676,21 @@ function makeArcLabel(txt){ const fs=44, pad=14, mc=document.createElement('canv
 function rebuildArcs(){ disposeArcGroup();
   const thick=+$('arcThick').value, h=+$('arcHeight').value, col=new THREE.Color($('arcColor').value), capSz=+$('arcCapSize').value;
   const gS=$('arcStartCap').value, gE=$('arcEndCap').value;
+  // optional: scale thickness by connectivity strength between the two regions (current modality)
+  const byStrength=$('arcStrength')&&$('arcStrength').checked; let wmap=null, cmax=1;
+  if(byStrength){ const cd=connData(); if(cd){ cmax=cd.max||1; wmap=new Map(); for(const e of cd.edges) wmap.set(e[0]<e[1]?e[0]+'_'+e[1]:e[1]+'_'+e[0], e[2]); } }
+  const arcW=(i,j)=>{ if(!wmap) return null; const v=wmap.get(i<j?i+'_'+j:j+'_'+i); return v==null?0:v; };
   arcs.forEach((a,k)=>{ const oi=byId.get(a.i), oj=byId.get(a.j); if(!oi||!oj) return;
+    let th=thick; if(byStrength){ const w=arcW(a.i,a.j); if(w!=null) th=Math.max(0.3, thick*(0.35+2.4*Math.sqrt(Math.min(1,w/cmax)))); }
     const A=roiPos(oi,new THREE.Vector3()), B=roiPos(oj,new THREE.Vector3());
     const M=A.clone().add(B).multiplyScalar(0.5);
     const dir=M.clone().sub(sceneCenter); if(dir.lengthSq()<1e-6) dir.set(0,1,0); dir.normalize();   // away from brain center
     const ctrl=M.clone().addScaledVector(dir, h + 0.25*A.distanceTo(B));
     const curve=new THREE.QuadraticBezierCurve3(A, ctrl, B);
     const mat=new THREE.MeshStandardMaterial({color:col, emissive:col.clone().multiplyScalar(0.25), roughness:0.45, metalness:0});
-    const tube=new THREE.Mesh(new THREE.TubeGeometry(curve, 56, thick, 14, false), mat); tube.renderOrder=2; tube.userData.arcIdx=k; arcGroup.add(tube);
-    addArcCap(a.startCap||gS, A, curve.getTangent(0).negate(), capSz, thick, mat);   // start cap points back out of the source
-    addArcCap(a.endCap||gE,   B, curve.getTangent(1),          capSz, thick, mat);   // end cap (arrowhead) into the target
+    const tube=new THREE.Mesh(new THREE.TubeGeometry(curve, 56, th, 14, false), mat); tube.renderOrder=2; tube.userData.arcIdx=k; arcGroup.add(tube);
+    addArcCap(a.startCap||gS, A, curve.getTangent(0).negate(), capSz, th, mat);   // start cap points back out of the source
+    addArcCap(a.endCap||gE,   B, curve.getTangent(1),          capSz, th, mat);   // end cap (arrowhead) into the target
     if(a.label){ const sp=makeArcLabel(a.label); sp.position.copy(curve.getPoint(0.5)).addScaledVector(dir, 7); arcGroup.add(sp); }
   });
   requestRender();
@@ -1682,6 +1708,7 @@ $('arcHeight').addEventListener('input', e=>{ $('arcHeightV').textContent=e.targ
 $('arcCapSize').addEventListener('input', e=>{ $('arcCapSizeV').textContent=(+e.target.value).toFixed(1); rebuildArcs(); });
 $('arcStartCap').addEventListener('change', rebuildArcs);
 $('arcEndCap').addEventListener('change', rebuildArcs);
+$('arcStrength').addEventListener('change', rebuildArcs);
 $('arcColor').addEventListener('input', rebuildArcs);
 
 // ================= AXIS LABELS (L/R, A/P, D/V) =================
