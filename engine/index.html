@@ -1926,6 +1926,8 @@ function installBuiltAtlas(finalRecs, SAMP, name){
   $('scheme').value=scheme; applyScheme(scheme);
   if(+$('smooth').value<10){ $('smooth').value=10; if($('smoothVal')) $('smoothVal').textContent='10'; }  // pretty default
   applySmoothing();
+  setOpacities();   // CRUCIAL: make fully-opaque meshes non-transparent (opaque closed surfaces sort
+                    // their front/back faces wrong when transparent -> white/pink flip while rotating)
   buildList(); updateCount(); buildAxisLabels(box, sphere.radius);
   if(typeof ovRender==='function') ovRender(); if(typeof recolorOverlay==='function') recolorOverlay();
   if(typeof updateColorbar==='function') updateColorbar();
