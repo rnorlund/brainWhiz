@@ -1825,7 +1825,13 @@ function installBuiltAtlas(finalRecs, SAMP, name){
   $('scheme').value=scheme; applyScheme(scheme); if(+$('smooth').value>0) applySmoothing();
   buildList(); updateCount(); buildAxisLabels(box, sphere.radius);
   if(typeof ovRender==='function') ovRender(); if(typeof recolorOverlay==='function') recolorOverlay();
-  if(typeof updateColorbar==='function') updateColorbar(); refreshSliceViews(); clearEmptyState();
+  if(typeof updateColorbar==='function') updateColorbar();
+  // a built atlas is a parcellation (meshes), not a volume — show it as region cross-sections in
+  // Slices/Mosaic (the "Voxel heatmap" mode shows the underlay/overlay volumes, which this doesn't change)
+  sliceKind='mesh'; const vx=$('slKindVox'), mh=$('slKindMesh');
+  if(vx) vx.classList.remove('on'); if(mh) mh.classList.add('on');
+  if($('meshBorderRow')) $('meshBorderRow').style.display=(sliceMode)?'flex':'none';
+  refreshSliceViews(); clearEmptyState();
   view([-1,0,0], camDist); home.copy(camera.position); homeTarget.copy(controls.target);
   // reflect the custom atlas in the picker (selecting a bundled atlas still reloads the page)
   const sel=$('atlasSel'); if(sel){ let opt=sel.querySelector('option[value="__custom"]');
