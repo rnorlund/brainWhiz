@@ -1903,6 +1903,9 @@ function buildSurfaceFromNifti(nii, name){
   geo.setAttribute('barycentric', new THREE.BufferAttribute(bary,3));
   const meta={id:1, node:'surf_1', abbr:'Surface', name:name||'Brain surface', hemi:'M', lobe:'Other', centroid:[0,0,0]};
   const mesh=new THREE.Mesh(geo, buildMaterial(shadingType,'#cfd6df')); mesh.userData.meta=meta;
+  // a single large smooth shell reflects the bright studio environment uniformly -> on real GPUs the
+  // smooth back blows out to flat white. Make the surface MATTE so it shades cleanly from every angle.
+  if(mesh.material.envMapIntensity!==undefined){ mesh.material.envMapIntensity=0.04; mesh.material.roughness=0.95; mesh.material.metalness=0; }
   const rec={mesh, base:new THREE.Vector3(0,0,0), meta, origPos:Float32Array.from(geo.attributes.position.array), origNrm:Float32Array.from(geo.attributes.normal.array)};
   installBuiltAtlas([rec], {1:[]}, name||'Brain surface');
   return 1;
