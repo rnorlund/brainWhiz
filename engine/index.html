@@ -1817,7 +1817,12 @@ function installBuiltAtlas(finalRecs, SAMP, name){
   const sphere=box.getBoundingSphere(new THREE.Sphere());
   modelRadius=sphere.radius; sceneCenter.copy(sphere.center); box.getSize(sceneHalf).multiplyScalar(0.5);
   camDist=sphere.radius*2.6; camera.near=sphere.radius/100; camera.far=sphere.radius*100; camera.updateProjectionMatrix();
-  $('scheme').value='lobe'; applyScheme('lobe'); if(+$('smooth').value>0) applySmoothing();
+  // pick a scheme: lobe coloring only if names map to ≥3 distinct lobes and none dominates;
+  // otherwise (e.g. a label .nii with no labels.txt -> all "Other") use rainbow so regions are distinct
+  const lc={}; finalRecs.forEach(r=>{ lc[r.meta.lobe]=(lc[r.meta.lobe]||0)+1; });
+  const nLobe=Object.keys(lc).length, maxFrac=Math.max(...Object.values(lc))/finalRecs.length;
+  const scheme=(nLobe<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
+  $('scheme').value=scheme; applyScheme(scheme); if(+$('smooth').value>0) applySmoothing();
   buildList(); updateCount(); buildAxisLabels(box, sphere.radius);
   if(typeof ovRender==='function') ovRender(); if(typeof recolorOverlay==='function') recolorOverlay();
   if(typeof updateColorbar==='function') updateColorbar(); refreshSliceViews(); clearEmptyState();
@@ -2576,6 +2581,7 @@ function applyOverlay(valsObj, name){   // a task map chosen for the selected ov
   ovApplySettings(o); $('ovTaskRow').style.display='flex';
   overlay.on=true; overlay.vals=valsObj; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
+  if(selOv>=0) ovSelect(selOv);   // open the overlay editor (threshold/colormap/etc.)
 }
 // ---- per-region CSV overlay (one value per atlas region: factor loadings, scores, …) ----
 function applyCsvVals(vals, name){ clearEmptyState(); if(selOv<0) ovAdd('file'); const o=overlays[selOv];
@@ -2585,6 +2591,7 @@ function applyCsvVals(vals, name){ clearEmptyState(); if(selOv<0) ovAdd('file');
   overlay.on=true; overlay.vals=vals; overlay.name=o.name; overlay.volA=null; overlay.volA_grid=null; tfceCache=null;
   ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender(); refreshSliceViews();
+  if(selOv>=0) ovSelect(selOv);   // open the overlay editor (threshold/colormap/etc.)
 }
 // parse a CSV/TSV with one value per region and map it onto the current atlas
 // (by region name, by an id column, or — if the row count matches — in region-id order)
@@ -2796,6 +2803,7 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
   refreshSliceViews();
+  if(selOv>=0) ovSelect(selOv);   // always open the overlay editor (threshold/colormap/etc.) — incl. the drag-drop path
   if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
