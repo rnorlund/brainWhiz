@@ -198,7 +198,7 @@
 <body>
 <div id="app"></div>
 <div id="dropZone"><div class="dz-inner"><div class="dz-ico">⬇</div><div class="dz-msg">Drop to set as BACKGROUND</div>
-  <div class="dz-sub">Plain drop = background underlay · hold ⌘/Ctrl = add as overlay (stack several to build a figure)<br>
+  <div class="dz-sub">Plain drop = background underlay · ⌘/Ctrl = add as overlay (stack to build a figure) · ⌥/Alt = build an atlas from a label .nii (+ optional labels .txt)<br>
   .nii / .nii.gz · .csv / .tsv per-region values (overlay) · .bwz figure · .bwzproj project</div></div></div>
 <div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
@@ -1662,9 +1662,9 @@ function openSection(title){ // expand the matching left-panel <details> so the 
     if(s.textContent.includes(title)) s.parentElement.open=true; });
 }
 const _dz=$('dropZone');
-function _dzMode(e){ const ov=!!(e&&(e.metaKey||e.ctrlKey));
-  _dz.querySelector('.dz-msg').textContent = ov ? 'Drop to add as OVERLAY' : 'Drop to set as BACKGROUND';
-  _dz.querySelector('.dz-ico').textContent = ov ? '➕' : '⬇'; return ov; }
+function _dzMode(e){ const ov=!!(e&&(e.metaKey||e.ctrlKey)), at=!!(e&&e.altKey);
+  _dz.querySelector('.dz-msg').textContent = at ? 'Drop label .nii to BUILD AN ATLAS' : ov ? 'Drop to add as OVERLAY' : 'Drop to set as BACKGROUND';
+  _dz.querySelector('.dz-ico').textContent = at ? '🧠' : ov ? '➕' : '⬇'; return ov; }
 let _dragDepth=0;
 ['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{
   if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')){ e.preventDefault();
@@ -1672,8 +1672,163 @@ let _dragDepth=0;
 window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.classList.remove('on'); } });
 window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventDefault();
   _dragDepth=0; _dz.classList.remove('on');
+  const files=Array.from(e.dataTransfer.files||[]);
+  if(e.altKey){ await buildAtlasFromDrop(files); return; }       // ⌥/Alt = build a parcellation atlas
   const asOverlay=!!(e.metaKey||e.ctrlKey);
-  const files=Array.from(e.dataTransfer.files||[]); for(const f of files) await handleDroppedFile(f, asOverlay); });
+  for(const f of files) await handleDroppedFile(f, asOverlay); });
+
+// =================================================================================
+// BROWSER-SIDE ATLAS from a raw label .nii (+ optional labels.txt) — no Python, no build step.
+// Surface extraction uses naive Surface Nets (public-domain algorithm; clean-room JS, no NiiVue code).
+// =================================================================================
+const SN_CUBE_EDGES=new Int32Array(24), SN_EDGE_TABLE=new Int32Array(256);
+(function(){ let k=0;
+  for(let i=0;i<8;i++){ for(let j=1;j<=4;j<<=1){ const p=i^j; if(i<=p){ SN_CUBE_EDGES[k++]=i; SN_CUBE_EDGES[k++]=p; } } }
+  for(let i=0;i<256;i++){ let em=0;
+    for(let j=0;j<24;j+=2){ const a=!!(i&(1<<SN_CUBE_EDGES[j])), b=!!(i&(1<<SN_CUBE_EDGES[j+1])); if(a!==b) em|=1<<(j>>1); }
+    SN_EDGE_TABLE[i]=em; } })();
+function surfaceNets(data, dims){
+  const positions=[], cells=[]; const R=[1, dims[0]+1, (dims[0]+1)*(dims[1]+1)];
+  const buffer=new Int32Array(R[2]*2); let buf_no=1, n=0; const xx=[0,0,0], grid=new Float32Array(8);
+  for(xx[2]=0; xx[2]<dims[2]-1; ++xx[2], n+=dims[0], buf_no^=1, R[2]=-R[2]){
+    let m=1+(dims[0]+1)*(1+buf_no*(dims[1]+1));
+    for(xx[1]=0; xx[1]<dims[1]-1; ++xx[1], ++n, m+=2)
+    for(xx[0]=0; xx[0]<dims[0]-1; ++xx[0], ++n, ++m){
+      let mask=0,g=0,idx=n;
+      for(let k=0;k<2;++k, idx+=dims[0]*(dims[1]-2))
+      for(let j=0;j<2;++j, idx+=dims[0]-2)
+      for(let i=0;i<2;++i, ++g, ++idx){ const p=data[idx]; grid[g]=p; if(p<0) mask|=1<<g; }
+      if(mask===0||mask===0xff) continue;
+      const em=SN_EDGE_TABLE[mask]; const v=[0,0,0]; let ec=0;
+      for(let i=0;i<12;++i){ if(!(em&(1<<i))) continue; ++ec;
+        const e0=SN_CUBE_EDGES[i*2], e1=SN_CUBE_EDGES[i*2+1], g0=grid[e0], g1=grid[e1];
+        let t=g0-g1; t=Math.abs(t)>1e-6 ? g0/t : 0.5;
+        let kk=1; for(let j=0;j<3;++j){ const a=e0&kk, b=e1&kk; if(a!==b) v[j]+=a?1-t:t; else v[j]+=a?1:0; kk<<=1; } }
+      const s=1/ec; for(let i=0;i<3;++i) v[i]=xx[i]+s*v[i];
+      buffer[m]=positions.length; positions.push([v[0],v[1],v[2]]);
+      for(let i=0;i<3;++i){ if(!(em&(1<<i))) continue;
+        const iu=(i+1)%3, iv=(i+2)%3; if(xx[iu]===0||xx[iv]===0) continue;
+        const du=R[iu], dv=R[iv];
+        if(mask&1) cells.push([buffer[m],buffer[m-du],buffer[m-du-dv],buffer[m-dv]]);
+        else       cells.push([buffer[m],buffer[m-dv],buffer[m-du-dv],buffer[m-du]]); } } }
+  return {positions, cells};
+}
+function lobeOfName(name){ const n=(name||'').toLowerCase(), has=(...ks)=>ks.some(k=>n.includes(k));
+  if(has('cerebell','vermis')) return 'Cerebellum';
+  if(has('frontal','rectus','precentral','orbital','sfg','mfg','ifg') && !n.includes('temporal')) return 'Frontal';
+  if(has('temporal','fusiform','hippocamp','amygdala','parahippo','heschl','stg','mtg','itg')) return 'Temporal';
+  if(has('parietal','postcentral','supramarg','angular','precuneus','spg','smg')) return 'Parietal';
+  if(has('occipital','lingual','calcarine','cuneus')) return 'Occipital';
+  if(has('cingul','insula')) return 'Limbic';
+  if(has('thalam','caudate','putamen','pallidum','accumbens','nucleus','globus','striat')) return 'SubcorticalGM';
+  if(has('white matter','corona','capsule','callosum','fornix','fasciculus','radiata','peduncle','lemniscus','tract','longitudinal','tapetum','corticospinal','commissure','segment')) return 'WhiteMatter';
+  if(has('midbrain','pons','medulla','brainstem','red nucleus','substantia')) return 'Brainstem';
+  if(has('ventricle','csf')) return 'Ventricle';
+  return 'Other'; }
+function hemiOfName(abbr,name){ const a=(abbr||''), s=(a+' '+(name||'')).toLowerCase();
+  if(a.endsWith('_L')||/ left\b/.test(s)||/\bl$/.test(s)) return 'L';
+  if(a.endsWith('_R')||/ right\b/.test(s)||/\br$/.test(s)) return 'R'; return 'M'; }
+function parseLabelsText(text){ const out={}; const lines=text.split(/\r?\n/);
+  const hdr=lines.find(l=>l.trim())||'';
+  if(hdr.includes(';') && /roiid/i.test(hdr)){
+    const cols=hdr.split(';').map(c=>c.trim().toLowerCase());
+    const ii=cols.indexOf('roiid'), inm=cols.indexOf('roiname'), iab=cols.indexOf('roiabbr');
+    for(const l of lines.slice(lines.indexOf(hdr)+1)){ if(!l.trim()) continue; const p=l.split(';').map(s=>s.trim());
+      const idx=parseInt(p[ii]); if(!(idx>0)) continue;
+      const name=(inm>=0&&p[inm])||(iab>=0&&p[iab])||('ROI'+idx), abbr=(iab>=0&&p[iab])||name; out[idx]={id:idx,abbr,name}; }
+    if(Object.keys(out).length) return out; }
+  for(let line of lines){ line=line.trim(); if(!line||line.startsWith('#')) continue;
+    let p = line.includes('|')?line.split('|') : line.includes(',')?line.split(',') : line.split(/\s+/);
+    p=p.map(s=>s.trim()); if(p.length<2) continue; const idx=parseInt(parseFloat(p[0])); if(!(idx>0)) continue;
+    let abbr=p[1], name=abbr; for(const ex of p.slice(2)){ if(ex && !/^[-+0-9. ]+$/.test(ex)){ name=ex; break; } }
+    if(!abbr||/^\d+$/.test(abbr)) abbr=name; out[idx]={id:idx,abbr,name}; }
+  return out; }
+// looks like an integer parcellation (vs a continuous stat map)?
+function looksLikeParcellation(nii){ const d=nii.data; let nonint=0, mx=0, seen=new Set(), n=0;
+  for(let i=0;i<d.length;i+=Math.max(1,(d.length/40000)|0)){ const v=d[i]; n++;
+    if(v<0){ return false; } if(Math.abs(v-Math.round(v))>1e-3) nonint++; if(v>mx)mx=v; if(v>0)seen.add(Math.round(v)); }
+  return nonint/n < 0.01 && mx<=20000 && seen.size>=2; }
+function buildAtlasFromNifti(nii, labelsText, name){
+  const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
+  const labelsMap = labelsText ? parseLabelsText(labelsText) : {};
+  const info=new Map();
+  for(let k=0;k<nz;k++){ const ko=k*nx*ny; for(let j=0;j<ny;j++){ const jo=ko+j*nx; for(let i=0;i<nx;i++){
+    const v=data[jo+i]; if(v<=0) continue; const lab=Math.round(v); if(Math.abs(v-lab)>1e-3) continue;
+    let e=info.get(lab); if(!e){ e={lab,minx:i,maxx:i,miny:j,maxy:j,minz:k,maxz:k,count:0}; info.set(lab,e); }
+    if(i<e.minx)e.minx=i; if(i>e.maxx)e.maxx=i; if(j<e.miny)e.miny=j; if(j>e.maxy)e.maxy=j;
+    if(k<e.minz)e.minz=k; if(k>e.maxz)e.maxz=k; e.count++; } } }
+  const labs=[...info.values()].filter(e=>e.count>=20).sort((a,b)=>a.lab-b.lab);
+  if(!labs.length) throw new Error('No positive-integer labels with ≥20 voxels were found — is this a parcellation?');
+  const tjs=(i,j,k)=>{ const w=worldOf(i,j,k); return [w[0], w[2], -w[1]]; };
+  const recs=[], SAMP={};
+  for(const e of labs){
+    const x0=e.minx, y0=e.miny, z0=e.minz, bw=e.maxx-e.minx+1, bh=e.maxy-e.miny+1, bd=e.maxz-e.minz+1;
+    const fw=bw+2, fh=bh+2, fd=bd+2, field=new Float32Array(fw*fh*fd).fill(1);
+    for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+      if(Math.round(data[(x0+x)+(y0+y)*nx+(z0+z)*nx*ny])===e.lab) field[(x+1)+(y+1)*fw+(z+1)*fw*fh]=-1; }
+    const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) continue;
+    const vmap=sn.positions.map(p=>tjs(x0-1+p[0], y0-1+p[1], z0-1+p[2]));
+    const pos=[]; for(const c of sn.cells){ const a=vmap[c[0]],b=vmap[c[1]],d=vmap[c[2]],f=vmap[c[3]];
+      pos.push(a[0],a[1],a[2], b[0],b[1],b[2], d[0],d[1],d[2],  a[0],a[1],a[2], d[0],d[1],d[2], f[0],f[1],f[2]); }
+    let cx=0,cy=0,cz=0; for(const v of vmap){ cx+=v[0];cy+=v[1];cz+=v[2]; } const nv=vmap.length; cx/=nv;cy/=nv;cz/=nv;
+    const md=labelsMap[e.lab]||{}, abbr=md.abbr||('ROI'+e.lab), nm=md.name||abbr;
+    recs.push({pos:new Float32Array(pos), c:[cx,cy,cz],
+      meta:{id:e.lab, node:'roi_'+e.lab, abbr, name:nm, hemi:hemiOfName(abbr,nm), lobe:lobeOfName(nm)}});
+    const sp=[], step=Math.max(1,Math.floor(e.count/200)); let cc=0;
+    for(let z=0;z<bd&&sp.length<1800;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){ const gi=x0+x,gj=y0+y,gk=z0+z;
+      if(Math.round(data[gi+gj*nx+gk*nx*ny])===e.lab && (cc++%step)===0){ const w=worldOf(gi,gj,gk); sp.push(w[0],w[1],w[2]); } }
+    SAMP[e.lab]=sp;
+  }
+  if(!recs.length) throw new Error('Could not extract any surfaces from this volume.');
+  let gx=0,gy=0,gz=0; recs.forEach(r=>{ gx+=r.c[0];gy+=r.c[1];gz+=r.c[2]; }); gx/=recs.length;gy/=recs.length;gz/=recs.length;
+  recs.sort((a,b)=> a.meta.lobe<b.meta.lobe?-1 : a.meta.lobe>b.meta.lobe?1 : (a.meta.abbr<b.meta.abbr?-1:1));
+  const finalRecs=recs.map(r=>{
+    const pa=r.pos; for(let i=0;i<pa.length;i+=3){ pa[i]-=gx; pa[i+1]-=gy; pa[i+2]-=gz; }
+    const geo=new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pa,3)); geo.computeVertexNormals();
+    const vc=geo.attributes.position.count, bary=new Float32Array(vc*3); for(let k=0;k<vc;k++) bary[k*3+(k%3)]=1;
+    geo.setAttribute('barycentric', new THREE.BufferAttribute(bary,3));
+    r.meta.centroid=[r.c[0]-gx, r.c[1]-gy, r.c[2]-gz];
+    const mesh=new THREE.Mesh(geo, buildMaterial(shadingType,'#ffffff')); mesh.userData.meta=r.meta;
+    return {mesh, base:new THREE.Vector3(...r.meta.centroid), meta:r.meta,
+      origPos:Float32Array.from(geo.attributes.position.array), origNrm:Float32Array.from(geo.attributes.normal.array)}; });
+  installBuiltAtlas(finalRecs, SAMP, name||'Custom atlas');
+  return finalRecs.length;
+}
+function installBuiltAtlas(finalRecs, SAMP, name){
+  for(const rec of meshes){ rec.mesh.removeFromParent(); rec.mesh.geometry.dispose(); if(rec.mesh.material.dispose) rec.mesh.material.dispose(); }
+  if(typeof setSelected==='function') setSelected(null);
+  meshes.length=0; byId.clear(); META.length=0; byNode.clear();
+  overlays.length=0; selOv=-1; overlay.on=false; overlay.vals=null;
+  Object.keys(SAMPLES).forEach(k=>delete SAMPLES[k]); Object.assign(SAMPLES, SAMP);
+  for(const r of finalRecs){ group.add(r.mesh); meshes.push(r); byId.set(r.meta.id, r); META.push(r.meta); byNode.set(r.meta.node, r.meta); }
+  const box=new THREE.Box3(); finalRecs.forEach(r=>box.expandByObject(r.mesh));
+  const sphere=box.getBoundingSphere(new THREE.Sphere());
+  modelRadius=sphere.radius; sceneCenter.copy(sphere.center); box.getSize(sceneHalf).multiplyScalar(0.5);
+  camDist=sphere.radius*2.6; camera.near=sphere.radius/100; camera.far=sphere.radius*100; camera.updateProjectionMatrix();
+  $('scheme').value='lobe'; applyScheme('lobe'); if(+$('smooth').value>0) applySmoothing();
+  buildList(); updateCount(); buildAxisLabels(box, sphere.radius);
+  if(typeof ovRender==='function') ovRender(); if(typeof recolorOverlay==='function') recolorOverlay();
+  if(typeof updateColorbar==='function') updateColorbar(); refreshSliceViews(); clearEmptyState();
+  view([-1,0,0], camDist); home.copy(camera.position); homeTarget.copy(controls.target);
+  // reflect the custom atlas in the picker (selecting a bundled atlas still reloads the page)
+  const sel=$('atlasSel'); if(sel){ let opt=sel.querySelector('option[value="__custom"]');
+    if(!opt){ opt=document.createElement('option'); opt.value='__custom'; sel.insertBefore(opt, sel.firstChild); }
+    opt.textContent='★ '+name+' ('+finalRecs.length+') — custom'; sel.value='__custom'; }
+  document.title=name+' — brainWhiz'; requestRender();
+}
+async function buildAtlasFromDrop(files){
+  const niiF=files.find(f=>/\.(nii|nii\.gz|gz)$/i.test(f.name));
+  if(!niiF){ alert('Drop a label .nii / .nii.gz (optionally with a labels .txt) while holding ⌥/Alt to build an atlas.'); return; }
+  const labF=files.find(f=>/\.(txt|lut|label|csv|tsv)$/i.test(f.name) && f!==niiF);
+  try{
+    const buf=await niiF.arrayBuffer(); let b=buf; if(/\.gz$/i.test(niiF.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
+    const nii=parseNifti(b);
+    if(!looksLikeParcellation(nii) && !confirm('This volume does not look like an integer parcellation (it may be a continuous stat map). Build an atlas from it anyway?')) return;
+    const labelsText = labF ? await labF.text() : null;
+    const n=buildAtlasFromNifti(nii, labelsText, niiF.name.replace(/\.(nii|nii\.gz|gz)$/i,''));
+    openSection('Regions'); alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
+  }catch(err){ alert('Could not build atlas from '+niiF.name+': '+err.message); }
+}
 
 // color scheme
 $('scheme').addEventListener('change', e=>{
