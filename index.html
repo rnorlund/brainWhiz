@@ -1674,10 +1674,17 @@ function openSection(title){ // expand the matching left-panel <details> so the 
 const _dz=$('dropZone'), _dzBands=[...document.querySelectorAll('#dropZone .dz-band')];
 function _bandAt(y){ const i=Math.max(0,Math.min(2,Math.floor(y/ (window.innerHeight) *3))); return _dzBands[i]; }
 function _hot(band){ _dzBands.forEach(b=>b.classList.toggle('hot', b===band)); }
+// In Mesh view there's no slice "background", so the top band becomes BUILD MESH (drop a brain
+// straight into mesh view and it becomes a mesh). In Slices/Mosaic it's the anatomical underlay.
+function _dzSetLabels(){ const meshView=!sliceMode&&!mosaicMode, b=_dzBands[0]; if(!b) return;
+  b.querySelector('.dz-msg').textContent = meshView ? 'BUILD MESH (atlas / surface)' : 'Set as BACKGROUND';
+  b.querySelector('.dz-sub').textContent = meshView ? 'label .nii → regions · T1 / skull-stripped brain → brain surface'
+    : 'anatomical underlay — subject T1 / template (.nii)';
+  b.querySelector('.dz-ico').textContent = meshView ? '🧠' : '⬇'; }
 let _dragDepth=0;
 ['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{
   if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')){ e.preventDefault();
-    if(ev==='dragenter') _dragDepth++; _dz.classList.add('on'); _hot(_bandAt(e.clientY)); e.dataTransfer.dropEffect='copy'; } }));
+    if(ev==='dragenter') _dragDepth++; _dz.classList.add('on'); _dzSetLabels(); _hot(_bandAt(e.clientY)); e.dataTransfer.dropEffect='copy'; } }));
 window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.classList.remove('on'); _hot(null); } });
 window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventDefault();
   _dragDepth=0; _dz.classList.remove('on'); _hot(null);
@@ -1692,6 +1699,8 @@ window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventD
   const niis=rest.filter(f=>/\.(nii|nii\.gz|gz)$/i.test(f.name));
   const labelTxt=rest.some(f=>/\.(txt|lut|label)$/i.test(f.name));
   if(niis.length===1 && labelTxt) mode='atlas';
+  // In Mesh view the top "background" band means BUILD MESH (no slice underlay to set here)
+  if(mode==='bg' && !sliceMode && !mosaicMode && niis.length) mode='atlas';
   if(rest.length){
     if(mode==='atlas') await buildAtlasFromDrop(rest);
     else for(const f of rest) await handleDroppedFile(f, mode==='ov'); }
