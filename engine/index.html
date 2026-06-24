@@ -203,7 +203,7 @@
 <div id="dropZone"><div class="dz-grid">
   <div class="dz-band" data-mode="bg"><div class="dz-ico">⬇</div><div class="dz-msg">Set as BACKGROUND</div><div class="dz-sub">anatomical underlay — subject T1 / template (.nii)</div></div>
   <div class="dz-band" data-mode="ov"><div class="dz-ico">➕</div><div class="dz-msg">Add as OVERLAY</div><div class="dz-sub">stat map (.nii) or per-region values (.csv/.tsv) — stack several to build a figure</div></div>
-  <div class="dz-band" data-mode="atlas"><div class="dz-ico">🧠</div><div class="dz-msg">BUILD ATLAS</div><div class="dz-sub">label parcellation (.nii) + optional labels (.txt)</div></div>
+  <div class="dz-band" data-mode="atlas"><div class="dz-ico">🧠</div><div class="dz-msg">BUILD ATLAS / SURFACE</div><div class="dz-sub">label parcellation (.nii) + labels (.txt) → regions · or a T1 / continuous .nii → one brain surface</div></div>
 </div><div class="dz-hint">Drop in the band you want · .bwz / .bwzproj open anywhere</div></div>
 <div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
@@ -1831,6 +1831,38 @@ function buildAtlasFromNifti(nii, labelsText, name){
   installBuiltAtlas(finalRecs, SAMP, name||'Custom atlas');
   return finalRecs.length;
 }
+// continuous volume (T1 / stat map) -> ONE smooth brain-surface mesh (intensity isosurface)
+function buildSurfaceFromNifti(nii, name){
+  const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
+  let samp=[]; const stride=Math.max(1,(data.length/150000)|0);
+  for(let i=0;i<data.length;i+=stride){ const v=data[i]; if(v>0) samp.push(v); }
+  if(!samp.length) throw new Error('Volume is empty / all zero.');
+  samp.sort((a,b)=>a-b); const p99=samp[Math.min(samp.length-1, Math.floor(samp.length*0.99))]||1, thr=p99*0.12;
+  let minx=nx,miny=ny,minz=nz,maxx=-1,maxy=-1,maxz=-1,cnt=0;
+  for(let k=0;k<nz;k++){ const ko=k*nx*ny; for(let j=0;j<ny;j++){ const jo=ko+j*nx; for(let i=0;i<nx;i++){
+    if(data[jo+i]>thr){ cnt++; if(i<minx)minx=i;if(i>maxx)maxx=i;if(j<miny)miny=j;if(j>maxy)maxy=j;if(k<minz)minz=k;if(k>maxz)maxz=k; } } } }
+  if(cnt<100) throw new Error('Could not find a surface (try a brain-extracted / masked volume).');
+  const bw=maxx-minx+1,bh=maxy-miny+1,bd=maxz-minz+1, PAD=3, fw=bw+2*PAD,fh=bh+2*PAD,fd=bd+2*PAD, occ=new Float32Array(fw*fh*fd);
+  for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    if(data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny]>thr) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
+  gaussianBlur3D(occ,[fw,fh,fd],1.1);
+  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.5-occ[i];
+  const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) throw new Error('No surface extracted.');
+  const tjs=(i,j,k)=>{ const w=worldOf(i,j,k); return [w[0],w[2],-w[1]]; };
+  const vmap=sn.positions.map(p=>tjs(minx-PAD+p[0], miny-PAD+p[1], minz-PAD+p[2]));
+  const pos=[]; for(const c of sn.cells){ const a=vmap[c[0]],b=vmap[c[1]],d=vmap[c[2]],f=vmap[c[3]];
+    pos.push(a[0],a[1],a[2],b[0],b[1],b[2],d[0],d[1],d[2], a[0],a[1],a[2],d[0],d[1],d[2],f[0],f[1],f[2]); }
+  let cx=0,cy=0,cz=0; for(const v of vmap){ cx+=v[0];cy+=v[1];cz+=v[2]; } const n2=vmap.length; cx/=n2;cy/=n2;cz/=n2;
+  const pa=new Float32Array(pos); for(let i=0;i<pa.length;i+=3){ pa[i]-=cx;pa[i+1]-=cy;pa[i+2]-=cz; }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pa,3)); geo.computeVertexNormals();
+  const vc=geo.attributes.position.count, bary=new Float32Array(vc*3); for(let k=0;k<vc;k++) bary[k*3+(k%3)]=1;
+  geo.setAttribute('barycentric', new THREE.BufferAttribute(bary,3));
+  const meta={id:1, node:'surf_1', abbr:'Surface', name:name||'Brain surface', hemi:'M', lobe:'Other', centroid:[0,0,0]};
+  const mesh=new THREE.Mesh(geo, buildMaterial(shadingType,'#cfd6df')); mesh.userData.meta=meta;
+  const rec={mesh, base:new THREE.Vector3(0,0,0), meta, origPos:Float32Array.from(geo.attributes.position.array), origNrm:Float32Array.from(geo.attributes.normal.array)};
+  installBuiltAtlas([rec], {1:[]}, name||'Brain surface');
+  return 1;
+}
 function installBuiltAtlas(finalRecs, SAMP, name){
   for(const rec of meshes){ rec.mesh.removeFromParent(); rec.mesh.geometry.dispose(); if(rec.mesh.material.dispose) rec.mesh.material.dispose(); }
   if(typeof setSelected==='function') setSelected(null);
@@ -1868,16 +1900,21 @@ function installBuiltAtlas(finalRecs, SAMP, name){
 }
 async function buildAtlasFromDrop(files){
   const niiF=files.find(f=>/\.(nii|nii\.gz|gz)$/i.test(f.name));
-  if(!niiF){ alert('Drop a label .nii / .nii.gz (optionally with a labels .txt) while holding ⌥/Alt to build an atlas.'); return; }
+  if(!niiF){ alert('Drop a .nii / .nii.gz on the BUILD ATLAS band: a label parcellation builds regions; a T1 / continuous volume builds a brain surface.'); return; }
   const labF=files.find(f=>/\.(txt|lut|label|csv|tsv)$/i.test(f.name) && f!==niiF);
   try{
     const buf=await niiF.arrayBuffer(); let b=buf; if(/\.gz$/i.test(niiF.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
     const nii=parseNifti(b);
-    if(!looksLikeParcellation(nii) && !confirm('This volume does not look like an integer parcellation (it may be a continuous stat map). Build an atlas from it anyway?')) return;
-    const labelsText = labF ? await labF.text() : null;
-    const n=buildAtlasFromNifti(nii, labelsText, niiF.name.replace(/\.(nii|nii\.gz|gz)$/i,''));
-    openSection('Regions'); alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
-  }catch(err){ alert('Could not build atlas from '+niiF.name+': '+err.message); }
+    const nm=niiF.name.replace(/\.(nii|nii\.gz|gz)$/i,'');
+    if(looksLikeParcellation(nii)){            // integer labels -> region atlas
+      const labelsText = labF ? await labF.text() : null;
+      const n=buildAtlasFromNifti(nii, labelsText, nm);
+      openSection('Regions'); alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
+    } else {                                    // continuous (T1 / stat map) -> single brain surface
+      buildSurfaceFromNifti(nii, nm);
+      openSection('Regions'); alert('Built a brain surface from '+niiF.name+' (continuous volume → one mesh, not regions). The ROI atlas is still in the atlas dropdown.');
+    }
+  }catch(err){ alert('Could not build from '+niiF.name+': '+err.message); }
 }
 
 // color scheme
