@@ -21,14 +21,17 @@
   html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
     color:var(--txt);font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   #app{position:fixed;inset:0}
-  #dropZone{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;
-    background:rgba(10,16,28,0.72);backdrop-filter:blur(2px);pointer-events:none}
+  #dropZone{position:fixed;inset:0;z-index:9000;display:none;flex-direction:column;
+    background:rgba(10,16,28,0.55);backdrop-filter:blur(2px);pointer-events:none;padding:16px;gap:12px}
   #dropZone.on{display:flex}
-  #dropZone .dz-inner{border:3px dashed #6db3ff;border-radius:18px;padding:46px 60px;text-align:center;
-    background:rgba(20,30,48,0.6);box-shadow:0 0 60px rgba(80,150,255,0.35)}
-  #dropZone .dz-ico{font-size:54px;line-height:1;color:#9fd0ff}
-  #dropZone .dz-msg{font-size:22px;font-weight:700;color:#eaf2ff;margin-top:10px}
-  #dropZone .dz-sub{font-size:12px;color:#a9c3e6;margin-top:8px;max-width:420px}
+  #dropZone .dz-grid{flex:1;display:flex;flex-direction:column;gap:12px}
+  #dropZone .dz-band{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    border:3px dashed rgba(120,160,210,0.55);border-radius:16px;background:rgba(20,30,48,0.5);transition:all .08s}
+  #dropZone .dz-band.hot{border-color:#7fc0ff;background:rgba(40,70,120,0.6);box-shadow:0 0 50px rgba(80,150,255,0.45) inset}
+  #dropZone .dz-ico{font-size:42px;line-height:1;color:#9fd0ff}
+  #dropZone .dz-msg{font-size:20px;font-weight:700;color:#eaf2ff;margin-top:6px}
+  #dropZone .dz-sub{font-size:12px;color:#a9c3e6;margin-top:5px;max-width:460px}
+  #dropZone .dz-hint{text-align:center;font-size:12px;color:#9ab3d6}
   canvas{display:block}
 
   /* ---- top toolbar ---- */
@@ -197,9 +200,11 @@
 </head>
 <body>
 <div id="app"></div>
-<div id="dropZone"><div class="dz-inner"><div class="dz-ico">⬇</div><div class="dz-msg">Drop to set as BACKGROUND</div>
-  <div class="dz-sub">Plain drop = background underlay · ⌘/Ctrl = add as overlay (stack to build a figure) · ⌥/Alt = build an atlas from a label .nii (+ optional labels .txt)<br>
-  .nii / .nii.gz · .csv / .tsv per-region values (overlay) · .bwz figure · .bwzproj project</div></div></div>
+<div id="dropZone"><div class="dz-grid">
+  <div class="dz-band" data-mode="bg"><div class="dz-ico">⬇</div><div class="dz-msg">Set as BACKGROUND</div><div class="dz-sub">anatomical underlay — subject T1 / template (.nii)</div></div>
+  <div class="dz-band" data-mode="ov"><div class="dz-ico">➕</div><div class="dz-msg">Add as OVERLAY</div><div class="dz-sub">stat map (.nii) or per-region values (.csv/.tsv) — stack several to build a figure</div></div>
+  <div class="dz-band" data-mode="atlas"><div class="dz-ico">🧠</div><div class="dz-msg">BUILD ATLAS</div><div class="dz-sub">label parcellation (.nii) + optional labels (.txt)</div></div>
+</div><div class="dz-hint">Drop in the band you want · .bwz / .bwzproj open anywhere</div></div>
 <div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
   <div class="sl" data-plane="sag"><span class="tag">Sagittal</span><canvas id="slSag"></canvas></div>
@@ -1661,21 +1666,28 @@ function openSection(title){ // expand the matching left-panel <details> so the 
   document.querySelectorAll('#sidebar details.acc > summary').forEach(s=>{
     if(s.textContent.includes(title)) s.parentElement.open=true; });
 }
-const _dz=$('dropZone');
-function _dzMode(e){ const ov=!!(e&&(e.metaKey||e.ctrlKey)), at=!!(e&&e.altKey);
-  _dz.querySelector('.dz-msg').textContent = at ? 'Drop label .nii to BUILD AN ATLAS' : ov ? 'Drop to add as OVERLAY' : 'Drop to set as BACKGROUND';
-  _dz.querySelector('.dz-ico').textContent = at ? '🧠' : ov ? '➕' : '⬇'; return ov; }
+// Zoned drop: NO keyboard modifier (macOS rejects ⌘-modified Finder drops). The screen splits
+// into BACKGROUND / OVERLAY / BUILD-ATLAS bands; where you drop decides what happens.
+const _dz=$('dropZone'), _dzBands=[...document.querySelectorAll('#dropZone .dz-band')];
+function _bandAt(y){ const i=Math.max(0,Math.min(2,Math.floor(y/ (window.innerHeight) *3))); return _dzBands[i]; }
+function _hot(band){ _dzBands.forEach(b=>b.classList.toggle('hot', b===band)); }
 let _dragDepth=0;
 ['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{
   if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')){ e.preventDefault();
-    if(ev==='dragenter') _dragDepth++; _dz.classList.add('on'); _dzMode(e); e.dataTransfer.dropEffect='copy'; } }));
-window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.classList.remove('on'); } });
+    if(ev==='dragenter') _dragDepth++; _dz.classList.add('on'); _hot(_bandAt(e.clientY)); e.dataTransfer.dropEffect='copy'; } }));
+window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.classList.remove('on'); _hot(null); } });
 window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventDefault();
-  _dragDepth=0; _dz.classList.remove('on');
-  const files=Array.from(e.dataTransfer.files||[]);
-  if(e.altKey){ await buildAtlasFromDrop(files); return; }       // ⌥/Alt = build a parcellation atlas
-  const asOverlay=!!(e.metaKey||e.ctrlKey);
-  for(const f of files) await handleDroppedFile(f, asOverlay); });
+  _dragDepth=0; _dz.classList.remove('on'); _hot(null);
+  const files=Array.from(e.dataTransfer.files||[]); if(!files.length) return;
+  const mode=(_bandAt(e.clientY)||{}).dataset ? _bandAt(e.clientY).dataset.mode : 'bg';
+  // .bwz / .bwzproj always open as a figure/project regardless of band
+  const recipe=files.filter(f=>/\.(bwz|bwzproj|json)$/i.test(f.name));
+  const rest=files.filter(f=>!/\.(bwz|bwzproj|json)$/i.test(f.name));
+  for(const f of recipe) await handleDroppedFile(f, false);
+  if(rest.length){
+    if(mode==='atlas') await buildAtlasFromDrop(rest);
+    else for(const f of rest) await handleDroppedFile(f, mode==='ov'); }
+});
 
 // =================================================================================
 // BROWSER-SIDE ATLAS from a raw label .nii (+ optional labels.txt) — no Python, no build step.
@@ -3673,7 +3685,7 @@ function sliceRenderAll(){
   const nvis = sliceOverlays().length;
   $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
     : (nvis ? nvis+' overlay'+(nvis>1?'s':'') : '— add/show a .nii overlay —');
-  try{ $('sl3d').src = window.brainAPI.renderTo(420,340,true,1.1); }catch(e){}
+  try{ $('sl3d').src = window.brainAPI.renderTo(460,440,true,1.0); }catch(e){}
 }
 function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   sliceMode=(m==='slice'); mosaicMode=(m==='mosaic');
@@ -3771,7 +3783,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     cv.addEventListener('dblclick', ()=>{ const p=cv._plane; if(!p) return; const vp=sliceVP[p.plane]; vp.z=1;vp.px=0;vp.py=0; sliceRenderAll(); });
   });
   // make the 3D cell fully interactive: wheel = zoom, drag = rotate, right/shift-drag = pan
-  const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true,1.1); }catch(e){} };
+  const cell3d=$('sl3d').parentElement, refresh3d=()=>{ try{ $('sl3d').src=window.brainAPI.renderTo(460,440,true,1.0); }catch(e){} };
   cell3d.style.cursor='grab';
   cell3d.addEventListener('wheel', e=>{ e.preventDefault(); setCamDistance(camDistance()*Math.exp(e.deltaY*0.0015)); refresh3d(); }, {passive:false});
   cell3d.addEventListener('contextmenu', e=>e.preventDefault());   // allow right-drag pan
@@ -4018,7 +4030,7 @@ function tick(){
   }
   // refresh the slice-grid 3D thumbnail when the 3D look changes (wireframe, rim, shading, …),
   // throttled so continuous animations (spin/flow/pulse) don't re-render it every frame
-  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(420,340,true,1.1); }catch(e){} } }
+  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(460,440,true,1.0); }catch(e){} } }
 }
 tick();
 </script>
