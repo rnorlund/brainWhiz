@@ -21,6 +21,14 @@
   html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
     color:var(--txt);font:13px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   #app{position:fixed;inset:0}
+  #dropZone{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;
+    background:rgba(10,16,28,0.72);backdrop-filter:blur(2px);pointer-events:none}
+  #dropZone.on{display:flex}
+  #dropZone .dz-inner{border:3px dashed #6db3ff;border-radius:18px;padding:46px 60px;text-align:center;
+    background:rgba(20,30,48,0.6);box-shadow:0 0 60px rgba(80,150,255,0.35)}
+  #dropZone .dz-ico{font-size:54px;line-height:1;color:#9fd0ff}
+  #dropZone .dz-msg{font-size:22px;font-weight:700;color:#eaf2ff;margin-top:10px}
+  #dropZone .dz-sub{font-size:12px;color:#a9c3e6;margin-top:8px;max-width:420px}
   canvas{display:block}
 
   /* ---- top toolbar ---- */
@@ -189,6 +197,9 @@
 </head>
 <body>
 <div id="app"></div>
+<div id="dropZone"><div class="dz-inner"><div class="dz-ico">⬇</div><div class="dz-msg">Drop to set as BACKGROUND</div>
+  <div class="dz-sub">Plain drop = background underlay · hold ⌘/Ctrl = add as overlay (stack several to build a figure)<br>
+  .nii / .nii.gz · .csv / .tsv per-region values (overlay) · .bwz figure · .bwzproj project</div></div></div>
 <div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
   <div class="sl" data-plane="sag"><span class="tag">Sagittal</span><canvas id="slSag"></canvas></div>
@@ -1612,6 +1623,57 @@ function stopRecording(){ if(!_recording) return; _recording=false;
   try{ _mediaRec.stop(); }catch(e){} clearInterval(_recTimer);
   const b=$('recBtn'); b.textContent='⏺ Record'; b.classList.remove('recauto'); b.style.color=''; }
 $('recBtn').addEventListener('click', ()=> _recording ? stopRecording() : startRecording());
+
+// ---- drag & drop ANY supported file onto the viewport (routes into existing loaders) ----
+// Plain drop = anatomical BACKGROUND (slice/mosaic underlay). ⌘/Ctrl-drop = OVERLAY (stat map),
+// so you can stack figures: drop several with ⌘ held to add them one-by-one or all at once.
+async function loadUnderlayFromFile(file){
+  const buf=await file.arrayBuffer(); let b=buf;
+  if(/\.gz$/i.test(file.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
+  setUnderlay(parseNifti(b)); underlayName=file.name; underlayRaw=bufToB64(buf);
+  if($('ulName')) $('ulName').textContent=file.name; refreshSliceViews(); requestRender();
+}
+async function loadOverlayFromFile(file){
+  clearEmptyState(); ovAdd('file'); $('ovInfo').textContent='reading '+file.name+' …';
+  const buf=await file.arrayBuffer();
+  applyStatVals(statBufferToVals(buf, file.name), file.name, 'A');
+  if(selOv>=0) overlays[selOv].raw=bufToB64(buf);
+  openSection('Overlays');
+}
+async function handleDroppedFile(file, asOverlay){
+  const n=(file.name||'').toLowerCase();
+  try{
+    if(/\.(nii|nii\.gz|gz)$/.test(n)){
+      if(asOverlay) await loadOverlayFromFile(file);
+      else { await loadUnderlayFromFile(file); openSection('Slice'); }
+    } else if(/\.(csv|tsv|txt)$/.test(n)){
+      clearEmptyState(); loadRegionCSV(await file.text(), file.name); openSection('Overlays');  // per-region values are always an overlay
+    } else if(/\.bwzproj$/.test(n)){
+      const p=JSON.parse(await file.text()); await window.brainAPI.loadProject(p);
+    } else if(/\.(bwz|json)$/.test(n)){
+      await bwzImport(file);
+    } else {
+      alert('Unsupported file: '+file.name+'\nSupported: .nii/.nii.gz, .csv/.tsv, .bwz, .bwzproj');
+    }
+  }catch(err){ alert('Could not load '+file.name+': '+err.message); }
+}
+function openSection(title){ // expand the matching left-panel <details> so the result is visible
+  document.querySelectorAll('#sidebar details.acc > summary').forEach(s=>{
+    if(s.textContent.includes(title)) s.parentElement.open=true; });
+}
+const _dz=$('dropZone');
+function _dzMode(e){ const ov=!!(e&&(e.metaKey||e.ctrlKey));
+  _dz.querySelector('.dz-msg').textContent = ov ? 'Drop to add as OVERLAY' : 'Drop to set as BACKGROUND';
+  _dz.querySelector('.dz-ico').textContent = ov ? '➕' : '⬇'; return ov; }
+let _dragDepth=0;
+['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{
+  if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')){ e.preventDefault();
+    if(ev==='dragenter') _dragDepth++; _dz.classList.add('on'); _dzMode(e); e.dataTransfer.dropEffect='copy'; } }));
+window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.classList.remove('on'); } });
+window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventDefault();
+  _dragDepth=0; _dz.classList.remove('on');
+  const asOverlay=!!(e.metaKey||e.ctrlKey);
+  const files=Array.from(e.dataTransfer.files||[]); for(const f of files) await handleDroppedFile(f, asOverlay); });
 
 // color scheme
 $('scheme').addEventListener('change', e=>{
