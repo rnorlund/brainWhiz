@@ -1101,22 +1101,28 @@ $('zoomSpeed').addEventListener('input', e=>$('zoomSpdV').textContent=(+e.target
 // Mouse wheel drives the SAME setCamDistance() path as the slider/buttons, so the
 // feel is consistent. OrbitControls' own zoom is disabled to avoid a second path.
 controls.enableZoom = false;
-const _flyFwd=new THREE.Vector3();
+const _flyFwd=new THREE.Vector3(), _zray=new THREE.Raycaster();
 renderer.domElement.addEventListener('wheel', (e)=>{
   e.preventDefault();
   const sens = +$('zoomSpeed').value;                 // "Mouse zoom" slider
   const factor = Math.exp(e.deltaY * 0.001 * sens);   // >1 zoom out, <1 zoom in
-  const near = modelRadius*0.03, hi = modelRadius*30; // near = how close before we start flying THROUGH
+  const near = modelRadius*0.03, hi = modelRadius*30;
   const want = camDistance()*factor;
-  if(factor<1 && want<near){
-    // keep zooming IN past the center: hold a small standoff and push the orbit target
-    // forward along the view direction so the camera flies through the brain interior.
+  if(factor<1){                                       // zooming IN
     _flyFwd.subVectors(controls.target, camera.position).normalize();
-    controls.target.addScaledVector(_flyFwd, (near-want));
-    setCamDistance(near);
-  } else {
-    setCamDistance(Math.min(hi, want));               // normal dolly (no lower clamp -> can reach the interior)
+    const vis = meshes.filter(o=>o.mesh.visible).map(o=>o.mesh);
+    _zray.set(camera.position, _flyFwd);
+    const hit = vis.length ? _zray.intersectObjects(vis, false) : [];
+    if(hit.length){                                   // a solid surface is directly ahead -> stop JUST outside it (never fly inside)
+      const minD = (camDistance() - hit[0].distance) + modelRadius*0.12;  // keep a standoff so you never press into / through the surface
+      setCamDistance(Math.min(camDistance(), Math.max(minD, want)));
+      return;
+    }
+    if(want < near){                                  // empty space ahead (e.g. between exploded regions) -> fly through
+      controls.target.addScaledVector(_flyFwd, (near-want)); setCamDistance(near); return;
+    }
   }
+  setCamDistance(Math.min(hi, want));
 }, {passive:false});
 // keep both sliders in sync while wheel-zooming / buttons (unless being dragged)
 controls.addEventListener('change', ()=>{ const n=distToNorm(camDistance());
