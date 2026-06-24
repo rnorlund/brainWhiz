@@ -1757,6 +1757,22 @@ function gaussianBlur3D(f, dims, sigma){
     for(let z=0;z<nz;z++){ let a=0; for(let k=-r;k<=r;k++) a+=f[b+clamp(z+k,nz)*nx*ny]*ker[k+r]; tmp[b+z*nx*ny]=a; } }
   f.set(tmp);
 }
+// downsample a parsed NIfTI by an integer factor (stride) so huge volumes don't freeze the tab.
+// worldOf is linear, so the downsampled grid maps correctly via worldOf(i*f, j*f, k*f).
+function downsampleNii(nii, f){
+  const [nx,ny,nz]=nii.dim, nX=Math.ceil(nx/f), nY=Math.ceil(ny/f), nZ=Math.ceil(nz/f);
+  const src=nii.data, dst=new Float32Array(nX*nY*nZ);
+  for(let k=0;k<nZ;k++){ const sk=Math.min(nz-1,k*f)*nx*ny; for(let j=0;j<nY;j++){ const sj=Math.min(ny-1,j*f)*nx; const db=(k*nY+j)*nX;
+    for(let i=0;i<nX;i++) dst[db+i]=src[Math.min(nx-1,i*f)+sj+sk]; } }
+  return { data:dst, dim:[nX,nY,nZ], worldOf:(i,j,k)=>nii.worldOf(i*f,j*f,k*f) };
+}
+function _capNii(nii, budget){ const v=nii.dim[0]*nii.dim[1]*nii.dim[2];
+  if(v<=budget) return nii; const f=Math.max(2, Math.ceil(Math.cbrt(v/budget))); return downsampleNii(nii, f); }
+function showBuilding(on, msg){ let el=document.getElementById('buildBusy');
+  if(on){ if(!el){ el=document.createElement('div'); el.id='buildBusy';
+      el.style.cssText='position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.6);backdrop-filter:blur(2px);color:#eaf2ff;font:600 18px system-ui';
+      document.body.appendChild(el); } el.textContent=msg||'Building…'; }
+  else if(el) el.remove(); }
 function lobeOfName(name){ const n=(name||'').toLowerCase(), has=(...ks)=>ks.some(k=>n.includes(k));
   if(has('cerebell','vermis')) return 'Cerebellum';
   if(has('frontal','rectus','precentral','orbital','sfg','mfg','ifg') && !n.includes('temporal')) return 'Frontal';
@@ -1787,12 +1803,24 @@ function parseLabelsText(text){ const out={}; const lines=text.split(/\r?\n/);
     let abbr=p[1], name=abbr; for(const ex of p.slice(2)){ if(ex && !/^[-+0-9. ]+$/.test(ex)){ name=ex; break; } }
     if(!abbr||/^\d+$/.test(abbr)) abbr=name; out[idx]={id:idx,abbr,name}; }
   return out; }
-// looks like an integer parcellation (vs a continuous stat map)?
-function looksLikeParcellation(nii){ const d=nii.data; let nonint=0, mx=0, seen=new Set(), n=0;
-  for(let i=0;i<d.length;i+=Math.max(1,(d.length/40000)|0)){ const v=d[i]; n++;
-    if(v<0){ return false; } if(Math.abs(v-Math.round(v))>1e-3) nonint++; if(v>mx)mx=v; if(v>0)seen.add(Math.round(v)); }
-  return nonint/n < 0.01 && mx<=20000 && seen.size>=2; }
+// Distinguish an integer PARCELLATION from a continuous IMAGE (T1/stat map). Many T1s are stored
+// as integers, so integer-ness alone isn't enough — the giveaway is that an image has SMOOTH
+// intensity gradients (neighboring voxels differ by ±1..few), while a label map's neighbors are
+// either identical or jump by an arbitrary label id.
+function looksLikeParcellation(nii){
+  const d=nii.data, nx=nii.dim[0], N=d.length; let nonint=0, n=0, mx=0, pairs=0, smooth=0; const seen=new Set();
+  const stride=Math.max(1,(N/60000)|0);
+  for(let idx=0; idx<N; idx+=stride){ const v=d[idx]; n++;
+    if(v<0) return false;                                          // signed -> continuous map
+    if(Math.abs(v-Math.round(v))>1e-3) nonint++;
+    if(v>mx) mx=v; if(v>0 && seen.size<6000) seen.add(Math.round(v));
+    const i=idx%nx; if(i<nx-1){ const b=d[idx+1]; if(v>0&&b>0){ pairs++; const dd=Math.abs(v-b); if(dd>0&&dd<=4) smooth++; } } }
+  if(nonint/n > 0.01) return false;                               // continuous floats
+  if(pairs && smooth/pairs > 0.06) return false;                  // smooth gradient -> it's an image (T1), not labels
+  return mx>=1 && mx<=20000 && seen.size>=2 && seen.size<=6000;
+}
 function buildAtlasFromNifti(nii, labelsText, name){
+  nii=_capNii(nii, 6_000_000);                       // keep AAL/HO full-res; only downsample very large label volumes
   const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
   const labelsMap = labelsText ? parseLabelsText(labelsText) : {};
   const info=new Map();
@@ -1842,6 +1870,7 @@ function buildAtlasFromNifti(nii, labelsText, name){
 }
 // continuous volume (T1 / stat map) -> ONE smooth brain-surface mesh (intensity isosurface)
 function buildSurfaceFromNifti(nii, name){
+  nii=_capNii(nii, 2_500_000);                       // downsample huge volumes so the tab never freezes
   const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
   let samp=[]; const stride=Math.max(1,(data.length/150000)|0);
   for(let i=0;i<data.length;i+=stride){ const v=data[i]; if(v>0) samp.push(v); }
@@ -1915,15 +1944,22 @@ async function buildAtlasFromDrop(files){
     const buf=await niiF.arrayBuffer(); let b=buf; if(/\.gz$/i.test(niiF.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
     const nii=parseNifti(b);
     const nm=niiF.name.replace(/\.(nii|nii\.gz|gz)$/i,'');
-    if(looksLikeParcellation(nii)){            // integer labels -> region atlas
-      const labelsText = labF ? await labF.text() : null;
-      const n=buildAtlasFromNifti(nii, labelsText, nm);
-      openSection('Regions'); alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
-    } else {                                    // continuous (T1 / stat map) -> single brain surface
-      buildSurfaceFromNifti(nii, nm);
-      openSection('Regions'); alert('Built a brain surface from '+niiF.name+' (continuous volume → one mesh, not regions). The ROI atlas is still in the atlas dropdown.');
-    }
-  }catch(err){ alert('Could not build from '+niiF.name+': '+err.message); }
+    const isParc=looksLikeParcellation(nii);
+    showBuilding(true, isParc?'Building atlas…':'Building brain surface…');
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));   // let the indicator paint before the sync build
+    try{
+      if(isParc){
+        const labelsText = labF ? await labF.text() : null;
+        const n=buildAtlasFromNifti(nii, labelsText, nm);
+        openSection('Regions'); showBuilding(false);
+        alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
+      } else {
+        buildSurfaceFromNifti(nii, nm);
+        openSection('Regions'); showBuilding(false);
+        alert('Built a brain surface from '+niiF.name+' (continuous volume → one mesh, not regions). The ROI atlas is still in the atlas dropdown.');
+      }
+    } finally { showBuilding(false); }
+  }catch(err){ showBuilding(false); alert('Could not build from '+niiF.name+': '+err.message); }
 }
 
 // color scheme
