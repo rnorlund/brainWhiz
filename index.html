@@ -381,7 +381,7 @@
     <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
       <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
     <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
-      <input type="range" id="smooth" min="0" max="20" step="1" value="4"></div>
+      <input type="range" id="smooth" min="0" max="50" step="1" value="4"></div>
     <div class="row"><label>Surface</label>
       <select id="surfStyle">
         <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
@@ -1651,8 +1651,11 @@ async function handleDroppedFile(file, asOverlay){
     if(/\.(nii|nii\.gz|gz)$/.test(n)){
       if(asOverlay) await loadOverlayFromFile(file);
       else { await loadUnderlayFromFile(file); openSection('Slice'); }
-    } else if(/\.(csv|tsv|txt)$/.test(n)){
+    } else if(/\.(csv|tsv)$/.test(n)){
       clearEmptyState(); loadRegionCSV(await file.text(), file.name); openSection('Overlays');  // per-region values are always an overlay
+    } else if(/\.(txt|lut|label)$/.test(n)){
+      // a labels file on its own does nothing useful — it names atlas regions. Guide the user.
+      alert('"'+file.name+'" looks like a labels file. Drop it TOGETHER with its label .nii on the\nBUILD ATLAS band to name the regions. (For per-region values, use a .csv with a numeric column.)');
     } else if(/\.bwzproj$/.test(n)){
       const p=JSON.parse(await file.text()); await window.brainAPI.loadProject(p);
     } else if(/\.(bwz|json)$/.test(n)){
@@ -1679,11 +1682,16 @@ window.addEventListener('dragleave',e=>{ if(--_dragDepth<=0){ _dragDepth=0; _dz.
 window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventDefault();
   _dragDepth=0; _dz.classList.remove('on'); _hot(null);
   const files=Array.from(e.dataTransfer.files||[]); if(!files.length) return;
-  const mode=(_bandAt(e.clientY)||{}).dataset ? _bandAt(e.clientY).dataset.mode : 'bg';
+  let mode=(_bandAt(e.clientY)||{}).dataset ? _bandAt(e.clientY).dataset.mode : 'bg';
   // .bwz / .bwzproj always open as a figure/project regardless of band
   const recipe=files.filter(f=>/\.(bwz|bwzproj|json)$/i.test(f.name));
   const rest=files.filter(f=>!/\.(bwz|bwzproj|json)$/i.test(f.name));
   for(const f of recipe) await handleDroppedFile(f, false);
+  // a label .nii dropped together with a labels .txt/.lut/.label is unambiguously an atlas build —
+  // honor it regardless of which band it landed on (so the labels file never hits the CSV loader)
+  const niis=rest.filter(f=>/\.(nii|nii\.gz|gz)$/i.test(f.name));
+  const labelTxt=rest.some(f=>/\.(txt|lut|label)$/i.test(f.name));
+  if(niis.length===1 && labelTxt) mode='atlas';
   if(rest.length){
     if(mode==='atlas') await buildAtlasFromDrop(rest);
     else for(const f of rest) await handleDroppedFile(f, mode==='ov'); }
@@ -1724,6 +1732,21 @@ function surfaceNets(data, dims){
         if(mask&1) cells.push([buffer[m],buffer[m-du],buffer[m-du-dv],buffer[m-dv]]);
         else       cells.push([buffer[m],buffer[m-dv],buffer[m-du-dv],buffer[m-du]]); } } }
   return {positions, cells};
+}
+// separable 3D Gaussian blur (mirror-edge) — smooths a region's occupancy field before Surface
+// Nets so the iso-surface is smooth/organic (the same trick build_bundle.py uses before marching cubes)
+function gaussianBlur3D(f, dims, sigma){
+  const [nx,ny,nz]=dims, r=Math.max(1,Math.ceil(sigma*2.5)), ker=new Float32Array(2*r+1);
+  let s=0; for(let k=-r;k<=r;k++){ const w=Math.exp(-(k*k)/(2*sigma*sigma)); ker[k+r]=w; s+=w; } for(let k=0;k<ker.length;k++) ker[k]/=s;
+  const tmp=new Float32Array(f.length);
+  const clamp=(v,hi)=>v<0?0:v>=hi?hi-1:v;
+  for(let z=0;z<nz;z++)for(let y=0;y<ny;y++){ const b=y*nx+z*nx*ny;
+    for(let x=0;x<nx;x++){ let a=0; for(let k=-r;k<=r;k++) a+=f[b+clamp(x+k,nx)]*ker[k+r]; tmp[b+x]=a; } }
+  for(let z=0;z<nz;z++)for(let x=0;x<nx;x++){ const b=x+z*nx*ny;
+    for(let y=0;y<ny;y++){ let a=0; for(let k=-r;k<=r;k++) a+=tmp[b+clamp(y+k,ny)*nx]*ker[k+r]; f[b+y*nx]=a; } }
+  for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){ const b=x+y*nx;
+    for(let z=0;z<nz;z++){ let a=0; for(let k=-r;k<=r;k++) a+=f[b+clamp(z+k,nz)*nx*ny]*ker[k+r]; tmp[b+z*nx*ny]=a; } }
+  f.set(tmp);
 }
 function lobeOfName(name){ const n=(name||'').toLowerCase(), has=(...ks)=>ks.some(k=>n.includes(k));
   if(has('cerebell','vermis')) return 'Cerebellum';
@@ -1775,11 +1798,13 @@ function buildAtlasFromNifti(nii, labelsText, name){
   const recs=[], SAMP={};
   for(const e of labs){
     const x0=e.minx, y0=e.miny, z0=e.minz, bw=e.maxx-e.minx+1, bh=e.maxy-e.miny+1, bd=e.maxz-e.minz+1;
-    const fw=bw+2, fh=bh+2, fd=bd+2, field=new Float32Array(fw*fh*fd).fill(1);
+    const PAD=3, fw=bw+2*PAD, fh=bh+2*PAD, fd=bd+2*PAD, occ=new Float32Array(fw*fh*fd);
     for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
-      if(Math.round(data[(x0+x)+(y0+y)*nx+(z0+z)*nx*ny])===e.lab) field[(x+1)+(y+1)*fw+(z+1)*fw*fh]=-1; }
+      if(Math.round(data[(x0+x)+(y0+y)*nx+(z0+z)*nx*ny])===e.lab) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
+    gaussianBlur3D(occ,[fw,fh,fd],0.9);                                  // soften the mask -> smooth iso-surface
+    const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.5-occ[i];  // inside (<0) where occ>0.5
     const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) continue;
-    const vmap=sn.positions.map(p=>tjs(x0-1+p[0], y0-1+p[1], z0-1+p[2]));
+    const vmap=sn.positions.map(p=>tjs(x0-PAD+p[0], y0-PAD+p[1], z0-PAD+p[2]));
     const pos=[]; for(const c of sn.cells){ const a=vmap[c[0]],b=vmap[c[1]],d=vmap[c[2]],f=vmap[c[3]];
       pos.push(a[0],a[1],a[2], b[0],b[1],b[2], d[0],d[1],d[2],  a[0],a[1],a[2], d[0],d[1],d[2], f[0],f[1],f[2]); }
     let cx=0,cy=0,cz=0; for(const v of vmap){ cx+=v[0];cy+=v[1];cz+=v[2]; } const nv=vmap.length; cx/=nv;cy/=nv;cz/=nv;
@@ -1822,7 +1847,9 @@ function installBuiltAtlas(finalRecs, SAMP, name){
   const lc={}; finalRecs.forEach(r=>{ lc[r.meta.lobe]=(lc[r.meta.lobe]||0)+1; });
   const nLobe=Object.keys(lc).length, maxFrac=Math.max(...Object.values(lc))/finalRecs.length;
   const scheme=(nLobe<3 || maxFrac>0.7) ? 'rainbow' : 'lobe';
-  $('scheme').value=scheme; applyScheme(scheme); if(+$('smooth').value>0) applySmoothing();
+  $('scheme').value=scheme; applyScheme(scheme);
+  if(+$('smooth').value<10){ $('smooth').value=10; if($('smoothVal')) $('smoothVal').textContent='10'; }  // pretty default
+  applySmoothing();
   buildList(); updateCount(); buildAxisLabels(box, sphere.radius);
   if(typeof ovRender==='function') ovRender(); if(typeof recolorOverlay==='function') recolorOverlay();
   if(typeof updateColorbar==='function') updateColorbar();
