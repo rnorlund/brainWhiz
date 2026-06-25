@@ -722,6 +722,15 @@
       Build multi-panel figures with <b>🗔 Panels</b> (top bar): drop views into a grid, label them,
       and export PNG or a portable <b>.bwz</b> recipe. Save the whole look as a <b>Preset</b> (top bar).
     </div>
+    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      <div style="font-size:11px;opacity:.75;line-height:1.35;margin-bottom:6px">
+        <b>🔗 Living figure</b> — export the <i>current 3D view</i> as one self-contained <b>.html</b> a reader can
+        rotate / zoom / explode. Drop it into a paper's supplementary, a webpage, or an iframe.</div>
+      <div class="row"><label title="Title shown on the exported figure">Title</label><input type="text" id="figTitle" placeholder="(optional)" style="flex:1;font-size:12px"></div>
+      <div class="row"><label title="Caption shown under the title">Caption</label><input type="text" id="figCaption" placeholder="(optional)" style="flex:1;font-size:12px"></div>
+      <div class="row"><button class="sm" id="figExportHtml" style="flex:1" title="Export the current visible regions + camera as a self-contained interactive .html">🔗 Export interactive .html</button></div>
+      <div id="figExportInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:3px"></div>
+    </div>
   </div></details>
 </div>
 
@@ -3523,6 +3532,75 @@ function loadStatFile(e, which){
     } catch(err){ $('ovInfo').textContent='Failed to read NIfTI: '+err.message; } };
   fr.readAsArrayBuffer(file);
 }
+
+// ================= 🔗 LIVING FIGURE: export current 3D view as a self-contained interactive .html =================
+function _figViewerJS(){ return `
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const F=window.__FIG;
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight); document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(F.bg||'#0a0a12');
+const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.5, 8000); camera.position.fromArray(F.cam.p);
+const controls=new OrbitControls(camera, renderer.domElement); controls.target.fromArray(F.cam.t); controls.enableDamping=true; controls.update();
+scene.add(new THREE.AmbientLight(0xffffff,0.75));
+scene.add(new THREE.HemisphereLight(0xbfd4ff,0x202028,0.9));
+const key=new THREE.DirectionalLight(0xffffff,0.7); key.position.set(1,1,1); scene.add(key);
+const head=new THREE.DirectionalLight(0xffffff,0.6); scene.add(head);
+const group=new THREE.Group(); scene.add(group);
+const bin=Uint8Array.from(atob(F.data), c=>c.charCodeAt(0)); const fl=new Float32Array(bin.buffer);
+let off=0; const recs=[];
+for(const r of F.regions){ const np=r.n*3; const pos=fl.slice(off,off+np); off+=np;
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.computeVertexNormals();
+  const m=new THREE.Mesh(g, new THREE.MeshStandardMaterial({color:new THREE.Color(r.c[0],r.c[1],r.c[2]), roughness:0.6, metalness:0.0, side:THREE.DoubleSide}));
+  m.userData.base=r.base; group.add(m); recs.push(m); }
+function setExplode(v){ for(const m of recs) m.position.set(m.userData.base[0]*v, m.userData.base[1]*v, m.userData.base[2]*v); }
+const ex=document.getElementById('ex'); if(ex) ex.addEventListener('input', e=>setExplode(+e.target.value));
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+(function loop(){ requestAnimationFrame(loop); controls.update(); head.position.copy(camera.position); renderer.render(scene,camera); })();
+`; }
+function buildLivingHtml(F, threeUrl, orbitUrl){
+  const im=JSON.stringify({imports:{ "three":threeUrl, "three/addons/controls/OrbitControls.js":orbitUrl }});
+  const esc=s=>(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+esc(F.title||'brainWhiz figure')+'</title><style>'
+    +'html,body{margin:0;height:100%;background:'+(F.bg||'#0a0a12')+';overflow:hidden;font:13px system-ui,sans-serif;color:#eaf2ff}'
+    +'#cap{position:fixed;left:16px;bottom:14px;max-width:60%;text-shadow:0 1px 3px #000;pointer-events:none}'
+    +'#cap h1{margin:0 0 2px;font-size:18px}#cap p{margin:0;font-size:13px;opacity:.85}'
+    +'#ui{position:fixed;right:14px;bottom:14px;background:rgba(20,28,44,.7);padding:8px 10px;border-radius:10px;backdrop-filter:blur(3px)}'
+    +'#ui label{font-size:11px;opacity:.8;display:block;margin-bottom:3px}#ui input{width:150px}'
+    +'#hint{position:fixed;left:16px;top:12px;font-size:11px;opacity:.55}'
+    +'a.bw{position:fixed;right:14px;top:12px;font-size:10px;opacity:.5;color:#9fd0ff;text-decoration:none}</style></head><body>'
+    +'<div id="hint">drag to rotate · scroll to zoom</div><a class="bw" href="https://github.com/rnorlund/brainWhiz" target="_blank">made with brainWhiz</a>'
+    +'<div id="cap">'+(F.title?('<h1>'+esc(F.title)+'</h1>'):'')+(F.caption?('<p>'+esc(F.caption)+'</p>'):'')+'</div>'
+    +'<div id="ui"><label>Explode</label><input id="ex" type="range" min="0" max="1.2" step="0.01" value="0"></div>'
+    +'<script type="importmap">'+im+'<\/script>'
+    +'<script>window.__FIG='+JSON.stringify(F)+'<\/script>'
+    +'<script type="module">'+_figViewerJS()+'<\/script>'
+    +'</body></html>';
+}
+async function exportLivingFigure(){
+  const vis=meshes.filter(o=>o.mesh.visible); if(!vis.length){ $('figExportInfo').textContent='No visible regions to export.'; return; }
+  $('figExportInfo').textContent='packing geometry …';
+  const floats=[]; const regions=[];
+  for(const o of vis){ const g=o.mesh.geometry; const pos=g.attributes.position.array;   // positions only — viewer recomputes normals (halves file size)
+    const c=o.mesh.material.color; regions.push({c:[+c.r.toFixed(3),+c.g.toFixed(3),+c.b.toFixed(3)], base:[+o.base.x.toFixed(2),+o.base.y.toFixed(2),+o.base.z.toFixed(2)], n:pos.length/3});
+    for(let i=0;i<pos.length;i++) floats.push(pos[i]); }
+  const F={ title:($('figTitle')&&$('figTitle').value)||'', caption:($('figCaption')&&$('figCaption').value)||'', bg:viewBg(),
+    cam:{p:camera.position.toArray().map(v=>+v.toFixed(2)), t:controls.target.toArray().map(v=>+v.toFixed(2))},
+    regions, data:bufToB64(new Float32Array(floats).buffer) };
+  // inline three.js from the vendored copy when possible (offline self-contained); else CDN
+  let threeUrl, orbitUrl;
+  if(location.protocol!=='file:'){ try{
+      const t=await (await fetch('vendor/three.module.js')).text(), o=await (await fetch('vendor/jsm/controls/OrbitControls.js')).text();
+      threeUrl='data:text/javascript;charset=utf-8,'+encodeURIComponent(t); orbitUrl='data:text/javascript;charset=utf-8,'+encodeURIComponent(o);
+    }catch(e){} }
+  if(!threeUrl){ threeUrl='https://unpkg.com/three@0.160.0/build/three.module.js'; orbitUrl='https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js'; }
+  const html=buildLivingHtml(F, threeUrl, orbitUrl);
+  const blob=new Blob([html],{type:'text/html'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='brainwhiz_figure.html'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  $('figExportInfo').textContent='Exported '+regions.length+' regions · '+(html.length/1048576).toFixed(1)+' MB'+(threeUrl.startsWith('data:')?' (offline)':' (needs internet to view)');
+}
+if($('figExportHtml')) $('figExportHtml').addEventListener('click', exportLivingFigure);
 
 // ================= REGION SETS =================
 const CANON = {
