@@ -381,6 +381,21 @@
     <div id="ovInfo" class="muted" style="font-size:11px;margin-top:6px"></div>
   </div></details>
 
+  <details class="acc"><summary><span class="chev">▸</span>🩻 Underlay</summary><div class="accb">
+    <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:8px">
+      The single anatomical <b>base</b> image under the slices/mosaic (and what <b>✂ Crop to background</b>
+      masks overlays to). Default is the MNI152 template — load a subject T1 / your own template
+      (same space as your overlays) for individual results. Tip: a plain drag-drop onto the viewport
+      in Slices/Mosaic also sets this.</div>
+    <div class="row"><label>Base image</label>
+      <span id="ulTabName" class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MNI template</span></div>
+    <div class="row" style="gap:5px">
+      <button class="sm" id="ulTabLoad" title="Load a .nii / .nii.gz anatomical (subject T1 or template) as the base underlay">＋ Load .nii</button>
+      <button class="sm" id="ulTabReset" title="Use the bundled MNI152 template">↺ MNI template</button></div>
+    <input type="file" id="ulTabFile" accept=".nii,.nii.gz,.gz" style="display:none">
+    <div id="ulTabInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:4px"></div>
+  </div></details>
+
   <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:6px">Controls the <b>🔪 Slices</b> view (top bar). Load a stat <b>.nii</b> in Overlay to see a heatmap; click a slice or drag the X/Y/Z sliders to navigate.</div>
     <div class="row" style="margin-bottom:6px"><label title="Anatomical background under the slices/mosaic. Default is the MNI152 template; load a subject T1 (same space as your overlays) for individual results.">Underlay</label>
@@ -1707,12 +1722,14 @@ $('recBtn').addEventListener('click', ()=> _recording ? stopRecording() : startR
 // ---- drag & drop ANY supported file onto the viewport (routes into existing loaders) ----
 // Plain drop = anatomical BACKGROUND (slice/mosaic underlay). ⌘/Ctrl-drop = OVERLAY (stat map),
 // so you can stack figures: drop several with ⌘ held to add them one-by-one or all at once.
+function ulSetName(t){ if($('ulName')) $('ulName').textContent=t; if($('ulTabName')) $('ulTabName').textContent=t; }   // keep both displays (Slice panel + Underlay tab) in sync
 async function loadUnderlayFromFile(file){
   const buf=await file.arrayBuffer(); let b=buf;
   if(/\.gz$/i.test(file.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
   setUnderlay(parseNifti(b)); underlayName=file.name; underlayRaw=bufToB64(buf);
-  if($('ulName')) $('ulName').textContent=file.name; refreshSliceViews(); requestRender();
+  ulSetName(file.name); refreshSliceViews(); requestRender();
 }
+function resetUnderlay(){ setUnderlay(null); underlayRaw=null; underlayName=''; ulSetName('MNI template'); refreshSliceViews(); requestRender(); }
 async function loadOverlayFromFile(file){
   clearEmptyState(); ovAdd('file'); $('ovInfo').textContent='reading '+file.name+' …';
   const buf=await file.arrayBuffer();
@@ -3307,9 +3324,9 @@ window.brainAPI = {
   setViewMode(m){ setViewMode(m); },
   // set (or clear) the slice/mosaic anatomical underlay from NIfTI bytes (base64)
   setUnderlayBytes(b64, name){
-    if(!b64){ setUnderlay(null); underlayRaw=null; underlayName=''; $('ulName').textContent='MNI template'; return true; }
+    if(!b64){ setUnderlay(null); underlayRaw=null; underlayName=''; ulSetName('MNI template'); return true; }
     let buf=b64ToBuf(b64), b=buf; if(/\.gz$/i.test(name||'')) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
-    setUnderlay(parseNifti(b)); underlayName=name||'underlay'; underlayRaw=b64; $('ulName').textContent=underlayName; return true; },
+    setUnderlay(parseNifti(b)); underlayName=name||'underlay'; underlayRaw=b64; ulSetName(underlayName); return true; },
   // hide all chrome so slice/mosaic captures use the full window (headless figures)
   hideUI(){ for(const id of ['sidebar','sidebarR','topbar']){ const e=$(id); if(e) e.style.display='none'; }
     const h=document.querySelector('.hint'); if(h) h.style.display='none';
@@ -4085,13 +4102,17 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); if(n===2) updateTractClip(); }));
+  const ulPick=async(f,info)=>{ if(!f) return; try{ if(info) $(info).textContent='reading '+f.name+' …';
+      await loadUnderlayFromFile(f); if(info) $(info).textContent=''; }
+    catch(err){ const m='Could not read underlay: '+err.message; if(info) $(info).textContent=m; else alert(m); } };
+  // Slice-panel underlay controls
   $('ulLoad').addEventListener('click', ()=>$('ulFile').click());
-  $('ulFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
-    rd.onload=()=>{ try{ const buf=rd.result; let b=buf; if(/\.gz$/i.test(f.name)) b=window.pako.ungzip(new Uint8Array(buf)).buffer;
-      setUnderlay(parseNifti(b)); underlayName=f.name; underlayRaw=bufToB64(buf); $('ulName').textContent=f.name; refreshSliceViews(); }
-      catch(err){ alert('Could not read underlay: '+err.message); } };
-    rd.readAsArrayBuffer(f); e.target.value=''; });
-  $('ulReset').addEventListener('click', ()=>{ setUnderlay(null); underlayRaw=null; underlayName=''; $('ulName').textContent='MNI template'; });
+  $('ulFile').addEventListener('change', e=>{ ulPick(e.target.files[0]); e.target.value=''; });
+  $('ulReset').addEventListener('click', resetUnderlay);
+  // dedicated Underlay tab controls (same single base image)
+  $('ulTabLoad').addEventListener('click', ()=>$('ulTabFile').click());
+  $('ulTabFile').addEventListener('change', e=>{ ulPick(e.target.files[0],'ulTabInfo'); e.target.value=''; });
+  $('ulTabReset').addEventListener('click', ()=>{ resetUnderlay(); $('ulTabInfo').textContent=''; });
   // mosaic controls
   const mosAxLab=()=>{ if($('mosZAx')) $('mosZAx').textContent = mosaicPlane==='axi'?'z':mosaicPlane==='cor'?'y':'x'; };
   document.querySelectorAll('.mpbtn').forEach(b=>b.addEventListener('click',()=>{ mosaicPlane=b.dataset.mp;
