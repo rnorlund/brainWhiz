@@ -511,6 +511,10 @@
       <div class="row"><label title="How tracts are drawn on 2D slices/mosaic">2D tracts</label>
         <select id="tractRenderMode" style="font-size:11px" title="Outline = thin border so the map shows through · Fill = solid · Slab shadow = project tract points within ±mm to show the trajectory, not a thin cut"><option value="outline">Outline</option><option value="fill">Fill</option><option value="slab">Slab shadow</option></select>
         <select id="tractColorMode" style="font-size:11px" title="Palette = distinct colors · Orientation = standard DTI direction color (R=L↔R, G=A↔P, B=S↔I)"><option value="palette">Palette</option><option value="orientation">Orientation</option></select></div>
+      <div class="row"><label title="How tracts are drawn in the 3D view">3D tracts</label>
+        <select id="tract3DMode" style="font-size:11px" title="Hull = the solid tract shape · Fibers = synthesized fine white-matter strands filling the tract (group-average look, individual fibers) — best for figures"><option value="hull">Solid hull</option><option value="fibers">🧵 Fibers (white matter)</option></select></div>
+      <div class="ctl" id="tractFiberRow" style="display:none"><div class="lab"><span title="How many synthesized fibers per tract">Fiber density</span><span id="tractFiberDV">70</span></div>
+        <input type="range" id="tractFiberD" min="10" max="220" step="5" value="70"></div>
       <div class="ctl"><div class="lab"><span title="Outline thickness / slab dot size on 2D slices">Tract line</span><span id="tractLineWV">1.5</span></div>
         <input type="range" id="tractLineW" min="0.5" max="5" step="0.5" value="1.5"></div>
       <div class="ctl"><div class="lab"><span title="Slab shadow: project tract points within ±this many mm of the slice (0 = thin slice only)">Slab ± mm</span><span id="tractSlabMMV">6</span></div>
@@ -1148,6 +1152,7 @@ function setExplode(v){
   if(typeof tractRecs!=='undefined' && tractRecs.length){
     const te = $('tractExplode') && $('tractExplode').checked;
     for(const tr of tractRecs){ if(te) tr.mesh.position.copy(tr.base).multiplyScalar(off); else tr.mesh.position.set(0,0,0); }
+    if(typeof fiberMode==='function' && fiberMode()) buildTractFibers();   // fibers follow the explosion
   }
   $('expVal').textContent = Math.round(v*100) + '%';
   $('explode').value = v;
@@ -2456,11 +2461,11 @@ async function loadTracts(id){
         origPos:Float32Array.from(g.attributes.position.array), origNrm:Float32Array.from(g.attributes.normal.array)});
       o.userData.meta=meta; i++; });
     tractGroup.add(gltf.scene); group.add(tractGroup);
-    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); rebuildBridges(); setExplode(explodeAmt); refreshSliceViews(); requestRender(); resolve();
+    tractAtlasId=id; invalidateTractMask(); applyTractSmooth(); setupTractFX(); applyTractColorMode(); buildTractList(); applyCortexFade(); updateTractClip(); rebuildBridges(); setExplode(explodeAmt); applyTract3DMode(); refreshSliceViews(); requestRender(); resolve();
   }, err=>{ alert('Tract mesh parse failed: '+err); resolve(); });
   });
 }
-function clearTracts(){ while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
+function clearTracts(){ disposeTractFibers(); while(tractGroup.children.length) tractGroup.remove(tractGroup.children[0]);
   tractRecs=[]; tractAtlasId=''; $('tractList').innerHTML=''; $('tractCount').textContent=''; $('tractReadout').textContent='';
   clearBridges(); bridgeAny=false; tractBridgeFoci=[]; invalidateTractMask(); restoreCortex(); refreshSliceViews(); requestRender(); }
 function buildTractList(){ const L=$('tractList'); L.innerHTML='';
@@ -2468,14 +2473,15 @@ function buildTractList(){ const L=$('tractList'); L.innerHTML='';
   $('tractCount').textContent = tractRecs.length ? `${nv}/${tractRecs.length} shown` : '';
   tractRecs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='roi'; d.style.padding='2px 4px';
     d.innerHTML=`<input type="checkbox" ${r.visible?'checked':''}><span class="ovdot" style="background:${r.color};width:11px;height:11px;border-radius:3px;flex:none"></span><span class="nm" style="flex:1" title="${r.meta.name}">${r.meta.name}</span>`;
-    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked; $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; invalidateTractMask(); if($('tractBridge')&&$('tractBridge').checked) rebuildBridges(); else { refreshSliceViews(); requestRender(); } });
+    d.querySelector('input').addEventListener('change',e=>{ r.visible=e.target.checked; r.mesh.visible=e.target.checked && !fiberMode(); $('tractCount').textContent=`${tractRecs.filter(x=>x.visible).length}/${tractRecs.length} shown`; invalidateTractMask(); if(fiberMode()) buildTractFibers(); if($('tractBridge')&&$('tractBridge').checked) rebuildBridges(); else { refreshSliceViews(); requestRender(); } });
     L.appendChild(d); }); }
 // one slider drives both 3D mesh opacity and 2D cross-section fill alpha
 function setTractOpacity(){ const op=+$('tractOp').value; $('tractOpV').textContent=op.toFixed(2);
   for(const r of tractRecs){ r.mesh.material.opacity=op; r.mesh.material.transparent=(op<1); r.mesh.material.needsUpdate=true; } requestRender(); }
 // Taubin-smooth the chunky tract hulls (reuses the ROI mesh smoother); recompute bbox for cross-sections
-function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } refreshSliceViews(); requestRender(); }
-function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible; }); buildTractList(); invalidateTractMask();
+function applyTractSmooth(){ const it=+$('tractSmooth').value; for(const r of tractRecs){ smoothMesh(r, it); r.mesh.geometry.computeBoundingBox(); } if(fiberMode()) buildTractFibers(); refreshSliceViews(); requestRender(); }
+function setTractVis(fn){ tractRecs.forEach((r,i)=>{ r.visible=!!fn(r,i); r.mesh.visible=r.visible && !fiberMode(); }); buildTractList(); invalidateTractMask();
+  if(fiberMode()) buildTractFibers();
   if($('tractBridge')&&$('tractBridge').checked) rebuildBridges(); else { refreshSliceViews(); requestRender(); } }
 function applyCortexFade(){ const f=+$('cortexFade').value, glass=$('tractGlass')&&$('tractGlass').checked; if(!tractRecs.length){ restoreCortex(); return; }
   meshes.forEach(o=>{ const m=o.mesh.material; m.transparent=true; m.opacity=glass?0.05:Math.max(0.04, 1-f); m.depthWrite=glass?false:(f<0.5); }); requestRender(); }
@@ -2493,7 +2499,63 @@ function tractDir(pts){ const n=pts.length/3; if(n<3) return null;
 function dirToRGB(d){ const h=v=>Math.round(255*Math.min(1,Math.abs(v))).toString(16).padStart(2,'0'); return '#'+h(d[0])+h(d[1])+h(d[2]); }
 function applyTractColorMode(){ const ori = $('tractColorMode') && $('tractColorMode').value==='orientation';
   for(const r of tractRecs){ const c=(ori&&r.oriColor)?r.oriColor:r.color; r.drawColor=c; r.mesh.material.color.set(c); r.mesh.material.needsUpdate=true; }
+  if(fiberMode()) buildTractFibers();
   requestRender(); refreshSliceViews(); }
+// ---------- 🧵 Fiber-style white-matter rendering ----------
+// Synthesize fine "fiber" strands that fill each tract hull: PCA principal axis -> binned medial
+// path (captures curvature like the arcuate) -> many strands offset within the cross-section with
+// gentle wobble, drawn as thin line segments. A group-average look that still shows individual fibers.
+let tractFiberLines=null;
+function fiberMode(){ return $('tract3DMode') && $('tract3DMode').value==='fibers'; }
+function disposeTractFibers(){ if(tractFiberLines){ tractGroup.remove(tractFiberLines); tractFiberLines.geometry.dispose(); tractFiberLines.material.dispose(); tractFiberLines=null; } }
+function smoothPath(M, iters){ let P=M.map(p=>p.slice()); for(let it=0;it<(iters||1);it++){ const Q=P.map(p=>p.slice());
+  for(let i=1;i<P.length-1;i++) for(let k=0;k<3;k++) Q[i][k]=(P[i-1][k]+2*P[i][k]+P[i+1][k])/4; P=Q; } return P; }
+function buildTractFibers(){
+  disposeTractFibers();
+  const vis=tractRecs.filter(r=>r.visible); if(!vis.length){ requestRender(); return; }
+  const density=+($('tractFiberD')?$('tractFiberD').value:70);
+  const ori=$('tractColorMode')&&$('tractColorMode').value==='orientation';
+  const palette=$('tractColorMode')&&$('tractColorMode').value==='palette';
+  const POS=[], COL=[], SEG=22, K=14;
+  for(const tr of vis){
+    const pa=tr.mesh.geometry.attributes.position.array, n=pa.length/3; if(n<12) continue;
+    let cx=0,cy=0,cz=0; for(let i=0;i<n;i++){ cx+=pa[3*i];cy+=pa[3*i+1];cz+=pa[3*i+2]; } cx/=n;cy/=n;cz/=n;
+    const u=tractDir(pa)||[1,0,0]; let ux=u[0],uy=u[1],uz=u[2];
+    if(!(isFinite(ux)&&isFinite(uy)&&isFinite(uz))||(ux===0&&uy===0&&uz===0)){ ux=1;uy=0;uz=0; }   // guard degenerate PCA
+    let vx,vy,vz; if(Math.abs(ux)<0.9){ vx=0;vy=-uz;vz=uy; } else { vx=-uz;vy=0;vz=ux; } let vl=Math.hypot(vx,vy,vz)||1; vx/=vl;vy/=vl;vz/=vl;
+    let wx=uy*vz-uz*vy, wy=uz*vx-ux*vz, wz=ux*vy-uy*vx;
+    let tmin=Infinity,tmax=-Infinity; const proj=new Float32Array(n);
+    for(let i=0;i<n;i++){ const t=(pa[3*i]-cx)*ux+(pa[3*i+1]-cy)*uy+(pa[3*i+2]-cz)*uz; proj[i]=t; if(t<tmin)tmin=t; if(t>tmax)tmax=t; }
+    const span=(tmax-tmin)||1; const sum=Array.from({length:K},()=>[0,0,0,0]), rad=new Float32Array(K), rn=new Int32Array(K);
+    for(let i=0;i<n;i++){ let b=Math.floor((proj[i]-tmin)/span*K); if(!isFinite(b)) b=0; else if(b<0) b=0; else if(b>K-1) b=K-1; sum[b][0]+=pa[3*i];sum[b][1]+=pa[3*i+1];sum[b][2]+=pa[3*i+2];sum[b][3]++;
+      const dx=pa[3*i]-cx,dy=pa[3*i+1]-cy,dz=pa[3*i+2]-cz; const pv=dx*vx+dy*vy+dz*vz, pw=dx*wx+dy*wy+dz*wz; rad[b]+=Math.hypot(pv,pw); rn[b]++; }
+    let M=[], Rr=[]; for(let b=0;b<K;b++){ if(sum[b][3]>2){ M.push([sum[b][0]/sum[b][3],sum[b][1]/sum[b][3],sum[b][2]/sum[b][3]]); Rr.push((rad[b]/Math.max(1,rn[b]))*0.85); } }
+    if(M.length<2) continue; M=smoothPath(M,2);
+    // realistic white-matter look: WHITE strands by default; "Orientation" color mode -> per-segment DTI color
+    const off=tr.mesh.position, bc=new THREE.Color('#f4f1ea');
+    for(let f=0;f<density;f++){ const ang=Math.random()*6.2832, rr=Math.sqrt(Math.random()), ph=Math.random()*6.2832, amp=0.18+Math.random()*0.22;
+      const fp=[];
+      for(let s=0;s<=SEG;s++){ const tt=s/SEG, mi=tt*(M.length-1), i0=Math.floor(mi), i1=Math.min(M.length-1,i0+1), fr=mi-i0;
+        const mx=M[i0][0]+(M[i1][0]-M[i0][0])*fr, my=M[i0][1]+(M[i1][1]-M[i0][1])*fr, mz=M[i0][2]+(M[i1][2]-M[i0][2])*fr;
+        const R=(Rr[i0]||4), oa=ang+Math.sin(tt*9.4+ph)*amp, orad=rr*R;
+        const ox=(Math.cos(oa)*vx+Math.sin(oa)*wx)*orad, oy=(Math.cos(oa)*vy+Math.sin(oa)*wy)*orad, oz=(Math.cos(oa)*vz+Math.sin(oa)*wz)*orad;
+        fp.push(mx+ox+off.x, my+oy+off.y, mz+oz+off.z); }
+      for(let s=0;s<SEG;s++){ const a=s*3, b2=(s+1)*3;
+        POS.push(fp[a],fp[a+1],fp[a+2], fp[b2],fp[b2+1],fp[b2+2]);
+        let cr,cg,cb;
+        if(ori){ const dl=Math.hypot(fp[b2]-fp[a],fp[b2+1]-fp[a+1],fp[b2+2]-fp[a+2])||1; cr=Math.abs((fp[b2]-fp[a])/dl); cg=Math.abs((fp[b2+2]-fp[a+2])/dl); cb=Math.abs((fp[b2+1]-fp[a+1])/dl); }
+        else { const j=0.82+Math.random()*0.18; cr=bc.r*j; cg=bc.g*j; cb=bc.b*j; }
+        COL.push(cr,cg,cb, cr,cg,cb); }
+    }
+  }
+  if(!POS.length){ requestRender(); return; }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.Float32BufferAttribute(POS,3)); geo.setAttribute('color',new THREE.Float32BufferAttribute(COL,3));
+  tractFiberLines=new THREE.LineSegments(geo, new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.8, depthWrite:false}));
+  tractFiberLines.renderOrder=3; tractGroup.add(tractFiberLines); requestRender();
+}
+function applyTract3DMode(){ const fib=fiberMode(); if($('tractFiberRow')) $('tractFiberRow').style.display=fib?'flex':'none';
+  for(const r of tractRecs) r.mesh.visible = r.visible && !fib;     // hide solid hulls when showing fibers
+  if(fib) buildTractFibers(); else disposeTractFibers(); requestRender(); }
 // ---- 3D depth & flow: fresnel rim (always) + a pulse flowing along the tract core (toggle) ----
 const tractFX = { uTime:{value:0}, uPulse:{value:0}, uPulseSpeed:{value:0.9},
   uPulseColor:{value:new THREE.Color('#ffffff')}, uRim:{value:0.35}, uRimColor:{value:new THREE.Color('#bfe0ff')} };
@@ -2677,6 +2739,8 @@ $('tractOp').addEventListener('input',()=>{ setTractOpacity(); refreshSliceViews
 $('tractSmooth').addEventListener('input',e=>{ $('tractSmoothV').textContent=e.target.value; });
 $('tractSmooth').addEventListener('change',applyTractSmooth);
 $('tractRenderMode').addEventListener('change',refreshSliceViews);
+$('tract3DMode').addEventListener('change',applyTract3DMode);
+$('tractFiberD').addEventListener('input',e=>{ $('tractFiberDV').textContent=e.target.value; if(fiberMode()) buildTractFibers(); });
 $('tractColorMode').addEventListener('change',applyTractColorMode);
 $('tractLineW').addEventListener('input',e=>{ $('tractLineWV').textContent=(+e.target.value).toFixed(1); refreshSliceViews(); });
 $('tractSlabMM').addEventListener('input',e=>{ $('tractSlabMMV').textContent=e.target.value; refreshSliceViews(); });
@@ -3356,6 +3420,7 @@ window.brainAPI = {
     const tracts = tractAtlasId ? {
       atlas: tractAtlasId, visible: tractRecs.filter(r=>r.visible).map(r=>r.meta.id),
       smooth:$('tractSmooth').value, opacity:$('tractOp').value, renderMode:$('tractRenderMode').value, colorMode:$('tractColorMode').value,
+      mode3d:$('tract3DMode').value, fiberD:$('tractFiberD').value,
       slabMM:$('tractSlabMM').value, lineW:$('tractLineW').value, maskR:$('tractMaskR').value, cortexFade:$('cortexFade').value,
       spotlight:$('tractSpotlight').checked, bridge:$('tractBridge').checked, glass:$('tractGlass').checked,
       clip:$('tractClip').checked, flow:$('tractFlow').checked, explode:$('tractExplode').checked } : null;
@@ -3376,6 +3441,7 @@ window.brainAPI = {
       setv('tractSmooth',t.smooth); if($('tractSmoothV'))$('tractSmoothV').textContent=t.smooth;
       setv('tractOp',t.opacity); if($('tractOpV'))$('tractOpV').textContent=(+t.opacity).toFixed(2);
       setv('tractRenderMode',t.renderMode); setv('tractColorMode',t.colorMode);
+      if(t.mode3d){ setv('tract3DMode',t.mode3d); } if(t.fiberD){ setv('tractFiberD',t.fiberD); if($('tractFiberDV'))$('tractFiberDV').textContent=t.fiberD; }
       setv('tractSlabMM',t.slabMM); if($('tractSlabMMV'))$('tractSlabMMV').textContent=t.slabMM;
       setv('tractLineW',t.lineW); if($('tractLineWV'))$('tractLineWV').textContent=(+t.lineW).toFixed(1);
       setv('tractMaskR',t.maskR); if($('tractMaskRV'))$('tractMaskRV').textContent=t.maskR;
