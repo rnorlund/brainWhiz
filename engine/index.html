@@ -1795,6 +1795,9 @@ async function loadOverlayFromFile(file){
 async function handleDroppedFile(file, asOverlay){
   const n=(file.name||'').toLowerCase();
   try{
+    if(/\.(gii|srf|asc|trk|tck)$/.test(n) || /(^|\/)(lh|rh)\.|\.(pial|white|inflated|smoothwm|orig|midthickness)\b/.test(n)){
+      if(await loadSurfaceOrTracts(file)) return;   // GIFTI/FreeSurfer surface or TRK/TCK streamlines
+    }
     if(/\.(nii|nii\.gz|gz)$/.test(n)){
       if(asOverlay) await loadOverlayFromFile(file);
       else { await loadUnderlayFromFile(file); openSection('Slice'); }
@@ -2113,6 +2116,112 @@ async function buildAtlasFromDrop(files){
       }
     } finally { showBuilding(false); }
   }catch(err){ showBuilding(false); alert('Could not build from '+niiF.name+': '+err.message); }
+}
+
+// =================================================================================
+// BRING-YOUR-OWN surfaces (GIFTI / FreeSurfer) + tractography (TRK / TCK).
+// Clean-room parsers (no NiiVue code). Surfaces install as the active mesh (matcap, recentered);
+// streamlines render as fine line segments (DTI orientation color), aligned to a loaded surface.
+// =================================================================================
+function rasToTjs(x,y,z){ return [x, z, -y]; }   // RAS (x=R,y=A,z=S) -> three.js (x=R,y=Sup,z=-Ant), matches build_bundle.py
+function parseGIFTI(text){
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  if(doc.getElementsByTagName('parsererror').length) throw new Error('Invalid GIFTI XML');
+  let verts=null, faces=null;
+  for(const a of [...doc.getElementsByTagName('DataArray')]){
+    const intent=a.getAttribute('Intent')||'', enc=a.getAttribute('Encoding')||'ASCII', dt=a.getAttribute('DataType')||'';
+    const de=a.getElementsByTagName('Data')[0]; if(!de) continue; const raw=de.textContent.trim(); const isInt=dt.includes('INT32');
+    let arr;
+    if(enc==='ASCII'){ const nums=raw.split(/\s+/); arr=isInt?Int32Array.from(nums,Number):Float32Array.from(nums,Number); }
+    else { let bytes=Uint8Array.from(atob(raw), c=>c.charCodeAt(0)); if(enc==='GZipBase64Binary') bytes=window.pako.ungzip(bytes);
+      const ab=bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset+bytes.byteLength); arr=isInt?new Int32Array(ab):new Float32Array(ab); }
+    if(intent.includes('POINTSET')) verts=arr; else if(intent.includes('TRIANGLE')) faces=arr;
+  }
+  if(!verts) throw new Error('GIFTI has no POINTSET (coordinates) array.');
+  return { vertices:verts, faces:faces?Uint32Array.from(faces):null };
+}
+function parseFreeSurfer(buf, text){
+  if(text && /^#!ascii/.test(text)){                                   // ASCII (.srf / .asc)
+    const ln=text.split('\n'); let i=1; while(i<ln.length && !ln[i].trim()) i++;
+    const hdr=ln[i++].trim().split(/\s+/).map(Number), nv=hdr[0], nf=hdr[1];
+    const verts=new Float32Array(nv*3), faces=new Uint32Array(nf*3);
+    for(let k=0;k<nv;k++){ const p=ln[i++].trim().split(/\s+/); verts[3*k]=+p[0];verts[3*k+1]=+p[1];verts[3*k+2]=+p[2]; }
+    for(let k=0;k<nf;k++){ const p=ln[i++].trim().split(/\s+/); faces[3*k]=+p[0];faces[3*k+1]=+p[1];faces[3*k+2]=+p[2]; }
+    return { vertices:verts, faces };
+  }
+  const dv=new DataView(buf), magic=(dv.getUint8(0)<<16)|(dv.getUint8(1)<<8)|dv.getUint8(2);
+  if(magic!==0xFFFFFE) throw new Error('Unsupported FreeSurfer surface (need a triangle surface).');
+  let p=3; while(p+1<buf.byteLength && !(dv.getUint8(p)===10 && dv.getUint8(p+1)===10)) p++; p+=2;
+  const nv=dv.getInt32(p,false); p+=4; const nf=dv.getInt32(p,false); p+=4;
+  const verts=new Float32Array(nv*3); for(let k=0;k<nv*3;k++){ verts[k]=dv.getFloat32(p,false); p+=4; }
+  const faces=new Uint32Array(nf*3); for(let k=0;k<nf*3;k++){ faces[k]=dv.getInt32(p,false); p+=4; }
+  return { vertices:verts, faces };
+}
+function parseTRK(buf){
+  const dv=new DataView(buf); const le = dv.getInt32(996,true)===1000;
+  const i16=o=>dv.getInt16(o,le), f32=o=>dv.getFloat32(o,le), i32=o=>dv.getInt32(o,le);
+  const ns=i16(36), np=i16(238), vs=[f32(12)||1,f32(16)||1,f32(20)||1]; const M=[];
+  for(let r=0;r<4;r++) M.push([f32(440+(r*4)*4),f32(440+(r*4+1)*4),f32(440+(r*4+2)*4),f32(440+(r*4+3)*4)]);
+  const hasM=!(M[0][0]===0&&M[1][1]===0&&M[2][2]===0);
+  const out=[]; let p=1000, N=buf.byteLength;
+  while(p+4<=N){ const m=i32(p); p+=4; if(m<=0||m>2e7) break; const L=new Float32Array(m*3);
+    for(let k=0;k<m;k++){ let x=f32(p),y=f32(p+4),z=f32(p+8); p+=12+ns*4;
+      if(hasM){ const vx=x/vs[0],vy=y/vs[1],vz=z/vs[2]; x=M[0][0]*vx+M[0][1]*vy+M[0][2]*vz+M[0][3]; y=M[1][0]*vx+M[1][1]*vy+M[1][2]*vz+M[1][3]; z=M[2][0]*vx+M[2][1]*vy+M[2][2]*vz+M[2][3]; }
+      L[3*k]=x;L[3*k+1]=y;L[3*k+2]=z; }
+    p+=np*4; out.push(L); }
+  return out;
+}
+function parseTCK(buf){
+  const u=new Uint8Array(buf); let he=-1;
+  for(let i=0;i<Math.min(u.length,200000);i++){ if(u[i]===69&&u[i+1]===78&&u[i+2]===68&&(u[i+3]===10||u[i+3]===13)){ he=i+3; break; } }  // 'END'
+  const txt=new TextDecoder().decode(u.subarray(0, he>0?he:0));
+  const offM=txt.match(/file:\s*\.?\s*(\d+)/); let off=offM?+offM[1]:(he+1); while(off<u.length && (u[off]===10||u[off]===13)) off++;
+  const le=!/Float32BE|datatype:\s*Float32B/i.test(txt); const dv=new DataView(buf); const out=[]; let cur=[]; let p=off;
+  while(p+12<=buf.byteLength){ const x=dv.getFloat32(p,le),y=dv.getFloat32(p+4,le),z=dv.getFloat32(p+8,le); p+=12;
+    if(Number.isNaN(x)){ if(cur.length){ out.push(Float32Array.from(cur)); cur=[]; } continue; }
+    if(!isFinite(x)) break; cur.push(x,y,z); }
+  if(cur.length) out.push(Float32Array.from(cur)); return out;
+}
+function installLoadedSurface(vertices, faces, name){
+  if(!faces||!faces.length) throw new Error('Surface has no triangles to display.');
+  const n=vertices.length/3, pos=new Float32Array(n*3);
+  let cx=0,cy=0,cz=0; for(let i=0;i<n;i++){ const t=rasToTjs(vertices[3*i],vertices[3*i+1],vertices[3*i+2]); pos[3*i]=t[0];pos[3*i+1]=t[1];pos[3*i+2]=t[2]; cx+=t[0];cy+=t[1];cz+=t[2]; }
+  cx/=n;cy/=n;cz/=n; for(let i=0;i<n;i++){ pos[3*i]-=cx;pos[3*i+1]-=cy;pos[3*i+2]-=cz; }
+  window.__loadCenter={x:cx,y:cy,z:cz};
+  let geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setIndex(new THREE.BufferAttribute(faces,1));
+  geo=geo.toNonIndexed(); geo.computeVertexNormals();
+  const vc=geo.attributes.position.count, bary=new Float32Array(vc*3); for(let k=0;k<vc;k++) bary[k*3+(k%3)]=1; geo.setAttribute('barycentric',new THREE.BufferAttribute(bary,3));
+  const meta={id:1,node:'surf_1',abbr:'Surface',name:name||'Surface',hemi:'M',lobe:'Other',centroid:[0,0,0]};
+  const mesh=new THREE.Mesh(geo, buildMaterial('Matcap','#dfe4ea')); mesh.userData.meta=meta; mesh.userData.forceMatcap=true;
+  installBuiltAtlas([{mesh, base:new THREE.Vector3(0,0,0), meta, origPos:Float32Array.from(geo.attributes.position.array), origNrm:Float32Array.from(geo.attributes.normal.array)}], {1:[]}, name||'Surface');
+}
+let loadedTractGroup=null;
+function clearLoadedStreamlines(){ if(loadedTractGroup){ group.remove(loadedTractGroup); loadedTractGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material&&o.material.dispose)o.material.dispose(); }); loadedTractGroup=null; requestRender(); } }
+function loadStreamlines(lines, name){
+  clearLoadedStreamlines(); if(!lines.length){ alert('No streamlines found in '+name); return; }
+  let cx=0,cy=0,cz=0,cnt=0; const tj=lines.map(L=>{ const m=L.length/3, o=new Float32Array(m*3);
+    for(let k=0;k<m;k++){ const t=rasToTjs(L[3*k],L[3*k+1],L[3*k+2]); o[3*k]=t[0];o[3*k+1]=t[1];o[3*k+2]=t[2]; cx+=t[0];cy+=t[1];cz+=t[2];cnt++; } return o; });
+  cx/=cnt;cy/=cnt;cz/=cnt; const ctr=window.__loadCenter||{x:cx,y:cy,z:cz};
+  const POS=[],COL=[];
+  for(const L of tj){ const m=L.length/3; for(let k=0;k<m-1;k++){ const a=3*k,b=3*(k+1);
+    const ax=L[a]-ctr.x,ay=L[a+1]-ctr.y,az=L[a+2]-ctr.z, bx=L[b]-ctr.x,by=L[b+1]-ctr.y,bz=L[b+2]-ctr.z;
+    POS.push(ax,ay,az,bx,by,bz);
+    const dl=Math.hypot(bx-ax,by-ay,bz-az)||1, cr=Math.abs((bx-ax)/dl), cg=Math.abs((bz-az)/dl), cb=Math.abs((by-ay)/dl);
+    COL.push(cr,cg,cb,cr,cg,cb); } }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(POS,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(COL,3));
+  loadedTractGroup=new THREE.LineSegments(g, new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.85, depthWrite:false}));
+  loadedTractGroup.renderOrder=3; group.add(loadedTractGroup); clearEmptyState(); requestRender();
+}
+async function loadSurfaceOrTracts(file){
+  const n=(file.name||'').toLowerCase();
+  if(/\.(trk)$/.test(n)){ loadStreamlines(parseTRK(await file.arrayBuffer()), file.name); openSection('Connectivity'); return true; }
+  if(/\.(tck)$/.test(n)){ loadStreamlines(parseTCK(await file.arrayBuffer()), file.name); openSection('Connectivity'); return true; }
+  if(/\.gii$/.test(n)){ const g=parseGIFTI(await file.text()); installLoadedSurface(g.vertices,g.faces,file.name.replace(/\.gii$/i,'')); return true; }
+  if(/\.(srf|asc)$/.test(n) || /(^|\/)(lh|rh)\.|\.(pial|white|inflated|smoothwm|orig|midthickness)\b/.test(n)){
+    const buf=await file.arrayBuffer(); let text=null; try{ text=new TextDecoder().decode(new Uint8Array(buf.slice(0,16))); }catch(e){}
+    const isAscii=text&&text.startsWith('#!ascii'); const g=parseFreeSurfer(buf, isAscii?new TextDecoder().decode(new Uint8Array(buf)):null);
+    installLoadedSurface(g.vertices,g.faces,file.name); return true; }
+  return false;
 }
 
 // color scheme
