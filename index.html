@@ -2113,7 +2113,12 @@ renderer.domElement.addEventListener('pointermove',ev=>{
   else if(selected) hudShow(selected.meta);          // keep showing the selected region
   else hud.style.opacity=0;
 });
+// track where the pointer went down so a ROTATE/PAN drag isn't mistaken for a select-click
+let _downX=0, _downY=0, _downT=0;
+renderer.domElement.addEventListener('pointerdown', ev=>{ _downX=ev.clientX; _downY=ev.clientY; _downT=ev.timeStamp; });
 renderer.domElement.addEventListener('click',ev=>{
+  // ignore clicks that are really the end of a drag (orbit/pan) — only true taps select/highlight
+  if(Math.hypot(ev.clientX-_downX, ev.clientY-_downY) > 5){ return; }
   const r=renderer.domElement.getBoundingClientRect();
   mouse.x=((ev.clientX-r.left)/r.width)*2-1;
   mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
