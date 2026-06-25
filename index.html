@@ -377,6 +377,10 @@
         <input type="range" id="ovOpacity" min="0.05" max="1" step="0.05" value="1"></div>
       <div class="ctl"><div class="lab"><span title="Color vividness / saturation of this overlay in slices & mosaic">Overlay vividness</span><span id="ovVividV">1.0</span></div>
         <input type="range" id="ovVivid" min="0.5" max="2.5" step="0.05" value="1"></div>
+      <div class="ctl" id="ovFrameRow" style="display:none"><div class="lab"><span title="4D timeseries frame — animates the 3D mesh colors and the 2D slices; orbit/zoom while it plays">⏱ 4D frame</span><span id="ovFrameV">1/1</span></div>
+        <div class="row" style="gap:6px"><button class="sm" id="ovPlay" title="Play / pause the 4D timeseries">▶</button>
+          <input type="range" id="ovFrame" min="0" max="0" step="1" value="0" style="flex:1">
+          <select id="ovFps" title="Playback speed" style="font-size:11px"><option>4</option><option selected>8</option><option>15</option><option>24</option></select></div></div>
     </div>
     <div id="ovInfo" class="muted" style="font-size:11px;margin-top:6px"></div>
   </div></details>
@@ -3088,6 +3092,8 @@ function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overl
   overlay.vals=o.vals||null; overlay.volA=o.vol||null; overlay.volA_grid=o.volGrid||null; overlay.name=o.name; overlay.on=!!o.vals; tfceCache=null;
   ovApplySettings(o); syncStyleRows(); syncThreshRange();
   $('ovEditor').style.display='block'; $('ovTaskRow').style.display = o.kind==='task'?'flex':'none';
+  ovStopPlay(); const is4d=(o.nt>1); $('ovFrameRow').style.display=is4d?'flex':'none';   // 4D timeseries controls
+  if(is4d){ $('ovFrame').max=o.nt-1; $('ovFrame').value=o.frame||0; $('ovFrameV').textContent=((o.frame||0)+1)+'/'+o.nt; }
   if(o.vals) recolorOverlay(); else applyScheme(activeScheme);
   updateColorbar(); ovRender(); refreshSliceViews();
   if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
@@ -3131,6 +3137,9 @@ function initOverlayUI(){
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
   $('ovCropBg').addEventListener('change', ()=>edited());
+  $('ovFrame').addEventListener('input', e=>{ if(selOv>=0){ ovStopPlay(); setOverlayFrame(overlays[selOv], +e.target.value); } });
+  $('ovPlay').addEventListener('click', ovTogglePlay);
+  $('ovFps').addEventListener('change', ()=>{ if(_ovPlayTimer){ ovStopPlay(); ovTogglePlay(); } });
   $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
   $('ovVivid').addEventListener('input', ()=>{ $('ovVividV').textContent=(+$('ovVivid').value).toFixed(1); edited(); });
   $('ovTfce').addEventListener('change', ()=>{ if(selOv<0) return; const o=overlays[selOv]; o.tfce=$('ovTfce').checked;
@@ -3330,8 +3339,13 @@ function parseNifti(buf){
     default: return dv.getFloat32(voff+idx*4,little);
   }};
   const nv=nx*ny*nz;
+  // 4D timeseries: dim[4] frames stored contiguously (time slowest). Read one frame at a time on demand.
+  const bpv={2:1,256:1,4:2,512:2,8:4,16:4,64:8}[datatype]||4;
+  let nt=(dim[0]>=4 && dim[4]>1)?dim[4]:1; const avail=Math.floor((buf.byteLength-voff)/bpv/nv); if(avail>=1) nt=Math.min(nt, Math.max(1,avail));
   const data=new Float32Array(nv);              // dense volume (slope/inter applied), i fastest
-  for(let idx=0;idx<nv;idx++) data[idx]=read(idx)*slope+inter;
+  let _frame=-1;
+  function loadFrame(k){ k=Math.max(0,Math.min(nt-1,k|0)); const base=k*nv; for(let idx=0;idx<nv;idx++) data[idx]=read(base+idx)*slope+inter; _frame=k; }
+  loadFrame(0);
   function sampleMM(x,y,z){ const dx=x-T[0],dy=y-T[1],dz=z-T[2];
     const i=Math.round(Minv[0]*dx+Minv[1]*dy+Minv[2]*dz);
     const j=Math.round(Minv[3]*dx+Minv[4]*dy+Minv[5]*dz);
@@ -3341,8 +3355,16 @@ function parseNifti(buf){
   }
   const vox=[Math.hypot(M[0],M[3],M[6]), Math.hypot(M[1],M[4],M[7]), Math.hypot(M[2],M[5],M[8])];
   const worldOf=(i,j,k)=>[M[0]*i+M[1]*j+M[2]*k+T[0], M[3]*i+M[4]*j+M[5]*k+T[1], M[6]*i+M[7]*j+M[8]*k+T[2]];
-  return {sampleMM, data, dim:[nx,ny,nz], vox, M, T, Minv, worldOf};
+  return {sampleMM, data, dim:[nx,ny,nz], vox, M, T, Minv, worldOf, nt, setFrame:loadFrame, get frame(){return _frame;}};
 }
+// sample a parsed NIfTI to per-region mean values (used for 3D mesh coloring; re-run on 4D frame change)
+function sampleNiiToVals(nii){ const vals={};
+  for(const o of meshes){ const pts=SAMPLES[o.meta.id]; if(!pts){ vals[o.meta.id]=NaN; continue; } let s=0,n=0;
+    for(let p=0;p<pts.length;p+=3){ const v=nii.sampleMM(pts[p],pts[p+1],pts[p+2]); if(v!==null&&isFinite(v)){ s+=v; n++; } }
+    vals[o.meta.id]=n?s/n:NaN; } return vals; }
+// reslice an overlay volume up to the template grid only when coarser (never downsample)
+function overlayVolGrid(nii){ const tvox=window.MNI152?Math.abs(window.MNI152.affine[0][0]):2, ovmin=nii?Math.min(...nii.vox):tvox;
+  return (nii&&window.MNI152&&ovmin>=tvox-0.1)?resliceToTemplate(nii):(nii||null); }
 // wrap an arbitrary data array + affine (e.g. a TFCE map, or the MNI template) as a volume
 function makeVol(data, dim, M, T){
   const [nx,ny,nz]=dim, Minv=inv3(M);
@@ -3376,10 +3398,9 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   clearEmptyState();
   if(selOv<0) ovAdd('file');
   const o=overlays[selOv]; o.kind='file'; o.term=''; o.fileName=name; o.vals=r.vals; o.vol=r.nii||null;
+  o.nt=(r.nii&&r.nii.nt)||1; o.frame=0;                       // 4D timeseries support
   if(/^Overlay \d+$/.test(o.name)) o.name=name.replace(/\.nii(\.gz)?$/i,'');
-  // keep the FINER grid: reslice up to the background grid only when the overlay is COARSER (never downsample)
-  const tvox = window.MNI152 ? Math.abs(window.MNI152.affine[0][0]) : 2, ovmin = r.nii ? Math.min(...r.nii.vox) : tvox;
-  o.volGrid = (r.nii && window.MNI152 && ovmin >= tvox-0.1) ? resliceToTemplate(r.nii) : (r.nii||null);
+  o.volGrid = overlayVolGrid(r.nii);                          // reslice up to template grid only when coarser
   overlay.on=true; overlay.vals=o.vals; overlay.name=o.name; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; tfceCache=null; o.tfceCache=null; o.volStats=null;
   ovApplySettings(o); $('ovTaskRow').style.display='none'; $('taskMap').value='';
   autoRange(); ovReadEditor(); syncThreshRange(); recolorOverlay(); updateColorbar(); ovRender();
@@ -3388,8 +3409,24 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
   if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
   const w=mniWarning(r);
   if(w.length) $('ovInfo').innerHTML=`<span style="color:var(--accent2)">⚠ ${name}: ${w.join('; ')} — is it MNI152? Re-register (FSL flirt/ANTs) if misaligned.</span>`;
+  else if(o.nt>1) $('ovInfo').textContent=name+' · 4D timeseries ('+o.nt+' frames) — press ▶ to play';
   requestRender();   // overlay arrived async (FileReader / headless) — force a frame
 }
+// ---- 4D timeseries: step to frame k (re-sample 3D mesh colors + 2D slice volume), keep range stable ----
+function setOverlayFrame(o, k){ if(!o||!o.vol||!o.vol.setFrame||!(o.nt>1)) return;
+  o.vol.setFrame(k); o.frame=k;
+  o.vals=sampleNiiToVals(o.vol); o.volGrid=overlayVolGrid(o.vol); o.tfceCache=null;
+  if(overlays[selOv]===o){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; recolorOverlay(); }
+  refreshSliceViews(); requestRender();
+  if($('ovFrame')) $('ovFrame').value=k; if($('ovFrameV')) $('ovFrameV').textContent=(k+1)+'/'+o.nt;
+}
+let _ovPlayTimer=null;
+function ovStopPlay(){ if(_ovPlayTimer){ clearInterval(_ovPlayTimer); _ovPlayTimer=null; } if($('ovPlay')) $('ovPlay').textContent='▶'; }
+function ovTogglePlay(){ if(_ovPlayTimer){ ovStopPlay(); return; }
+  const o=overlays[selOv]; if(!o||!(o.nt>1)) return; $('ovPlay').textContent='⏸';
+  const fps=Math.max(1,+($('ovFps')?$('ovFps').value:8));
+  _ovPlayTimer=setInterval(()=>{ const o=overlays[selOv]; if(!o||!(o.nt>1)){ ovStopPlay(); return; }
+    setOverlayFrame(o, ((o.frame||0)+1)%o.nt); }, 1000/fps); }
 function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
   $('ovInfo').textContent='reading '+file.name+' …';
