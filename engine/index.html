@@ -618,8 +618,14 @@
     <div class="row" id="projDecalRow" style="display:none"><button class="sm" id="projDecalAdd" title="Then click a spot on the brain to stamp the media — it spans the cortex surface across regions">＋ Stamp (click brain)</button>
       <button class="sm" id="projDecalClear">✕</button>
       <select id="projDecalShape" title="Decal shape mask" style="font-size:11px;margin-left:4px"><option value="0">▭ Square</option><option value="1">● Circle</option><option value="2">⬭ Oval</option><option value="3">▬ Rectangle</option><option value="4">♥ Heart</option><option value="5">★ Star</option><option value="6">◆ Diamond</option><option value="7">⬢ Hexagon</option></select></div>
-    <div class="ctl" id="projDecalSizeRow" style="display:none"><div class="lab"><span title="Decal stamp size">Decal size</span><span id="projDecalSizeV">22</span></div>
+    <div class="ctl" id="projDecalSizeRow" style="display:none"><div class="lab"><span title="Decal stamp size (edits the selected stamp, or sets the size for the next one)">Decal size</span><span id="projDecalSizeV">22</span></div>
       <input type="range" id="projDecalSize" min="6" max="120" step="1" value="22"></div>
+    <div class="ctl" id="projDecalRotRow" style="display:none"><div class="lab"><span title="Rotate the selected stamp on the surface">Decal rotation</span><span id="projDecalRotV">0°</span></div>
+      <input type="range" id="projDecalRot" min="-180" max="180" step="1" value="0"></div>
+    <div class="ctl" id="projDecalOutRow" style="display:none"><div class="lab"><span title="Outline border thickness around the stamp (0 = none)">Decal outline</span><span id="projDecalOutWV">0</span></div>
+      <div class="row" style="gap:6px"><input type="range" id="projDecalOutW" min="0" max="14" step="0.5" value="0" style="flex:1">
+        <input type="color" id="projDecalOutColor" value="#ffffff" title="Outline color"></div></div>
+    <div class="row" id="projDecalEditRow" style="display:none"><span style="font-size:11px;opacity:.7">Tap a stamp to select it, then adjust size / rotation / shape / outline.</span></div>
     <div id="projStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-top:2px"></div>
   </div></details>
 
@@ -1387,7 +1393,7 @@ $('shellOn').addEventListener('change', updateGlassShell);
 $('shellColor').addEventListener('input', updateGlassShell);
 $('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
 // ================= PROJECTOR: image / video / webcam onto the brain =================
-let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[], projPick=false, _projT=0;
+let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[], projDecalSel=null, projPick=false, _projT=0;
 const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:new THREE.Vector2(1,1)}, uOffset:{value:new THREE.Vector2(0,0)},
   uRot:{value:0}, uSpin:{value:0}, uTime:{value:0}, uOpacity:{value:0.85}, uReplace:{value:0},
   uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)}, uProjCenter:{value:new THREE.Vector3()},
@@ -1400,7 +1406,7 @@ function setProjTexture(tex, name, video){
   if(tex){ tex.wrapS=tex.wrapT=THREE.RepeatWrapping; }
   projTex=tex; PROJ_UN.uTex.value=tex; PROJ_UN.uHasTex.value=tex?1:0;
   $('projMediaName').textContent=name||''; $('projVidRow').style.display=video?'flex':'none';
-  projDecals.forEach(d=>{ d.mesh.material.map=tex; d.mesh.material.needsUpdate=true; });
+  projDecals.forEach(d=>{ if(d.mesh.material.uniforms&&d.mesh.material.uniforms.uTex) d.mesh.material.uniforms.uTex.value=tex; d.mesh.material.needsUpdate=true; });
   requestRender();
 }
 function loadProjImage(src, name){ new THREE.TextureLoader().load(src, t=>{ t.colorSpace=THREE.NoColorSpace; setProjTexture(t, name||'image'); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Image loaded.'); }, undefined, ()=>projStatus('Image load failed (CORS-blocked? try a file).')); }
@@ -1451,13 +1457,16 @@ function projToggleRegion(rec){ if(!rec) return; const id=rec.meta.id;
   $('projPickCount').textContent=projRegionSet.size+' region(s)';
   if($('projTarget').value==='selected') refreshProjLayerGeo(); requestRender(); }
 function projClearSet(){ projRegionSet.forEach(id=>{ const r=byId.get(id); projSetEmissive(r,false); }); projRegionSet.clear(); $('projPickCount').textContent=''; if($('projTarget').value==='selected') refreshProjLayerGeo(); requestRender(); }
-function setDecalsVisible(v){ projDecals.forEach(d=>d.mesh.visible=v); }
+function setDecalsVisible(v){ projDecals.forEach(d=>{ d.mesh.visible=v; if(d.outline) d.outline.visible=v; }); }
 function updateProjector(){ const on=$('projOn').checked, mode=$('projMode').value;
   $('projSpinRow').style.display = mode==='wrap'?'flex':'none';
   $('projMirrorRow').style.display = mode==='wrap'?'flex':'none';
   $('projAimRow').style.display = mode==='projector'?'flex':'none';
   $('projDecalRow').style.display = mode==='decal'?'flex':'none';
   $('projDecalSizeRow').style.display = mode==='decal'?'flex':'none';
+  $('projDecalRotRow').style.display = mode==='decal'?'flex':'none';
+  $('projDecalOutRow').style.display = mode==='decal'?'flex':'none';
+  $('projDecalEditRow').style.display = mode==='decal'?'flex':'none';
   $('projBlendRow').style.display = mode==='decal'?'none':'flex';
   $('projRegionRow').style.display = mode==='decal'?'none':'flex';
   $('projPickRow').style.display = (mode!=='decal' && $('projTarget').value==='selected')?'flex':'none';
@@ -1499,16 +1508,53 @@ function decalMaterial(shape){ return new THREE.ShaderMaterial({ uniforms:{uTex:
       else if(uShape==7){ vec2 q=abs(p); if(max(q.x*0.8660+q.y*0.5, q.y)>0.45) discard; }  // hexagon
       vec4 c=texture2D(uTex,vUv); if(c.a<0.02) discard; gl_FragColor=c; }` }); }
 // stamp the media onto the WHOLE-BRAIN surface (spans regions), conforming to the cortex
-function placeDecal(hit){ if(!projTex){ projStatus('Load media first.'); return; }
-  const sz=+$('projDecalSize').value, shape=+($('projDecalShape').value||0);
+function buildDecalGeo(rec, size){
   const target=new THREE.Mesh(mergeAllRegions()); target.updateMatrixWorld(true);   // merged shell in group-local coords (identity world)
+  const orient=new THREE.Object3D(); orient.position.copy(rec.pL); orient.lookAt(rec.pL.clone().add(rec.nL)); orient.updateMatrix(); orient.rotateZ(rec.rot||0);
+  const s=size||rec.size;
+  return new DecalGeometry(target, rec.pL, orient.rotation, new THREE.Vector3(s, s, Math.max(28, s*0.6)));
+}
+// solid-color version of the shape mask, drawn as a slightly LARGER decal behind the textured one -> an outline ring
+function decalOutlineMaterial(shape, hex){ const c=new THREE.Color(hex);
+  return new THREE.ShaderMaterial({ uniforms:{uShape:{value:shape|0}, uCol:{value:new THREE.Vector3(c.r,c.g,c.b)}},
+    transparent:true, depthWrite:false, depthTest:true, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4, side:THREE.DoubleSide,
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`uniform int uShape; uniform vec3 uCol; varying vec2 vUv;
+      void main(){ vec2 p=vUv-0.5;
+        if(uShape==1){ if(length(p)>0.5) discard; }
+        else if(uShape==2){ if(length(p/vec2(0.5,0.32))>1.0) discard; }
+        else if(uShape==3){ if(abs(p.x)>0.5||abs(p.y)>0.3) discard; }
+        else if(uShape==4){ vec2 q=vec2(p.x*2.6,-p.y*2.6); float a=q.x*q.x+q.y*q.y-1.0; if(a*a*a - q.x*q.x*q.y*q.y*q.y > 0.0) discard; }
+        else if(uShape==5){ float ang=atan(p.y,p.x); float rad=0.5*(0.60+0.32*cos(ang*5.0)); if(length(p)>rad) discard; }
+        else if(uShape==6){ if(abs(p.x)+abs(p.y)>0.5) discard; }
+        else if(uShape==7){ vec2 q=abs(p); if(max(q.x*0.8660+q.y*0.5, q.y)>0.45) discard; }
+        gl_FragColor=vec4(uCol,1.0); }` }); }
+function rebuildDecal(rec){
+  const old=rec.mesh.geometry; rec.mesh.geometry=buildDecalGeo(rec, rec.size); if(old) old.dispose();
+  if(rec.outlineW>0){
+    const og=buildDecalGeo(rec, rec.size + rec.outlineW*2);   // larger silhouette peeks out as a border
+    if(!rec.outline){ rec.outline=new THREE.Mesh(og, decalOutlineMaterial(rec.shape, rec.outlineColor)); rec.outline.renderOrder=2; rec.outline.userData.decalRec=rec; group.add(rec.outline); }
+    else { rec.outline.geometry.dispose(); rec.outline.geometry=og; rec.outline.material.uniforms.uShape.value=rec.shape; const c=new THREE.Color(rec.outlineColor); rec.outline.material.uniforms.uCol.value.set(c.r,c.g,c.b); }
+  } else if(rec.outline){ group.remove(rec.outline); rec.outline.geometry.dispose(); rec.outline.material.dispose(); rec.outline=null; }
+  requestRender();
+}
+function placeDecal(hit){ if(!projTex){ projStatus('Load media first.'); return; }
   const pL=group.worldToLocal(hit.point.clone());
   const nW=hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize() : new THREE.Vector3(0,0,1);
   const nL=nW.transformDirection(new THREE.Matrix4().copy(group.matrixWorld).invert()).normalize();
-  const orient=new THREE.Object3D(); orient.position.copy(pL); orient.lookAt(pL.clone().add(nL)); orient.updateMatrix();
-  const geo=new DecalGeometry(target, pL, orient.rotation, new THREE.Vector3(sz, sz, Math.max(28, sz*0.6)));   // group-local -> add to group directly
-  const m=new THREE.Mesh(geo, decalMaterial(shape)); m.renderOrder=3; group.add(m); projDecals.push({mesh:m}); requestRender(); }
-function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose(); }); projDecals=[]; requestRender(); }
+  const rec={ pL, nL, size:+$('projDecalSize').value, rot:(+($('projDecalRot')?$('projDecalRot').value:0))*Math.PI/180, shape:+($('projDecalShape').value||0),
+    outlineW:+($('projDecalOutW')?$('projDecalOutW').value:0), outlineColor:($('projDecalOutColor')?$('projDecalOutColor').value:'#000000') };
+  rec.mesh=new THREE.Mesh(buildDecalGeo(rec, rec.size), decalMaterial(rec.shape)); rec.mesh.renderOrder=3; rec.mesh.userData.decalRec=rec; group.add(rec.mesh); projDecals.push(rec);
+  rebuildDecal(rec); projDecalSelect(rec); requestRender(); projStatus(projDecals.length+' stamp(s) · adjust size/rotation/outline, or tap another stamp.'); }
+function rebuildDecalSel(){ if(projDecalSel) rebuildDecal(projDecalSel); }
+function projDecalSelect(rec){ projDecalSel=rec; if(!rec) return;
+  $('projDecalSize').value=rec.size; $('projDecalSizeV').textContent=rec.size;
+  if($('projDecalRot')){ $('projDecalRot').value=Math.round(rec.rot*180/Math.PI); $('projDecalRotV').textContent=Math.round(rec.rot*180/Math.PI)+'°'; }
+  if($('projDecalShape')) $('projDecalShape').value=rec.shape;
+  if($('projDecalOutW')){ $('projDecalOutW').value=rec.outlineW||0; $('projDecalOutWV').textContent=(rec.outlineW||0); }
+  if($('projDecalOutColor')) $('projDecalOutColor').value=rec.outlineColor||'#000000'; }
+function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geometry.dispose(); d.mesh.material.dispose();
+  if(d.outline){ group.remove(d.outline); d.outline.geometry.dispose(); d.outline.material.dispose(); } }); projDecals=[]; projDecalSel=null; requestRender(); }
 // remove EVERYTHING the projector set up: media, wrap/projector layer, all decal stamps, webcam, picked set
 function clearProjectorAll(){
   clearDecals();
@@ -1549,7 +1595,11 @@ $('projVidSpeed').addEventListener('input', e=>{ $('projVidSpeedV').textContent=
 $('projDecalAdd').addEventListener('click', ()=>{ if(!projTex){ projStatus('Load media first.'); return; } projPick=true; projStatus('Click a spot on the brain to stamp the media…'); });
 $('projDecalClear').addEventListener('click', clearDecals);
 $('projClearAll').addEventListener('click', clearProjectorAll);
-$('projDecalSize').addEventListener('input', e=>{ $('projDecalSizeV').textContent=e.target.value; });
+$('projDecalSize').addEventListener('input', e=>{ $('projDecalSizeV').textContent=e.target.value; if(projDecalSel){ projDecalSel.size=+e.target.value; rebuildDecalSel(); } });
+$('projDecalRot').addEventListener('input', e=>{ $('projDecalRotV').textContent=e.target.value+'°'; if(projDecalSel){ projDecalSel.rot=(+e.target.value)*Math.PI/180; rebuildDecalSel(); } });
+$('projDecalShape').addEventListener('change', e=>{ if(projDecalSel){ projDecalSel.shape=+e.target.value; projDecalSel.mesh.material=decalMaterial(projDecalSel.shape); rebuildDecal(projDecalSel); requestRender(); } });
+$('projDecalOutW').addEventListener('input', e=>{ $('projDecalOutWV').textContent=e.target.value; if(projDecalSel){ projDecalSel.outlineW=+e.target.value; rebuildDecal(projDecalSel); } });
+$('projDecalOutColor').addEventListener('input', e=>{ if(projDecalSel){ projDecalSel.outlineColor=e.target.value; rebuildDecal(projDecalSel); } });
 $('smooth').addEventListener('input', ()=>{ $('smoothVal').textContent=$('smooth').value; });
 $('smooth').addEventListener('change', applySmoothing);   // recompute on release (cheap to skip during drag)
 $('wireWidth').addEventListener('input', e=>{ patternUniforms.uWireWidth.value=+e.target.value; $('wireWVal').textContent=(+e.target.value).toFixed(1); });
@@ -2222,7 +2272,11 @@ renderer.domElement.addEventListener('click',ev=>{
   const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
   if(projRegionPick){ projToggleRegion(hitRec); return; }   // projector: build the selected-region set
   if(projPick){ if(hits.length) placeDecal(hits[0]);
-    projPick=false; projStatus(projDecals.length+' decal stamp(s).'); return; }
+    projPick=false; return; }
+  // in Decal mode, tap an existing stamp to select it (then edit size/rotation/shape)
+  if($('projMode') && $('projMode').value==='decal' && projDecals.length){
+    const dh=ray.intersectObjects(projDecals.map(d=>d.mesh),false);
+    if(dh.length){ const rec=projDecals.find(d=>d.mesh===dh[0].object); if(rec){ projDecalSelect(rec); projStatus('Stamp selected — adjust size / rotation / shape.'); return; } } }
   if(arcPicking){ handleArcPick(hitRec); return; }   // arc-arrow source/target pick mode
   if(arcGroup.children.length){                       // click an existing arc tube -> label it
     const ah=ray.intersectObjects(arcGroup.children.filter(c=>c.userData&&c.userData.arcIdx!=null),false);
