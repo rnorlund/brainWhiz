@@ -196,9 +196,41 @@
   .pbSliders{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10px;color:var(--muted)}
   .pbSliders label{display:flex;flex-direction:column;gap:1px}
   .pbSliders input[type=range]{width:100%}
+  /* password gate (served page only; deterrent — source is public) */
+  #gate{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;
+    background:#0b0f17;color:#eaf2ff;font:14px system-ui}
+  #gate .gbox{background:#141d2e;border:1px solid #2a3a55;border-radius:14px;padding:30px 34px;width:300px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  #gate h2{margin:0 0 4px;font-size:20px} #gate p{margin:0 0 16px;font-size:12px;color:#9fb3c8}
+  #gate input{width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;border:1px solid #2a3a55;background:#0b1220;color:#eaf2ff;font-size:14px}
+  #gate button{margin-top:12px;width:100%;padding:9px;border:0;border-radius:8px;background:#2f6fed;color:#fff;font-weight:600;cursor:pointer}
+  #gate .gmsg{min-height:14px;margin-top:8px;font-size:12px;color:#ff7b7b}
 </style>
 </head>
 <body>
+<div id="gate"><div class="gbox">
+  <h2>🧠 brainWhiz</h2><p>This site is access-restricted. Enter the password to continue.</p>
+  <input id="gatePw" type="password" placeholder="Password" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="gateGo">Enter</button>
+  <div class="gmsg" id="gateMsg"></div>
+</div></div>
+<script>
+(function(){
+  if(location.hostname!=='rnorlund.github.io') return;           // gate ONLY the public research site (not local dev, not the Engine Edition)
+  if(sessionStorage.getItem('bwz_ok')==='1') return;             // already unlocked this session
+  var HASH='f49fbf54f76506fc377429027a1c43224f966ba71f3fa106bb13848a58feabb9';  // SHA-256 of the password (not the password itself)
+  var g=document.getElementById('gate'); if(!g) return; g.style.display='flex';
+  document.documentElement.style.overflow='hidden';
+  var inp=document.getElementById('gatePw'), btn=document.getElementById('gateGo'), msg=document.getElementById('gateMsg');
+  async function sha(s){ var b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,'0');}).join(''); }
+  async function go(){ var h=await sha(inp.value);
+    if(h===HASH){ sessionStorage.setItem('bwz_ok','1'); document.documentElement.style.overflow=''; g.remove(); }
+    else { msg.textContent='Incorrect password.'; inp.value=''; inp.focus(); } }
+  btn.addEventListener('click', go);
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter') go(); });
+  setTimeout(function(){ inp.focus(); }, 80);
+})();
+</script>
 <div id="app"></div>
 <div id="dropZone"><div class="dz-grid">
   <div class="dz-band" data-mode="bg"><div class="dz-ico">⬇</div><div class="dz-msg">Set as BACKGROUND</div><div class="dz-sub">anatomical underlay — subject T1 / template (.nii)</div></div>
