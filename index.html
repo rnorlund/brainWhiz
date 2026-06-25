@@ -204,6 +204,7 @@
   #gate input{width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;border:1px solid #2a3a55;background:#0b1220;color:#eaf2ff;font-size:14px}
   #gate button{margin-top:12px;width:100%;padding:9px;border:0;border-radius:8px;background:#2f6fed;color:#fff;font-weight:600;cursor:pointer}
   #gate .gmsg{min-height:14px;margin-top:8px;font-size:12px;color:#ff7b7b}
+  .phpaint.armed{outline:2px solid #5db0ff;outline-offset:-1px;background:#274a78}
 </style>
 </head>
 <body>
@@ -605,34 +606,35 @@
 
   <details class="acc"><summary><span class="chev">▸</span>🥔 PotatoHead</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
-      Dress a head built from a T1 (drop a skull-stripped/whole-head .nii on <b>BUILD MESH</b>) with face parts, then
-      screenshot and try to re-identify the person. Demonstrates the MRI-face privacy risk
-      (cf. Schwarz et al., <i>NEJM</i> 2019).</div>
+      Build a head from a T1 (drop a whole-head/skull-stripped .nii on <b>BUILD MESH</b>), then
+      <b>paint</b> realistic face features onto the surface and try to re-identify the person —
+      demonstrating the MRI-face privacy risk (cf. Schwarz et al., <i>NEJM</i> 2019).</div>
     <div class="row" style="gap:5px;flex-wrap:wrap">
-      <button class="sm phadd" data-ph="eyeball">👁 Eye</button>
-      <button class="sm phadd" data-ph="eyebrow">⌒ Brow</button>
-      <button class="sm phadd" data-ph="ear">👂 Ear</button>
-      <button class="sm phadd" data-ph="nose">👃 Nose</button>
-      <button class="sm phadd" data-ph="mouth">👄 Mouth</button>
-      <button class="sm phadd" data-ph="mustache">〰 ’Stache</button>
-      <button class="sm phadd" data-ph="hair">💇 Hair</button>
-      <button class="sm phadd" data-ph="glasses">🕶 Glasses</button>
+      <button class="sm phpaint" data-ph="eye">👁 Eye</button>
+      <button class="sm phpaint" data-ph="eyebrow">⌒ Brow</button>
+      <button class="sm phpaint" data-ph="nose">👃 Nose</button>
+      <button class="sm phpaint" data-ph="mouth">👄 Mouth</button>
+      <button class="sm phpaint" data-ph="mustache">〰 ’Stache</button>
+      <button class="sm phpaint" data-ph="glasses">🕶 Glasses</button>
+      <button class="sm phpaint" data-ph="ear">👂 Ear</button>
+      <button class="sm phadd3d" data-ph="hair">💇 Hair (3D)</button>
     </div>
-    <div class="row" style="gap:5px;margin-top:6px">
-      <span style="font-size:11px;opacity:.7">Tap a part to select · drag the gizmo to place</span></div>
-    <div class="row" style="gap:5px">
-      <button class="sm" id="phMove" title="Move (W)">✥ Move</button>
-      <button class="sm" id="phRotate" title="Rotate (E)">⟳ Rotate</button>
-      <button class="sm" id="phScale" title="Scale (R)">⤢ Scale</button></div>
-    <div class="row" style="gap:5px">
-      <button class="sm" id="phMirror" title="Clone the selected part mirrored across the midline (for the other eye/ear)">⇄ Mirror</button>
-      <button class="sm" id="phSnap" title="Drop the selected part onto the head surface">🧲 Snap to surface</button></div>
-    <div class="row"><label title="Color of the selected part">Color</label>
-      <input type="color" id="phColor" value="#e8b89a">
-      <button class="sm" id="phDelete" title="Delete selected part">🗑 Delete</button>
-      <button class="sm" id="phClear" title="Remove all parts">✕ Clear all</button></div>
-    <div class="ctl"><div class="lab"><span title="Local rotation of the gizmo (so you can angle a part)">Gizmo space</span></div>
-      <div class="row" style="gap:5px"><button class="sm" id="phWorld">World</button><button class="sm" id="phLocal">Local</button></div></div>
+    <div id="phHint" style="font-size:11px;opacity:.7;margin-top:6px">Pick a feature, then click the head to paint it on. Tap a placed feature to select &amp; edit it.</div>
+    <div class="ctl"><div class="lab"><span>Size</span><span id="phSizeV"></span></div>
+      <input type="range" id="phSize" min="4" max="80" step="1" value="22"></div>
+    <div class="ctl"><div class="lab"><span title="Stretch width vs height">Width</span><span id="phWidthV"></span></div>
+      <input type="range" id="phWidth" min="0.3" max="2.5" step="0.05" value="1.4"></div>
+    <div class="ctl"><div class="lab"><span title="Rotate the feature on the surface">Rotation</span><span id="phRotV"></span></div>
+      <input type="range" id="phRot" min="-180" max="180" step="1" value="0"></div>
+    <div class="row"><label title="Tint: iris color / hair color / lip color / frame color">Color</label>
+      <input type="color" id="phColor" value="#5b3a1e">
+      <button class="sm" id="phMirror" title="Mirror the selected feature across the midline (other eye/ear)">⇄ Mirror</button></div>
+    <div class="row" style="gap:5px"><button class="sm" id="phDelete" title="Delete selected feature">🗑 Delete</button>
+      <button class="sm" id="phClear" title="Remove all features">✕ Clear all</button></div>
+    <div class="row" id="phGizmoRow" style="gap:5px;display:none"><span style="font-size:11px;opacity:.7">Hair:</span>
+      <button class="sm" id="phMove" title="Move (W)">✥</button>
+      <button class="sm" id="phRotate" title="Rotate (E)">⟳</button>
+      <button class="sm" id="phScale" title="Scale (R)">⤢</button></div>
     <div id="phStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
   </div></details>
 
@@ -2190,9 +2192,10 @@ renderer.domElement.addEventListener('click',ev=>{
   mouse.x=((ev.clientX-r.left)/r.width)*2-1;
   mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(mouse,camera);
-  // PotatoHead parts take priority: tap a part to select it (attach the move/rotate/scale gizmo)
+  // PotatoHead: if a feature is armed, paint it where you click; else tap a placed feature to select it
+  if(phPlaceType){ const hh=ray.intersectObjects(phHeadMeshes(),false); if(hh.length){ phPlaceDecal(hh[0]); return; } phStatus('Click on the head surface to paint.'); return; }
   if(potatoGroup.children.length){ const ph=ray.intersectObjects(potatoGroup.children, true);
-    if(ph.length){ let o=ph[0].object; while(o && !o.userData.potatoRoot) o=o.parent; if(o){ phSelect(o); return; } } }
+    if(ph.length){ let o=ph[0].object; while(o && !o.userData.phRoot) o=o.parent; if(o){ phSelectRec(o.userData.phRec); return; } } }
   const hits=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
   const hitRec = hits.length ? meshes.find(o=>o.mesh===hits[0].object) : null;
   if(projRegionPick){ projToggleRegion(hitRec); return; }   // projector: build the selected-region set
@@ -2203,81 +2206,138 @@ renderer.domElement.addEventListener('click',ev=>{
     const ah=ray.intersectObjects(arcGroup.children.filter(c=>c.userData&&c.userData.arcIdx!=null),false);
     if(ah.length){ editArcLabel(ah[0].object.userData.arcIdx); return; }
   }
-  if(phSel) phSelect(null);            // tapping the brain (not a part) drops the gizmo
+  if(phSel) phSelectRec(null);         // tapping the brain (not a feature) deselects the PotatoHead part
   toggleSelect(hitRec);
 });
 
-// ================= PotatoHead: dress a T1-derived head with face parts (re-ID / privacy demo) =================
+// ================= PotatoHead: paint realistic face features onto a head surface (re-ID / privacy demo) =================
 const potatoGroup = new THREE.Group(); group.add(potatoGroup);
-let phProps = [], phSel = null;
-const phTC = new TransformControls(camera, renderer.domElement); phTC.setSize(0.85); scene.add(phTC);
+let phParts = [], phSel = null, phPlaceType = null;
+const phTC = new TransformControls(camera, renderer.domElement); phTC.setSize(0.8); scene.add(phTC);
 phTC.addEventListener('dragging-changed', e=>{ controls.enabled = !e.value; });
-phTC.addEventListener('change', requestRender);
-phTC.addEventListener('objectChange', requestRender);
+phTC.addEventListener('change', requestRender); phTC.addEventListener('objectChange', requestRender);
 function phStatus(t){ const e=$('phStatus'); if(e) e.textContent=t; }
-function phMat(hex,o){ return new THREE.MeshStandardMaterial(Object.assign({color:new THREE.Color(hex),roughness:0.55,metalness:0,envMapIntensity:0.15,side:THREE.DoubleSide},o||{})); }
-const PH_SKIN='#e8b89a',PH_HAIR='#3b2417',PH_DARK='#241a12',PH_WHITE='#f3f0ec',PH_IRIS='#5b3a1e',PH_LIP='#b5524e';
-function makeProp(type){
-  const u=Math.max(6, (modelRadius||90)*0.07), g=new THREE.Group(); g.userData.ph=type;
-  if(type==='eyeball'){ const wh=new THREE.Mesh(new THREE.SphereGeometry(u*0.55,24,18),phMat(PH_WHITE,{roughness:0.3}));
-    const ir=new THREE.Mesh(new THREE.SphereGeometry(u*0.24,20,16),phMat(PH_IRIS,{roughness:0.3}));
-    const pu=new THREE.Mesh(new THREE.SphereGeometry(u*0.11,16,12),phMat('#000',{roughness:0.2}));
-    ir.position.z=u*0.42; pu.position.z=u*0.52; g.add(wh,ir,pu); g.userData.colorTargets=[wh]; }
-  else if(type==='eyebrow'){ const b=new THREE.Mesh(new THREE.BoxGeometry(u*1.5,u*0.22,u*0.4),phMat(PH_HAIR)); b.rotation.z=0.08; g.add(b); g.userData.colorTargets=[b]; }
-  else if(type==='ear'){ const e=new THREE.Mesh(new THREE.SphereGeometry(u*0.7,20,16),phMat(PH_SKIN)); e.scale.set(0.35,1.0,0.8);
-    const inner=new THREE.Mesh(new THREE.SphereGeometry(u*0.4,16,12),phMat('#c98f73')); inner.scale.set(0.25,0.9,0.7); inner.position.x=u*0.12; g.add(e,inner); g.userData.colorTargets=[e]; }
-  else if(type==='nose'){ const n=new THREE.Mesh(new THREE.ConeGeometry(u*0.5,u*1.1,18),phMat(PH_SKIN)); n.rotation.x=Math.PI/2; g.add(n); g.userData.colorTargets=[n]; }
-  else if(type==='mouth'){ const m=new THREE.Mesh(new THREE.TorusGeometry(u*0.6,u*0.18,12,24,Math.PI),phMat(PH_LIP)); m.rotation.z=Math.PI; g.add(m); g.userData.colorTargets=[m]; }
-  else if(type==='mustache'){ const m=new THREE.Mesh(new THREE.TorusGeometry(u*0.7,u*0.16,12,24,Math.PI*0.8),phMat(PH_HAIR)); m.rotation.z=Math.PI; m.scale.y=0.6; g.add(m); g.userData.colorTargets=[m]; }
-  else if(type==='hair'){ const h=new THREE.Mesh(new THREE.SphereGeometry(u*2.6,28,20,0,Math.PI*2,0,Math.PI*0.55),phMat(PH_HAIR,{roughness:0.85})); h.scale.set(1.05,1.0,1.15); g.add(h); g.userData.colorTargets=[h]; }
-  else if(type==='glasses'){ const rg=new THREE.TorusGeometry(u*0.6,u*0.08,10,28), mat=phMat(PH_DARK,{roughness:0.4});
-    const l=new THREE.Mesh(rg,mat.clone()),r=new THREE.Mesh(rg,mat.clone()); l.position.x=-u*0.75; r.position.x=u*0.75;
-    const br=new THREE.Mesh(new THREE.BoxGeometry(u*0.6,u*0.08,u*0.08),mat.clone()); g.add(l,r,br); g.userData.colorTargets=[l,r,br]; }
-  g.traverse(o=>{ if(o.isMesh) o.userData.potato=true; }); g.userData.potatoRoot=true; return g;
+const PH_TINT={ eye:'#5b3a1e', eyebrow:'#3b2417', mouth:'#b5524e', mustache:'#3b2417', glasses:'#241a12', ear:'#e8b89a', nose:'#caa088', hair:'#3b2417' };
+const PH_DEFW={ eye:1.9, eyebrow:2.4, nose:0.85, mouth:1.7, mustache:2.0, glasses:2.6, ear:0.7 };
+// ---- realistic feature textures, drawn on canvas (transparent bg, no external assets) ----
+function phTex(type, tint){
+  const c=document.createElement('canvas'), S=256; c.width=S; c.height=S; const x=c.getContext('2d'); const cx=S/2, cy=S/2;
+  const tc=new THREE.Color(tint), R=(tc.r*255)|0, G=(tc.g*255)|0, B=(tc.b*255)|0; const rgba=(r,g,b,a)=>`rgba(${r|0},${g|0},${b|0},${a})`;
+  if(type==='eye'){
+    x.save(); x.beginPath(); x.moveTo(28,cy); x.quadraticCurveTo(cx,52,S-28,cy); x.quadraticCurveTo(cx,S-52,28,cy); x.closePath(); x.clip();
+    let sg=x.createRadialGradient(cx,cy,10,cx,cy,140); sg.addColorStop(0,'#ffffff'); sg.addColorStop(1,'#e7d3cf'); x.fillStyle=sg; x.fillRect(0,0,S,S);
+    const ir=46; let ig=x.createRadialGradient(cx,cy,4,cx,cy,ir);
+    ig.addColorStop(0,rgba(Math.min(255,R+60),Math.min(255,G+50),Math.min(255,B+40),1)); ig.addColorStop(0.7,rgba(R,G,B,1)); ig.addColorStop(1,rgba(R*0.4,G*0.4,B*0.4,1));
+    x.fillStyle=ig; x.beginPath(); x.arc(cx,cy,ir,0,7); x.fill();
+    x.strokeStyle='rgba(20,12,8,0.5)'; x.lineWidth=3; x.beginPath(); x.arc(cx,cy,ir,0,7); x.stroke();
+    x.fillStyle='#000'; x.beginPath(); x.arc(cx,cy,17,0,7); x.fill();
+    x.fillStyle='rgba(255,255,255,0.9)'; x.beginPath(); x.arc(cx-12,cy-12,7,0,7); x.fill();
+    let lg=x.createLinearGradient(0,40,0,cy+10); lg.addColorStop(0,'rgba(60,40,30,0.55)'); lg.addColorStop(1,'rgba(60,40,30,0)'); x.fillStyle=lg; x.fillRect(0,0,S,cy); x.restore();
+    x.strokeStyle='rgba(40,25,18,0.9)'; x.lineWidth=4; x.beginPath(); x.moveTo(28,cy); x.quadraticCurveTo(cx,50,S-28,cy); x.stroke();
+    x.lineWidth=2.2; x.beginPath(); x.moveTo(30,cy+3); x.quadraticCurveTo(cx,S-54,S-30,cy+3); x.stroke();
+    x.strokeStyle='rgba(60,40,30,0.32)'; x.lineWidth=6; x.beginPath(); x.moveTo(40,cy-30); x.quadraticCurveTo(cx,30,S-40,cy-30); x.stroke();
+    x.strokeStyle='rgba(20,12,8,0.9)'; x.lineWidth=2.5;
+    for(let i=0;i<11;i++){ const t=i/10, px=40+t*(S-80), ang=-0.5+t*1.0, ty=cy-Math.sin(t*Math.PI)*42; x.beginPath(); x.moveTo(px,ty); x.lineTo(px+Math.sin(ang)*14, ty-14); x.stroke(); }
+  } else if(type==='eyebrow'){
+    x.strokeStyle=rgba(R,G,B,0.95);
+    for(let i=0;i<140;i++){ const t=i/139, px=24+t*(S-48), arch=cy-Math.sin(t*Math.PI)*40, len=10+Math.sin(t*Math.PI)*16, ang=-0.6+t*1.2;
+      x.lineWidth=1+(i%3)*0.6; x.beginPath(); x.moveTo(px,arch+8); x.lineTo(px+Math.sin(ang)*len, arch+8-Math.cos(ang)*len); x.stroke(); }
+  } else if(type==='mouth'){
+    let g1=x.createLinearGradient(0,cy-46,0,cy+46); g1.addColorStop(0,rgba(Math.min(255,R+30),G*0.7,B*0.7,1)); g1.addColorStop(0.5,rgba(R,G,B,1)); g1.addColorStop(1,rgba(R*0.6,G*0.4,B*0.4,1));
+    x.fillStyle=g1; x.beginPath(); x.moveTo(34,cy); x.quadraticCurveTo(cx-40,cy-34,cx,cy-12); x.quadraticCurveTo(cx+40,cy-34,S-34,cy);
+    x.quadraticCurveTo(cx+50,cy+40,cx,cy+44); x.quadraticCurveTo(cx-50,cy+40,34,cy); x.closePath(); x.fill();
+    x.strokeStyle='rgba(60,20,20,0.7)'; x.lineWidth=3; x.beginPath(); x.moveTo(36,cy); x.quadraticCurveTo(cx,cy+6,S-36,cy); x.stroke();
+    x.fillStyle='rgba(255,255,255,0.22)'; x.beginPath(); x.ellipse(cx,cy+22,40,10,0,0,7); x.fill();
+  } else if(type==='mustache'){
+    x.strokeStyle=rgba(R,G,B,0.95);
+    for(let i=0;i<240;i++){ const side=i%2?1:-1, t=((i*53)%100)/100, baseX=cx+side*(8+t*100), baseY=cy-10+((i*31)%6), droop=t*t*40, len=12+((i*17)%16), ang=side*(0.4+t*0.8);
+      x.lineWidth=1+((i*7)%2); x.beginPath(); x.moveTo(baseX,baseY); x.lineTo(baseX+Math.sin(ang)*len, baseY+droop+Math.cos(ang)*len*0.3); x.stroke(); }
+  } else if(type==='glasses'){
+    x.strokeStyle=rgba(R,G,B,1); x.lineWidth=8; x.lineJoin='round'; const rw=66,rh=50,ry=cy,lx=cx-76,rx=cx+76;
+    const lens=ex=>{ x.beginPath(); x.moveTo(ex-rw,ry); x.bezierCurveTo(ex-rw,ry-rh,ex+rw,ry-rh,ex+rw,ry); x.bezierCurveTo(ex+rw,ry+rh,ex-rw,ry+rh,ex-rw,ry); x.stroke();
+      x.save(); x.beginPath(); x.moveTo(ex-rw,ry); x.bezierCurveTo(ex-rw,ry-rh,ex+rw,ry-rh,ex+rw,ry); x.bezierCurveTo(ex+rw,ry+rh,ex-rw,ry+rh,ex-rw,ry); x.clip(); x.fillStyle='rgba(180,210,230,0.12)'; x.fillRect(0,0,S,S); x.restore(); };
+    lens(lx); lens(rx);
+    x.beginPath(); x.moveTo(lx+rw,ry-8); x.quadraticCurveTo(cx,ry-18,rx-rw,ry-8); x.stroke();
+    x.beginPath(); x.moveTo(lx-rw,ry-6); x.lineTo(8,ry-18); x.moveTo(rx+rw,ry-6); x.lineTo(S-8,ry-18); x.stroke();
+  } else if(type==='ear'){
+    x.fillStyle=rgba(R,G,B,1); x.beginPath(); x.moveTo(cx+20,40); x.bezierCurveTo(cx+70,60,cx+70,170,cx-10,200); x.bezierCurveTo(cx-60,180,cx-60,70,cx+20,40); x.closePath(); x.fill();
+    x.fillStyle='rgba(90,50,35,0.5)'; x.beginPath(); x.ellipse(cx+5,cy+10,30,55,-0.2,0,7); x.fill();
+    x.strokeStyle='rgba(255,235,220,0.5)'; x.lineWidth=8; x.beginPath(); x.moveTo(cx+30,60); x.bezierCurveTo(cx+58,80,cx+56,150,cx+0,185); x.stroke();
+  } else if(type==='nose'){
+    let g=x.createLinearGradient(cx-40,0,cx+40,0); g.addColorStop(0,'rgba(90,55,40,0.30)'); g.addColorStop(0.5,'rgba(255,240,230,0.18)'); g.addColorStop(1,'rgba(90,55,40,0.30)');
+    x.fillStyle=g; x.beginPath(); x.moveTo(cx-22,40); x.quadraticCurveTo(cx-46,cy+50,cx-30,cy+78); x.quadraticCurveTo(cx,cy+96,cx+30,cy+78); x.quadraticCurveTo(cx+46,cy+50,cx+22,40); x.closePath(); x.fill();
+    x.fillStyle='rgba(255,245,235,0.35)'; x.beginPath(); x.ellipse(cx,cy+58,18,14,0,0,7); x.fill();
+    x.fillStyle='rgba(40,22,16,0.8)'; x.beginPath(); x.ellipse(cx-20,cy+78,11,8,0.3,0,7); x.fill(); x.beginPath(); x.ellipse(cx+20,cy+78,11,8,-0.3,0,7); x.fill();
+  }
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=4; t.needsUpdate=true; return t;
 }
-function phPlace(g,type){ const R=modelRadius||90, c=sceneCenter; let x=0,y=0,z=-R*0.95;
-  if(type==='eyeball'||type==='eyebrow'){ x=R*0.28; y=R*(type==='eyebrow'?0.22:0.12); }
-  else if(type==='ear'){ x=R*0.92; y=R*0.05; z=0; }
-  else if(type==='nose'){ y=-R*0.02; }
-  else if(type==='mouth'||type==='mustache'){ y=-R*0.32; }
-  else if(type==='hair'){ y=R*0.55; z=0; }
-  else if(type==='glasses'){ y=R*0.12; }
-  g.position.set(c.x+x,c.y+y,c.z+z);
-  if(type!=='hair'&&type!=='ear') g.lookAt(c.x+x,c.y+y,c.z-R*2);
-  if(type==='ear') g.rotation.y = x>0?-Math.PI/2:Math.PI/2;
+function phDecalMat(tex){ return new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.04, depthWrite:false, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-6, polygonOffsetUnits:-6 }); }
+function phHeadMeshes(){ return meshes.filter(o=>o.mesh.visible).map(o=>o.mesh); }
+function phRebuildDecal(rec){
+  const target=new THREE.Mesh(mergeAllRegions()); target.updateMatrixWorld(true);
+  const o=new THREE.Object3D(); o.position.copy(rec.posL); o.lookAt(rec.posL.clone().add(rec.nrmL)); o.updateMatrix(); o.rotateZ(rec.rot);
+  const w=rec.size*rec.aspect, h=rec.size, depth=Math.max(20,rec.size*1.2);
+  const geo=new DecalGeometry(target, rec.posL, o.rotation, new THREE.Vector3(w,h,depth));
+  if(rec.mesh){ rec.mesh.geometry.dispose(); rec.mesh.geometry=geo; }
+  else { rec.mesh=new THREE.Mesh(geo, phDecalMat(rec.tex)); rec.mesh.renderOrder=4; rec.mesh.userData.phRoot=true; rec.mesh.userData.phRec=rec; potatoGroup.add(rec.mesh); }
+  requestRender();
 }
-function phAdd(type){ const g=makeProp(type); phPlace(g,type); potatoGroup.add(g); phProps.push(g); phSelect(g);
-  phStatus(phProps.length+' part(s) · drag the gizmo, or ⇄ Mirror for the other side'); requestRender(); }
-function phSelect(g){ phSel=g; if(g){ phTC.attach(g); const ct=g.userData.colorTargets; if(ct&&ct[0]&&$('phColor')) $('phColor').value='#'+ct[0].material.color.getHexString(); } else phTC.detach(); requestRender(); }
-function phDispose(g){ g.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose&&o.material.dispose(); } }); }
-function phDelete(){ if(!phSel) return; phTC.detach(); potatoGroup.remove(phSel); phProps=phProps.filter(p=>p!==phSel); phDispose(phSel); phSel=null; phStatus(phProps.length+' part(s).'); requestRender(); }
-function phClear(){ phTC.detach(); phProps.forEach(g=>{ potatoGroup.remove(g); phDispose(g); }); phProps=[]; phSel=null; phStatus(''); requestRender(); }
-function phMirror(){ if(!phSel) return; const c=makeProp(phSel.userData.ph);
-  c.position.copy(phSel.position); c.rotation.copy(phSel.rotation); c.scale.copy(phSel.scale);
-  c.position.x = 2*sceneCenter.x - c.position.x; c.scale.x*=-1; c.rotation.y*=-1; c.rotation.z*=-1;
-  const src=phSel.userData.colorTargets||[], dst=c.userData.colorTargets||[]; dst.forEach((m,i)=>{ if(src[i]) m.material.color.copy(src[i].material.color); });
-  potatoGroup.add(c); phProps.push(c); phSelect(c); requestRender(); }
-function phColorSel(hex){ if(!phSel) return; (phSel.userData.colorTargets||[]).forEach(m=>m.material.color.set(hex)); requestRender(); }
-function phSnap(){ if(!phSel){ phStatus('Select a part first.'); return; }
-  const dir=new THREE.Vector3().subVectors(sceneCenter, phSel.position).normalize();
-  const rc=new THREE.Raycaster(); rc.set(phSel.position.clone().addScaledVector(dir,-(modelRadius||90)*2.2), dir);
-  const hit=rc.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false);
-  if(hit.length){ phSel.position.copy(hit[0].point).addScaledVector(dir,-(modelRadius||90)*0.03); requestRender(); phStatus('Snapped to surface.'); }
-  else phStatus('No head surface under that part — build one first (drop a T1 on BUILD MESH).'); }
-document.querySelectorAll('.phadd').forEach(b=>b.addEventListener('click', ()=>phAdd(b.dataset.ph)));
+function phPlaceDecal(hit){ const type=phPlaceType; if(!type) return;
+  const posL=group.worldToLocal(hit.point.clone());
+  const nW=hit.face?hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize():new THREE.Vector3(0,0,-1);
+  const nrmL=nW.transformDirection(new THREE.Matrix4().copy(group.matrixWorld).invert()).normalize();
+  const tint=PH_TINT[type]||'#888';
+  const rec={ kind:'decal', type, posL, nrmL, rot:0, size:+($('phSize').value||22), aspect:PH_DEFW[type]||1.4, tint, tex:phTex(type,tint), mesh:null };
+  phRebuildDecal(rec); phParts.push(rec); phPlaceType=null; document.querySelectorAll('.phpaint.armed').forEach(b=>b.classList.remove('armed'));
+  phSelectRec(rec); phStatus(phParts.length+' feature(s). Adjust with the sliders · ⇄ Mirror for the other side.');
+}
+function phAddHair(){ const u=Math.max(6,(modelRadius||90)*0.07), R=modelRadius||90, c=sceneCenter;
+  const h=new THREE.Mesh(new THREE.SphereGeometry(u*2.6,28,20,0,Math.PI*2,0,Math.PI*0.55),
+    new THREE.MeshStandardMaterial({color:new THREE.Color(PH_TINT.hair),roughness:0.9,metalness:0,envMapIntensity:0.1,side:THREE.DoubleSide}));
+  h.scale.set(1.05,1.0,1.15); h.position.set(c.x,c.y+R*0.55,c.z); h.userData.phRoot=true;
+  const rec={ kind:'hair', type:'hair', mesh:h, tint:PH_TINT.hair }; h.userData.phRec=rec;
+  potatoGroup.add(h); phParts.push(rec); phSelectRec(rec); phStatus('Hair added · use the gizmo (✥ ⟳ ⤢) to place it.'); requestRender();
+}
+function phSelectRec(rec){ phSel=rec;
+  if(!rec){ phTC.detach(); $('phGizmoRow').style.display='none'; requestRender(); return; }
+  if(rec.kind==='hair'){ phTC.attach(rec.mesh); $('phGizmoRow').style.display='flex'; phTC.setMode('translate'); if($('phColor')) $('phColor').value='#'+rec.mesh.material.color.getHexString(); }
+  else { phTC.detach(); $('phGizmoRow').style.display='none';
+    $('phSize').value=rec.size; $('phWidth').value=rec.aspect; $('phRot').value=Math.round(rec.rot*180/Math.PI); $('phColor').value=rec.tint;
+    $('phSizeV').textContent=rec.size; $('phWidthV').textContent=(+rec.aspect).toFixed(2); $('phRotV').textContent=Math.round(rec.rot*180/Math.PI)+'°'; }
+  requestRender();
+}
+function phDisposeRec(rec){ if(rec.mesh){ potatoGroup.remove(rec.mesh); rec.mesh.geometry.dispose(); if(rec.mesh.material.map) rec.mesh.material.map.dispose(); rec.mesh.material.dispose&&rec.mesh.material.dispose(); } }
+function phDelete(){ if(!phSel) return; phTC.detach(); phDisposeRec(phSel); phParts=phParts.filter(p=>p!==phSel); phSel=null; $('phGizmoRow').style.display='none'; phStatus(phParts.length+' feature(s).'); requestRender(); }
+function phClear(){ phTC.detach(); phParts.forEach(phDisposeRec); phParts=[]; phSel=null; phPlaceType=null; $('phGizmoRow').style.display='none'; document.querySelectorAll('.phpaint.armed').forEach(b=>b.classList.remove('armed')); phStatus(''); requestRender(); }
+function phMirror(){ if(!phSel) return;
+  if(phSel.kind==='decal'){ const r=phSel, posL=r.posL.clone(); posL.x=2*sceneCenter.x-posL.x; const nrmL=r.nrmL.clone(); nrmL.x*=-1;
+    const rec={ kind:'decal', type:r.type, posL, nrmL, rot:-r.rot, size:r.size, aspect:r.aspect, tint:r.tint, tex:phTex(r.type,r.tint), mesh:null };
+    phRebuildDecal(rec); phParts.push(rec); phSelectRec(rec); }
+  else { const o=phSel.mesh, h=o.clone(); h.material=o.material.clone(); h.position.x=2*sceneCenter.x-o.position.x; h.scale.x*=-1; h.userData.phRoot=true;
+    const rec={kind:'hair',type:'hair',mesh:h,tint:phSel.tint}; h.userData.phRec=rec; potatoGroup.add(h); phParts.push(rec); phSelectRec(rec); }
+  requestRender();
+}
+function phColorSel(hex){ if(!phSel) return;
+  if(phSel.kind==='decal'){ phSel.tint=hex; const old=phSel.tex; phSel.tex=phTex(phSel.type,hex); phSel.mesh.material.map=phSel.tex; phSel.mesh.material.needsUpdate=true; if(old) old.dispose(); }
+  else phSel.mesh.material.color.set(hex); requestRender();
+}
+document.querySelectorAll('.phpaint').forEach(b=>b.addEventListener('click', ()=>{ phPlaceType=b.dataset.ph;
+  document.querySelectorAll('.phpaint.armed').forEach(x=>x.classList.remove('armed')); b.classList.add('armed');
+  phStatus('Click on the head to paint the '+b.dataset.ph+'.'); }));
+document.querySelectorAll('.phadd3d').forEach(b=>b.addEventListener('click', phAddHair));
+$('phSize').addEventListener('input', e=>{ $('phSizeV').textContent=e.target.value; if(phSel&&phSel.kind==='decal'){ phSel.size=+e.target.value; phRebuildDecal(phSel); } });
+$('phWidth').addEventListener('input', e=>{ $('phWidthV').textContent=(+e.target.value).toFixed(2); if(phSel&&phSel.kind==='decal'){ phSel.aspect=+e.target.value; phRebuildDecal(phSel); } });
+$('phRot').addEventListener('input', e=>{ $('phRotV').textContent=e.target.value+'°'; if(phSel&&phSel.kind==='decal'){ phSel.rot=(+e.target.value)*Math.PI/180; phRebuildDecal(phSel); } });
+$('phColor').addEventListener('input', e=>phColorSel(e.target.value));
+$('phMirror').addEventListener('click', phMirror);
+$('phDelete').addEventListener('click', phDelete);
+$('phClear').addEventListener('click', phClear);
 $('phMove').addEventListener('click', ()=>phTC.setMode('translate'));
 $('phRotate').addEventListener('click', ()=>phTC.setMode('rotate'));
 $('phScale').addEventListener('click', ()=>phTC.setMode('scale'));
-$('phMirror').addEventListener('click', phMirror);
-$('phSnap').addEventListener('click', phSnap);
-$('phDelete').addEventListener('click', phDelete);
-$('phClear').addEventListener('click', phClear);
-$('phColor').addEventListener('input', e=>phColorSel(e.target.value));
-$('phWorld').addEventListener('click', ()=>phTC.setSpace('world'));
-$('phLocal').addEventListener('click', ()=>phTC.setSpace('local'));
-window.addEventListener('keydown', e=>{ if(!phSel) return; const a=document.activeElement; if(a&&/input|select|textarea/i.test(a.tagName)) return;
-  if(e.key==='w') phTC.setMode('translate'); else if(e.key==='e') phTC.setMode('rotate'); else if(e.key==='r') phTC.setMode('scale');
-  else if(e.key==='Delete'||e.key==='Backspace'){ phDelete(); } });
+window.addEventListener('keydown', e=>{ if(!phSel||phSel.kind!=='hair') return; const a=document.activeElement; if(a&&/input|select|textarea/i.test(a.tagName)) return;
+  if(e.key==='w') phTC.setMode('translate'); else if(e.key==='e') phTC.setMode('rotate'); else if(e.key==='r') phTC.setMode('scale'); else if(e.key==='Delete'||e.key==='Backspace') phDelete(); });
+$('phSizeV').textContent=$('phSize').value; $('phWidthV').textContent=(+$('phWidth').value).toFixed(2); $('phRotV').textContent=$('phRot').value+'°';
 // ===== arced 3D arrows between regions (manual connectivity annotation) =====
 const arcGroup=new THREE.Group(); group.add(arcGroup);
 let arcs=[];                       // {i, j} source/target region ids
