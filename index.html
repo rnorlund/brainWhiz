@@ -732,6 +732,23 @@
       <div id="figExportInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:3px"></div>
     </div>
   </div></details>
+
+  <details class="acc"><summary><span class="chev">▸</span>🎬 Keyframe director</summary><div class="accb">
+    <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
+      Set up a view, add a keyframe, change the view, add another… then <b>Preview</b> or <b>Record MP4</b>.
+      Keyframes capture camera, explode, overlay opacity, 4D frame &amp; a caption; the flythrough is
+      smoothly interpolated and captions are baked into the video.</div>
+    <div class="row"><label title="Caption shown during this keyframe (baked into the video)">Caption</label>
+      <input type="text" id="kfCaption" placeholder="(optional)" style="flex:1;font-size:12px"></div>
+    <div class="row"><label title="Seconds to glide INTO this keyframe from the previous one">Duration</label>
+      <input type="range" id="kfDur" min="0.5" max="8" step="0.5" value="2.5" style="flex:1"><span id="kfDurV" style="font-size:11px;min-width:30px;text-align:right">2.5s</span></div>
+    <div class="row" style="gap:5px"><button class="sm" id="kfAdd" style="flex:1">＋ Add keyframe</button>
+      <button class="sm" id="kfClear" title="Remove all keyframes">🗑</button></div>
+    <div id="kfList" style="font-size:11px;margin:4px 0"></div>
+    <div class="row" style="gap:5px"><button class="sm" id="kfPreview" style="flex:1">▶ Preview</button>
+      <button class="sm" id="kfRecord" style="flex:1" title="Play the flythrough and record it to MP4">⏺ Record MP4</button></div>
+    <div id="kfStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
+  </div></details>
 </div>
 
 <div id="sidebarR"><div class="sideRtitle">🎨 Look &amp; feel</div></div>
@@ -3601,6 +3618,52 @@ async function exportLivingFigure(){
   $('figExportInfo').textContent='Exported '+regions.length+' regions · '+(html.length/1048576).toFixed(1)+' MB'+(threeUrl.startsWith('data:')?' (offline)':' (needs internet to view)');
 }
 if($('figExportHtml')) $('figExportHtml').addEventListener('click', exportLivingFigure);
+
+// ================= 🎬 KEYFRAME DIRECTOR — interpolate keyframes -> preview / record MP4 =================
+let kfs=[]; let _kfLastFrame=-1, _kfPlaying=false;
+// caption HUD: a sprite parented to the camera so it's baked into the canvas (and thus the MP4)
+let _capSprite=null;
+function ensureCapSprite(){ if(_capSprite) return; const c=document.createElement('canvas'); c.width=1024; c.height=128;
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
+  _capSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, depthTest:false, depthWrite:false, transparent:true})); _capSprite._cv=c;
+  _capSprite.renderOrder=999; _capSprite.position.set(0,-0.58,-1.8); _capSprite.scale.set(1.5,0.1875,1); _capSprite.visible=false;
+  camera.add(_capSprite); if(!scene.children.includes(camera)) scene.add(camera); }
+function setCaption(text){ ensureCapSprite(); if(!text){ _capSprite.visible=false; return; } _capSprite.visible=true;
+  const c=_capSprite._cv, x=c.getContext('2d'); x.clearRect(0,0,c.width,c.height); x.font='bold 54px system-ui,sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.lineWidth=9; x.strokeStyle='rgba(0,0,0,0.88)'; x.strokeText(text,512,64); x.fillStyle='#fff'; x.fillText(text,512,64); _capSprite.material.map.needsUpdate=true; }
+function captureKf(){ return { p:camera.position.toArray(), t:controls.target.toArray(), ex:(typeof explodeAmt!=='undefined'?explodeAmt:+($('explode').value||0)),
+  op:+($('opacity')?$('opacity').value:1), fr:((overlays[selOv]&&overlays[selOv].frame)||0), cap:($('kfCaption')?$('kfCaption').value:''), dur:+($('kfDur')?$('kfDur').value:2.5) }; }
+function applyKfFrame(fr){ const o=overlays[selOv]; if(o&&o.nt>1){ const k=Math.round(fr); if(k!==_kfLastFrame){ setOverlayFrame(o,k); _kfLastFrame=k; } } }
+function applyKf(s){ camera.position.set(s.p[0],s.p[1],s.p[2]); controls.target.set(s.t[0],s.t[1],s.t[2]); controls.update();
+  setExplode(s.ex); if($('opacity')){ $('opacity').value=s.op; if(typeof setOpacities==='function') setOpacities(); }
+  applyKfFrame(s.fr); setCaption(s.cap); requestRender(); }
+function lerpKf(a,b,u){ const e=u*u*(3-2*u), L=(x,y)=>x+(y-x)*e;
+  camera.position.set(L(a.p[0],b.p[0]),L(a.p[1],b.p[1]),L(a.p[2],b.p[2])); controls.target.set(L(a.t[0],b.t[0]),L(a.t[1],b.t[1]),L(a.t[2],b.t[2])); controls.update();
+  setExplode(L(a.ex,b.ex)); if($('opacity')){ $('opacity').value=L(a.op,b.op); if(typeof setOpacities==='function') setOpacities(); }
+  applyKfFrame(L(a.fr,b.fr)); setCaption(u<0.5?a.cap:b.cap); requestRender(); }
+function buildKfList(){ const L=$('kfList'); if(!L) return; if(!kfs.length){ L.innerHTML='<span style="opacity:.6">No keyframes yet — set a view and ＋ Add.</span>'; return; }
+  L.innerHTML=''; kfs.forEach((k,i)=>{ const d=document.createElement('div'); d.className='row'; d.style.gap='5px'; d.style.alignItems='center';
+    d.innerHTML='<span style="opacity:.7;min-width:18px">#'+(i+1)+'</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(k.cap?k.cap.replace(/</g,'&lt;'):'<i style="opacity:.5">(no caption)</i>')+'</span><span style="opacity:.6;font-size:10px">'+(i?k.dur+'s':'start')+'</span><button class="sm" data-i="'+i+'">✕</button>';
+    d.querySelector('button').addEventListener('click',()=>{ kfs.splice(i,1); buildKfList(); });
+    d.querySelector('span:nth-child(1)').addEventListener('click',()=>{ applyKf(kfs[i]); }); L.appendChild(d); }); }
+function playTimeline(record){ if(kfs.length<2){ $('kfStatus').textContent='Add at least 2 keyframes.'; return Promise.resolve(); }
+  if(_kfPlaying) return Promise.resolve(); _kfPlaying=true; _kfLastFrame=-1;
+  if(record && typeof startRecording==='function') startRecording();
+  applyKf(kfs[0]);
+  const t0=performance.now();
+  return new Promise(res=>{ function step(){ if(!_kfPlaying){ res(); return; } const el=(performance.now()-t0)/1000;
+      let acc=0, seg=false; for(let i=1;i<kfs.length;i++){ const d=kfs[i].dur||2; if(el<=acc+d){ lerpKf(kfs[i-1],kfs[i], Math.min(1,Math.max(0,(el-acc)/d))); seg=true; break; } acc+=d; }
+      $('kfStatus').textContent=(record?'⏺ recording — ':'▶ ')+el.toFixed(1)+'s';
+      if(!seg){ applyKf(kfs[kfs.length-1]); _kfPlaying=false;
+        if(record && typeof stopRecording==='function'){ setTimeout(()=>{ stopRecording(); setCaption(''); $('kfStatus').textContent='Saved MP4 ('+kfs.length+' keyframes).'; res(); }, 350); }
+        else { setCaption(''); $('kfStatus').textContent='Preview done.'; res(); } return; }
+      requestAnimationFrame(step); } requestAnimationFrame(step); }); }
+$('kfDur')&&$('kfDur').addEventListener('input',e=>{ $('kfDurV').textContent=(+e.target.value).toFixed(1)+'s'; });
+$('kfAdd')&&$('kfAdd').addEventListener('click',()=>{ kfs.push(captureKf()); buildKfList(); $('kfStatus').textContent=kfs.length+' keyframe(s).'; if($('kfCaption')) $('kfCaption').value=''; });
+$('kfClear')&&$('kfClear').addEventListener('click',()=>{ kfs=[]; buildKfList(); setCaption(''); $('kfStatus').textContent=''; });
+$('kfPreview')&&$('kfPreview').addEventListener('click',()=>{ if(_kfPlaying){ _kfPlaying=false; return; } playTimeline(false); });
+$('kfRecord')&&$('kfRecord').addEventListener('click',()=>{ if(_kfPlaying){ _kfPlaying=false; return; } playTimeline(true); });
+buildKfList();
 
 // ================= REGION SETS =================
 const CANON = {
