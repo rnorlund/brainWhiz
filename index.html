@@ -400,6 +400,24 @@
     <div id="ulTabInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:4px"></div>
   </div></details>
 
+  <details class="acc"><summary><span class="chev">▸</span>🧊 Volume render</summary><div class="accb">
+    <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
+      Raymarch the <b>active overlay</b> (incl. 4D) as a true 3D volume — glowing voxels you can
+      orbit/zoom. Fade the brain to a <b>glass shell</b> (Appearance ▸ Glass) to see the voxels inside it.
+      Press ▶ on a 4D overlay to animate the volume.</div>
+    <div class="row"><label class="toggle"><input type="checkbox" id="volOn"> Volume render on</label></div>
+    <div class="row"><label title="MIP = brightest voxel along each ray · Accumulate = front-to-back alpha blend">Mode</label>
+      <select id="volMode"><option value="0">MIP (max intensity)</option><option value="1">Accumulate</option></select></div>
+    <div class="row"><label>Colormap</label><select id="volCmap"></select></div>
+    <div class="ctl"><div class="lab"><span>Threshold</span><span id="volThrV">0.15</span></div>
+      <input type="range" id="volThr" min="0" max="1" step="0.01" value="0.15"></div>
+    <div class="ctl"><div class="lab"><span>Opacity</span><span id="volOpV">1.0</span></div>
+      <input type="range" id="volOp" min="0.05" max="3" step="0.05" value="1"></div>
+    <div class="ctl"><div class="lab"><span title="Raymarch steps — higher = smoother, slower">Quality</span><span id="volStepsV">160</span></div>
+      <input type="range" id="volSteps" min="40" max="320" step="10" value="160"></div>
+    <div id="volStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
+  </div></details>
+
   <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:6px">Controls the <b>🔪 Slices</b> view (top bar). Load a stat <b>.nii</b> in Overlay to see a heatmap; click a slice or drag the X/Y/Z sliders to navigate.</div>
     <div class="row" style="margin-bottom:6px"><label title="Anatomical background under the slices/mosaic. Default is the MNI152 template; load a subject T1 (same space as your overlays) for individual results.">Underlay</label>
@@ -3094,6 +3112,7 @@ function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overl
   $('ovEditor').style.display='block'; $('ovTaskRow').style.display = o.kind==='task'?'flex':'none';
   ovStopPlay(); const is4d=(o.nt>1); $('ovFrameRow').style.display=is4d?'flex':'none';   // 4D timeseries controls
   if(is4d){ $('ovFrame').max=o.nt-1; $('ovFrame').value=o.frame||0; $('ovFrameV').textContent=((o.frame||0)+1)+'/'+o.nt; }
+  if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked){ volMax=0; updateVolume(true); }   // re-volume the newly-selected overlay
   if(o.vals) recolorOverlay(); else applyScheme(activeScheme);
   updateColorbar(); ovRender(); refreshSliceViews();
   if(window.__tractsInit && $('tractBridge') && $('tractBridge').checked) rebuildBridges();
@@ -3417,6 +3436,7 @@ function setOverlayFrame(o, k){ if(!o||!o.vol||!o.vol.setFrame||!(o.nt>1)) retur
   o.vol.setFrame(k); o.frame=k;
   o.vals=sampleNiiToVals(o.vol); o.volGrid=overlayVolGrid(o.vol); o.tfceCache=null;
   if(overlays[selOv]===o){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; recolorOverlay(); }
+  if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked && overlays[selOv]===o) updateVolume(true);   // glowing-voxel volume follows the timeseries
   refreshSliceViews(); requestRender();
   if($('ovFrame')) $('ovFrame').value=k; if($('ovFrameV')) $('ovFrameV').textContent=(k+1)+'/'+o.nt;
 }
@@ -3427,6 +3447,73 @@ function ovTogglePlay(){ if(_ovPlayTimer){ ovStopPlay(); return; }
   const fps=Math.max(1,+($('ovFps')?$('ovFps').value:8));
   _ovPlayTimer=setInterval(()=>{ const o=overlays[selOv]; if(!o||!(o.nt>1)){ ovStopPlay(); return; }
     setOverlayFrame(o, ((o.frame||0)+1)%o.nt); }, 1000/fps); }
+
+// =================================================================================
+// 🧊 VOLUME RENDER — GLSL raymarch of the active overlay's NIfTI as a 3D Data3DTexture.
+// Box is placed via the volume affine -> three.js axes; combine with a glass brain for the
+// "glowing voxels inside the shell" look. 4D overlays rebuild the texture each frame.
+// =================================================================================
+let volMesh=null, volMax=0;
+const VOL_UN={ uTex:{value:null}, uCmap:{value:null}, uThresh:{value:0.15}, uOpacity:{value:1}, uSteps:{value:160}, uMode:{value:0}, uCam:{value:new THREE.Vector3()}, _cmap:'' };
+function volDownStep(dim){ return Math.max(1, Math.ceil(Math.max(dim[0],dim[1],dim[2])/160)); }
+function buildVolTexture(nii, normMax){
+  const [nx,ny,nz]=nii.dim, st=volDownStep(nii.dim), ox=Math.ceil(nx/st), oy=Math.ceil(ny/st), oz=Math.ceil(nz/st);
+  const data=nii.data, out=new Uint8Array(ox*oy*oz);
+  let mx=normMax; if(!mx){ const s=[]; for(let i=0;i<data.length;i+=Math.max(1,(data.length/40000)|0)){ const v=data[i]; if(isFinite(v)&&v>0) s.push(v); } s.sort((a,b)=>a-b); mx=s.length?s[Math.floor(s.length*0.99)]:1; mx=mx||1; }
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
+    let v=data[sx+sy*nx+sz*nx*ny]/mx; v=v<0?0:v>1?1:v; out[x+y*ox+z*ox*oy]=(v*255)|0; }
+  const tex=new THREE.Data3DTexture(out,ox,oy,oz); tex.format=THREE.RedFormat; tex.type=THREE.UnsignedByteType;
+  tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; tex.unpackAlignment=1; tex.needsUpdate=true;
+  return {tex, max:mx};
+}
+function cmapTexture(name){ const N=256, arr=new Uint8Array(N*4); for(let i=0;i<N;i++){ const c=sampleCmap(name,i/(N-1)); arr[i*4]=c[0]*255;arr[i*4+1]=c[1]*255;arr[i*4+2]=c[2]*255;arr[i*4+3]=255; }
+  const t=new THREE.DataTexture(arr,N,1); t.minFilter=THREE.LinearFilter; t.magFilter=THREE.LinearFilter; t.colorSpace=THREE.SRGBColorSpace; t.needsUpdate=true; return t; }
+function volBoxMatrix(nii){ const d=nii.dim, M=nii.M, T=nii.T;
+  const Toff=new THREE.Matrix4().makeTranslation(0.5,0.5,0.5);
+  const Sdim=new THREE.Matrix4().makeScale(d[0],d[1],d[2]);
+  const Mvox=new THREE.Matrix4().set(M[0],M[1],M[2],T[0], M[3],M[4],M[5],T[1], M[6],M[7],M[8],T[2], 0,0,0,1);
+  const P=new THREE.Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);   // RAS -> three.js axes
+  return P.multiply(Mvox).multiply(Sdim).multiply(Toff);
+}
+function ensureVolMesh(){ if(volMesh) return volMesh;
+  const mat=new THREE.ShaderMaterial({ uniforms:VOL_UN, transparent:true, side:THREE.BackSide, depthWrite:false, depthTest:true, glslVersion:THREE.GLSL3,
+    vertexShader:`uniform vec3 uCam; out vec3 vOrigin; out vec3 vDir;
+      void main(){ vOrigin=(inverse(modelMatrix)*vec4(uCam,1.0)).xyz; vDir=position - vOrigin; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader:`precision highp float; precision highp sampler3D; in vec3 vOrigin; in vec3 vDir; out vec4 fragColor;
+      uniform sampler3D uTex; uniform sampler2D uCmap; uniform float uThresh,uOpacity,uSteps,uMode;
+      vec2 hitBox(vec3 o, vec3 d){ vec3 inv=1.0/d, a=(vec3(-0.5)-o)*inv, b=(vec3(0.5)-o)*inv, t1=min(a,b), t2=max(a,b); return vec2(max(max(t1.x,t1.y),t1.z), min(min(t2.x,t2.y),t2.z)); }
+      void main(){ vec3 rd=normalize(vDir); vec2 bnd=hitBox(vOrigin,rd); if(bnd.x>bnd.y) discard; bnd.x=max(bnd.x,0.0);
+        float steps=uSteps; vec3 p=vOrigin+bnd.x*rd; float dt=(bnd.y-bnd.x)/steps;
+        if(uMode<0.5){ float mip=0.0; for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=texture(uTex,p+0.5).r; mip=max(mip,v); p+=rd*dt; }
+          if(mip<=uThresh) discard; vec3 col=texture(uCmap,vec2(mip,0.5)).rgb; fragColor=vec4(col, clamp((mip-uThresh)*uOpacity,0.0,1.0)); }
+        else { vec4 acc=vec4(0.0); for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=texture(uTex,p+0.5).r;
+            if(v>uThresh){ vec3 col=texture(uCmap,vec2(v,0.5)).rgb; float a=clamp((v-uThresh)*uOpacity*0.08,0.0,1.0); acc.rgb+=(1.0-acc.a)*col*a; acc.a+=(1.0-acc.a)*a; if(acc.a>0.97) break; } p+=rd*dt; }
+          if(acc.a<0.01) discard; fragColor=acc; } }`
+  });
+  volMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1), mat); volMesh.matrixAutoUpdate=false; volMesh.frustumCulled=false; volMesh.renderOrder=1;
+  volMesh.onBeforeRender=(r,s,cam)=>{ VOL_UN.uCam.value.copy(cam.position); };   // feed camera world pos (GLSL3 raw uniform)
+  group.add(volMesh); return volMesh;
+}
+function activeVolNii(){ const o=overlays[selOv]; return (o&&o.vol&&o.vol.data)?o.vol:null; }
+function updateVolume(rebuildTex){
+  if(!$('volOn')||!$('volOn').checked){ if(volMesh) volMesh.visible=false; requestRender(); return; }
+  const nii=activeVolNii(); if(!nii){ $('volStatus').textContent='Select/load an overlay (.nii) to volume-render.'; if(volMesh) volMesh.visible=false; requestRender(); return; }
+  ensureVolMesh(); volMesh.visible=true;
+  volMesh.matrix.copy(volBoxMatrix(nii)); volMesh.matrixWorldNeedsUpdate=true;
+  if(rebuildTex || !VOL_UN.uTex.value){ const r=buildVolTexture(nii, volMax||0); if(!volMax) volMax=r.max; if(VOL_UN.uTex.value) VOL_UN.uTex.value.dispose(); VOL_UN.uTex.value=r.tex; }
+  if(!VOL_UN.uCmap.value || VOL_UN._cmap!==$('volCmap').value){ if(VOL_UN.uCmap.value) VOL_UN.uCmap.value.dispose(); VOL_UN.uCmap.value=cmapTexture($('volCmap').value||'fire'); VOL_UN._cmap=$('volCmap').value; }
+  VOL_UN.uThresh.value=+$('volThr').value; VOL_UN.uOpacity.value=+$('volOp').value; VOL_UN.uSteps.value=+$('volSteps').value; VOL_UN.uMode.value=+$('volMode').value;
+  $('volStatus').textContent='Volume '+nii.dim.join('×')+(nii.nt>1?(' · 4D '+nii.nt+'f'):'')+' — fade the brain (Glass) to see voxels inside.';
+  requestRender();
+}
+(function initVolUI(){ const sel=$('volCmap'); if(sel){ const names=Object.keys(window.JHU_CMAPS||{}); (names.length?names:['fire','hot','viridis']).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); }); sel.value = names.includes('fire')?'fire':(names.includes('hot')?'hot':sel.value); }
+  $('volOn').addEventListener('change', ()=>{ volMax=0; updateVolume(true); });
+  $('volMode').addEventListener('change', ()=>updateVolume(false));
+  $('volCmap').addEventListener('change', ()=>updateVolume(false));
+  $('volThr').addEventListener('input', e=>{ $('volThrV').textContent=(+e.target.value).toFixed(2); updateVolume(false); });
+  $('volOp').addEventListener('input', e=>{ $('volOpV').textContent=(+e.target.value).toFixed(1); updateVolume(false); });
+  $('volSteps').addEventListener('input', e=>{ $('volStepsV').textContent=e.target.value; updateVolume(false); });
+})();
 function loadStatFile(e, which){
   const file=e.target.files[0]; if(!file) return;
   $('ovInfo').textContent='reading '+file.name+' …';
