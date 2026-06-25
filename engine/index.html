@@ -339,6 +339,7 @@
         <label class="toggle"><input type="checkbox" id="cmapInvert"> invert</label>
         <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
         <label class="toggle" title="Threshold-Free Cluster Enhancement in the slice view (file overlays)"><input type="checkbox" id="ovTfce"> TFCE</label></div>
+      <div class="row"><label class="toggle" title="Only show this overlay where the background/underlay has signal — hides out-of-brain artifacts (e.g. fMRI eye-motion activation) when the underlay is a brain-only template/T1"><input type="checkbox" id="ovCropBg"> ✂ Crop to background</label></div>
       <div class="ctl"><div class="lab"><span title="Overlay opacity in the slice & mosaic views">Overlay opacity</span><span id="ovOpacityV">1.0</span></div>
         <input type="range" id="ovOpacity" min="0.05" max="1" step="0.05" value="1"></div>
       <div class="ctl"><div class="lab"><span title="Color vividness / saturation of this overlay in slices & mosaic">Overlay vividness</span><span id="ovVividV">1.0</span></div>
@@ -2716,7 +2717,7 @@ function syncStyleRows(){
   $('cmapInvert').parentElement.style.display = cm?'flex':'none';
 }
 // ---- overlay stack management ----
-function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1',vivid:'1'}; }
+function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1',vivid:'1',cropBg:false}; }
 function ovRender(){
   const L=$('ovList'); if(!L) return; L.innerHTML='';
   overlays.forEach((o,i)=>{ const d=document.createElement('div'); d.className='ovItem'+(i===selOv?' sel':'');
@@ -2739,12 +2740,13 @@ function ovApplySettings(o){ const s=o.s;
   $('ovOpacity').value=s.opacity; $('ovOpacityV').textContent=(+s.opacity).toFixed(1);
   $('ovVivid').value=s.vivid||'1'; $('ovVividV').textContent=(+(s.vivid||1)).toFixed(1);
   $('ovTfce').checked = !!o.tfce;
+  $('ovCropBg').checked = !!s.cropBg;
   $('taskMap').value = o.kind==='task'?(o.term||''):'';
 }
 function ovReadEditor(){ if(selOv<0) return; const o=overlays[selOv];
   o.name=$('ovName').value||o.name; overlay.name=o.name;
   o.s={ style:$('ovStyle').value, color:$('ovColor').value, cmap:$('cmap').value, cmin:$('cmin').value, cmax:$('cmax').value,
-    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value, vivid:$('ovVivid').value };
+    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value, vivid:$('ovVivid').value, cropBg:$('ovCropBg').checked };
 }
 function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overlays[i];
   overlay.vals=o.vals||null; overlay.volA=o.vol||null; overlay.volA_grid=o.volGrid||null; overlay.name=o.name; overlay.on=!!o.vals; tfceCache=null;
@@ -2792,6 +2794,7 @@ function initOverlayUI(){
   $('cthresh').addEventListener('input', ()=>edited());
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
+  $('ovCropBg').addEventListener('change', ()=>edited());
   $('ovOpacity').addEventListener('input', ()=>{ $('ovOpacityV').textContent=(+$('ovOpacity').value).toFixed(1); edited(); });
   $('ovVivid').addEventListener('input', ()=>{ $('ovVividV').textContent=(+$('ovVivid').value).toFixed(1); edited(); });
   $('ovTfce').addEventListener('change', ()=>{ if(selOv<0) return; const o=overlays[selOv]; o.tfce=$('ovTfce').checked;
@@ -3764,7 +3767,7 @@ function ovSliceParams(o){ const s=o.s, raw=(s.cthreshMode==='raw');
     src=o.tfceCache?o.tfceCache.vol:(o.volGrid||o.vol); hi=o.tfceCache?o.tfceCache.max:1; }
   else { src=o.volGrid||o.vol; hi=ovVolStats(o).hi; }
   hi=hi||1e-6; const thr = raw ? +s.cthresh : (+s.cthresh)*hi;   // threshold = fraction of robust max (base 0)
-  return { src, lo:0, span:hi, thr, abs:s.cmapAbs, invert:s.cmapInvert, style:s.style, color:hex2rgb(s.color), cmap:s.cmap, opacity:+s.opacity, vivid:+(s.vivid||1) };
+  return { src, lo:0, span:hi, thr, abs:s.cmapAbs, invert:s.cmapInvert, style:s.style, color:hex2rgb(s.color), cmap:s.cmap, opacity:+s.opacity, vivid:+(s.vivid||1), cropBg:!!s.cropBg };
 }
 
 // Threshold-Free Cluster Enhancement on a volume's grid (positive side).
@@ -3825,7 +3828,8 @@ function renderPlane(cv, plane){
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
       const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
-      for(const p of ovs){ const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
+      for(const p of ovs){ if(p.cropBg && !(tv>6)) continue;   // crop to background: hide overlay where the underlay is air
+        const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
         const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue; painted=true;
         let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
         let cr,cg,cb;
@@ -3906,7 +3910,8 @@ function renderMosaic(){
     for(let py=0;py<dh;py++){ const vW=b.vmax-(py/(dh-1||1))*vr;
       for(let px=0;px<dw;px++){ const hW=b.hmin+(px/(dw-1||1))*hr, w=worldAt(plane,hW,vW,fixed);
         const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
-        for(const p of ovs){ const vv=p.src.sampleMM(w[0],w[1],w[2]); if(vv===null||!isFinite(vv)) continue;
+        for(const p of ovs){ if(p.cropBg && !(tv>6)) continue;   // crop to background
+          const vv=p.src.sampleMM(w[0],w[1],w[2]); if(vv===null||!isFinite(vv)) continue;
           const val=p.abs?Math.abs(vv):vv; if(!(val>p.thr)) continue; painted=true;
           let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
           let cr,cg,cb; if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; } else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
