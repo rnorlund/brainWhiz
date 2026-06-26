@@ -1,0 +1,170 @@
+{
+ "hero": "thumbs/language.png",
+ "demos": [
+  {
+   "id": "language",
+   "title": "Language network",
+   "desc": "Broca + Wernicke with the arcuate fasciculus between them",
+   "tags": [
+    "flagship",
+    "tracts",
+    "overlay"
+   ],
+   "thumb": "thumbs/language.png",
+   "media": null
+  },
+  {
+   "id": "fibers_dti",
+   "title": "DTI-colored fibers",
+   "desc": "Per-segment orientation coloring (R=L↔R, G=A↔P, B=S↔I)",
+   "tags": [
+    "tracts"
+   ],
+   "thumb": "thumbs/fibers_dti.png",
+   "media": null
+  },
+  {
+   "id": "volume",
+   "title": "Volume render",
+   "desc": "Raymarched stat map glowing inside a glass brain",
+   "tags": [
+    "volume"
+   ],
+   "thumb": "thumbs/volume.png",
+   "media": null
+  },
+  {
+   "id": "fmri4d",
+   "title": "4D timeseries",
+   "desc": "Play a 4D overlay — colors animate, orbit freely",
+   "tags": [
+    "4d"
+   ],
+   "thumb": "thumbs/fmri4d.png",
+   "media": null
+  },
+  {
+   "id": "tractfile",
+   "title": "Load TRK streamlines",
+   "desc": "Real tractography (.trk) as DTI-colored lines",
+   "tags": [
+    "tracts"
+   ],
+   "thumb": "thumbs/tractfile.png",
+   "media": null
+  },
+  {
+   "id": "surface",
+   "title": "GIFTI surface",
+   "desc": "Load a .gii surface mesh directly",
+   "tags": [
+    "surfaces"
+   ],
+   "thumb": "thumbs/surface.png",
+   "media": null
+  },
+  {
+   "id": "glass",
+   "title": "Glass brain",
+   "desc": "Faded shell for context",
+   "tags": [
+    "atlas"
+   ],
+   "thumb": "thumbs/glass.png",
+   "media": null
+  },
+  {
+   "id": "explode",
+   "title": "Exploding brain",
+   "desc": "Regions pushed outward along their centroid",
+   "tags": [
+    "atlas",
+    "animation"
+   ],
+   "thumb": "thumbs/explode.png",
+   "media": null
+  },
+  {
+   "id": "lobe",
+   "title": "Lobe atlas",
+   "desc": "JHU regions colored by lobe",
+   "tags": [
+    "atlas"
+   ],
+   "thumb": "thumbs/lobe.png",
+   "media": null
+  },
+  {
+   "id": "overlay",
+   "title": "Statistical overlay",
+   "desc": "A NeuroQuery z-map on the cortex (hot colormap)",
+   "tags": [
+    "overlay"
+   ],
+   "thumb": "thumbs/overlay.png",
+   "media": null
+  },
+  {
+   "id": "taskmap",
+   "title": "NeuroQuery task map",
+   "desc": "Baked meta-analytic map (motor) onto regions",
+   "tags": [
+    "overlay"
+   ],
+   "thumb": "thumbs/taskmap.png",
+   "media": null
+  },
+  {
+   "id": "slices",
+   "title": "Orthogonal slices",
+   "desc": "Sagittal / coronal / axial + 3D, overlay heatmap",
+   "tags": [
+    "slices",
+    "overlay"
+   ],
+   "thumb": "thumbs/slices.png",
+   "media": null
+  },
+  {
+   "id": "mosaic",
+   "title": "Slice mosaic",
+   "desc": "Tiled slices for a figure",
+   "tags": [
+    "slices"
+   ],
+   "thumb": "thumbs/mosaic.png",
+   "media": null
+  },
+  {
+   "id": "potatohead",
+   "title": "PotatoHead (privacy demo)",
+   "desc": "Paint face features on a head surface — MRI re-ID risk",
+   "tags": [
+    "privacy"
+   ],
+   "thumb": "thumbs/potatohead.png",
+   "media": null
+  },
+  {
+   "id": "projector",
+   "title": "Projector + decal",
+   "desc": "Project media onto the cortex; shaped, outlined stamps",
+   "tags": [
+    "projector"
+   ],
+   "thumb": "thumbs/projector.png",
+   "media": null
+  },
+  {
+   "id": "keyframe",
+   "title": "Keyframe flythrough → MP4",
+   "desc": "Interpolated camera/explode/caption recorded to video",
+   "tags": [
+    "figure",
+    "animation"
+   ],
+   "thumb": "thumbs/keyframe.png",
+   "media": "media/keyframe.mp4"
+  }
+ ]
+}

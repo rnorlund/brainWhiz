@@ -19,17 +19,32 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 ## Highlights
 
-- **6 bundled atlases**, switchable from a dropdown — JHU, AAL, Brodmann, AICHA, Catani, Fox.
+- **16 bundled atlases**, switchable from a dropdown (JHU, AAL/AAL3, AICHA, Harvard-Oxford, Brodmann, …).
+- **Bring your own data — no install:** drag-and-drop NIfTI (`.nii/.nii.gz`, 3D **and 4D**), **GIFTI** & **FreeSurfer** surfaces, **TRK/TCK** tractography, per-region **CSV**, figure recipes (`.bwz`).
+- **Build an atlas in the browser** from a label `.nii` (+ labels `.txt`) — Surface-Nets meshing, no Python. A T1 → a smooth brain surface, also in-browser.
 - **Every ROI is its own 3D object** — explode, rotate, isolate, recolor, fade.
-- **Multiple overlays at once** — a renameable overlay stack (task maps *and* your own MNI `.nii/.nii.gz`), each with its own color / colormap / threshold; one drives the 3D brain, all blend in the slice/mosaic views.
-- **Three view modes** — **3D mesh**, **ortho slices** (axial · sagittal · coronal + 3D, voxel heatmap *or* solid mesh cross-sections), and **mosaic / lightbox** (evenly-spaced slices tiled like a journal figure), with **TFCE** cluster enhancement.
-- **28 colormaps** (perceptual + colorblind-safe + diverging) and a "gray brain + one color" activation style.
-- **DTI structural connectivity** averaged across 293 ABC participants — cylinders sized by tract strength, colormapped, with optional **pulsing flow**.
-- **Figure tooling** — an in-app panel builder *and* a scriptable headless montage pipeline for reproducible multi-panel figures.
+- **Overlay stack** — task maps *and* your own MNI maps, each with color/colormap/threshold/|abs|/TFCE, plus **✂ crop-to-background** to hide out-of-brain artifacts; one drives the 3D brain, all blend in slices/mosaic.
+- **4D timeseries** — scrub/▶ play a 4D overlay; the 3D mesh and 2D slices animate while you orbit.
+- **Volume rendering** — GLSL raymarch (MIP / accumulate) of a map as glowing voxels **inside a glass brain**.
+- **White-matter tracts** — solid hulls *or* synthesized **fiber strands** (white, or DTI-orientation colored).
+- **Three view modes** — 3D mesh, ortho slices, mosaic/lightbox — with **28 colormaps** and TFCE.
+- **DTI connectivity** averaged across ABC participants — strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows.
+- **Projector** — cast an image / video / **webcam** onto the cortex; surface-conforming, shaped, **outlined decals**.
+- **🥔 PotatoHead** — paint realistic face features on a T1-derived head (MRI re-identification / privacy demo).
+- **Outputs** — PNG, **MP4/WebM recording**, a **🔗 living interactive `.html`** figure (rotate/zoom/explode), a **🎬 keyframe director → narrated MP4**, and multi-panel figure builder (PNG/PDF/SVG/`.bwz`).
 
 | Functional overlay (gray brain + activation) | AICHA atlas (384 ROIs) |
 |---|---|
 | ![overlay](docs/img/overlay.png) | ![aicha](docs/img/atlas_aicha.png) |
+
+---
+
+## 🖼 Gallery
+
+A **circular, interactive gallery** of 16 things brainWhiz can do: **[gallery.html](https://rnorlund.github.io/brainWhiz/gallery.html)**.
+A central brainWhiz render is ringed by live demo plates — click any to launch that exact demo
+(`index.html?demo=<id>`). Thumbnails, the keyframe-flythrough video, and the `?demo=` recipes live in
+[`exampleFiles/`](exampleFiles/). Full scripting reference: **[API.md](API.md)**.
 
 ---
 
@@ -86,6 +101,24 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 **Connectivity** — averaged DTI streamline strength; cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection.
 
 **Render** — vividness (saturation), rim/fresnel glow, Standard vs **Matcap** shading, soft studio environment; surface styles: solid, flat, **wireframe (adjustable thickness)**, and procedural **checkerboard / stripes / grid / dots / hatch** with *darken* or *transparent* (perforated lattice) fill; per-tier opacity (colored / gray / all); any background color; **save/load presets**.
+
+**Loading data (drag-and-drop)** — drop files onto the viewport; the drop zone splits into **Background / Overlay / Build-atlas** bands (in Mesh view the top band is **Build mesh**). Accepts NIfTI, GIFTI, FreeSurfer, TRK/TCK, CSV, `.bwz`, `.bwzproj` — see [API.md §3](API.md).
+
+**Browser-side atlas & surface building** — drop a **label `.nii`** (+ optional labels `.txt`) and brainWhiz extracts a full parcellation in-browser (Gaussian-smoothed **Surface Nets**, lobe-colored, named) — no `build_bundle.py` needed. A **continuous T1** builds one smooth brain surface (matcap).
+
+**Surfaces & tractography** — load **GIFTI** (`.gii`) and **FreeSurfer** surfaces directly; load **TRK/TCK** streamlines rendered as fine DTI-orientation-colored lines. White-matter tract atlases (XTRACT/Catani) render as solid hulls **or** synthesized **fiber strands** (group-average look, individual fibers; white or DTI-colored), with a fiber-density control.
+
+**4D timeseries** — drop a 4D overlay and a **▶ frame player** appears; the 3D mesh colors and the 2D slices animate frame-by-frame (stable range) while you orbit/zoom.
+
+**Volume rendering** — raymarch the active overlay as a 3D `Data3DTexture` (**MIP** or **accumulate**, threshold/opacity/colormap/quality); pair with the **glass brain** to see glowing voxels inside the shell. 4D volumes animate on playback.
+
+**Projector** — project an image, video, or **webcam** onto the cortex (wrap, project-from-view, or **decal stamp**). Decals conform to the surface, take **shapes** (circle/heart/star/…), and support **editable size/rotation + an outline** (color & thickness).
+
+**🥔 PotatoHead (privacy demo)** — paint realistic, surface-conforming face features (eyes, brows, nose, mouth, glasses, ears) onto a T1-derived head, plus 3D hair — a hands-on demonstration of the MRI face-reconstruction re-identification risk (cf. Schwarz et al., *NEJM* 2019).
+
+**Shareable outputs** — **PNG**; **MP4/WebM** screen recording of the 3D viewport; a **🔗 living interactive `.html`** figure (self-contained, rotate/zoom/explode — for journal supplementary); and a **🎬 keyframe director** that interpolates camera/explode/overlay/4D/caption keyframes and records a captioned MP4 flythrough.
+
+**Access** — the public site is behind a lightweight password gate (deterrent; the app is client-side). Local use and the Engine edition are never gated.
 
 ---
 

@@ -1137,6 +1137,7 @@ function finishInit(box, sphere){
   if(NO_DATA) showEmptyState();
   requestRender();   // meshes loaded async — render the initial scene
   if(window.__brainReady) window.__brainReady();   // signal scripting API
+  const demoId=params.get('demo'); if(demoId) setTimeout(()=>runDemo(demoId), 60);   // gallery deep-link
 }
 function showEmptyState(){ if(document.getElementById('emptyState')) return;
   const d=document.createElement('div'); d.id='emptyState';
@@ -3664,6 +3665,54 @@ $('kfClear')&&$('kfClear').addEventListener('click',()=>{ kfs=[]; buildKfList();
 $('kfPreview')&&$('kfPreview').addEventListener('click',()=>{ if(_kfPlaying){ _kfPlaying=false; return; } playTimeline(false); });
 $('kfRecord')&&$('kfRecord').addEventListener('click',()=>{ if(_kfPlaying){ _kfPlaying=false; return; } playTimeline(true); });
 buildKfList();
+
+// ================= 🎞 DEMO REGISTRY — gallery deep-links (index.html?demo=<id>) =================
+async function _demoOverlayURL(url, cmap){ const nm=url.split('/').pop();
+  const buf=await (await fetch(url)).arrayBuffer(); applyStatVals(statBufferToVals(buf, nm), nm, 'A');
+  if(cmap){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=cmap; $('cmap').dispatchEvent(new Event('change')); } }
+async function _demoFile(url){ const buf=await (await fetch(url)).arrayBuffer(); return new File([buf], url.split('/').pop()); }
+function _demoGlass(on){ if($('glass')){ $('glass').checked=!!on; $('glass').dispatchEvent(new Event('change')); } }
+function _demoExplode(v){ setExplode(v); }
+function _demoPaint(type, ndcx, ndcy){ mouse.x=ndcx; mouse.y=ndcy; ray.setFromCamera(mouse,camera);
+  const h=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false); if(h.length){ phPlaceType=type; phPlaceDecal(h[0]); } }
+function _demoBanner(d){ let b=document.getElementById('demoBanner'); if(!b){ b=document.createElement('div'); b.id='demoBanner'; document.body.appendChild(b);
+    b.style.cssText='position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:8000;background:rgba(20,28,44,.82);backdrop-filter:blur(3px);color:#eaf2ff;padding:6px 14px;border-radius:20px;font:13px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.4)'; }
+  b.innerHTML='<b>'+d.title+'</b> &middot; <span style="opacity:.8">'+d.desc+'</span> &middot; <a href="gallery.html" style="color:#7fc0ff;text-decoration:none">⊞ Gallery</a>'; }
+const DEMOS=[
+ {id:'language', title:'Language network', desc:'Broca + Wernicke with the arcuate fasciculus between them', tags:['flagship','tracts','overlay'], setup:async()=>{ await languageDemo(); }},
+ {id:'lobe', title:'Lobe atlas', desc:'JHU regions colored by lobe', tags:['atlas'], setup:async()=>{ $('scheme').value='lobe'; applyScheme('lobe'); _demoExplode(0); brainAPI.setView('left'); }},
+ {id:'rainbow', title:'Per-region colors', desc:'Every region a distinct hue', tags:['atlas'], setup:async()=>{ $('scheme').value='rainbow'; applyScheme('rainbow'); brainAPI.setView('left'); }},
+ {id:'explode', title:'Exploding brain', desc:'Regions pushed outward along their centroid', tags:['atlas','animation'], setup:async()=>{ applyScheme('lobe'); _demoExplode(0.9); brainAPI.setView('anterior'); }},
+ {id:'glass', title:'Glass brain', desc:'Faded shell for context', tags:['atlas'], setup:async()=>{ applyScheme('lobe'); _demoGlass(true); brainAPI.setView('left'); }},
+ {id:'overlay', title:'Statistical overlay', desc:'A NeuroQuery z-map on the cortex (hot colormap)', tags:['overlay'], setup:async()=>{ applyScheme('lobe'); await _demoOverlayURL('examples/neuroquery_language.nii.gz','hot'); brainAPI.setView('left'); }},
+ {id:'taskmap', title:'NeuroQuery task map', desc:'Baked meta-analytic map (motor) onto regions', tags:['overlay'], setup:async()=>{ const t=NEURO.terms['motor']||NEURO.terms[NEURO.order[0]]; if(t) applyOverlay(t,'motor'); brainAPI.setView('left'); }},
+ {id:'slices', title:'Orthogonal slices', desc:'Sagittal / coronal / axial + 3D, overlay heatmap', tags:['slices','overlay'], setup:async()=>{ await _demoOverlayURL('examples/neuroquery_working_memory.nii.gz','hot'); setViewMode('slice'); }},
+ {id:'mosaic', title:'Slice mosaic', desc:'Tiled slices for a figure', tags:['slices'], setup:async()=>{ await _demoOverlayURL('examples/neuroquery_motor.nii.gz','hot'); setViewMode('mosaic'); }},
+ {id:'crop', title:'Crop overlay to brain', desc:'Hide out-of-brain artifacts (eye motion etc.)', tags:['overlay','slices'], setup:async()=>{ await _demoOverlayURL('examples/neuroquery_language.nii.gz','hot'); $('ovCropBg').checked=true; $('ovCropBg').dispatchEvent(new Event('change')); setViewMode('slice'); }},
+ {id:'fibers_white', title:'White-matter fibers', desc:'Synthesized fiber strands filling the tracts', tags:['tracts'], setup:async()=>{ await loadTracts('xtract'); setTractVis((r,i)=>i<10); $('tract3DMode').value='fibers'; applyTract3DMode(); $('cortexFade').value=0.85; $('cortexFade').dispatchEvent(new Event('input')); brainAPI.setView('left'); }},
+ {id:'fibers_dti', title:'DTI-colored fibers', desc:'Per-segment orientation coloring (R=L↔R, G=A↔P, B=S↔I)', tags:['tracts'], setup:async()=>{ await loadTracts('xtract'); setTractVis((r,i)=>i<14); $('tractColorMode').value='orientation'; applyTractColorMode(); $('tract3DMode').value='fibers'; applyTract3DMode(); $('cortexFade').value=0.85; $('cortexFade').dispatchEvent(new Event('input')); brainAPI.setView('left'); }},
+ {id:'tracts_hull', title:'Tract hulls', desc:'Solid white-matter tract shapes', tags:['tracts'], setup:async()=>{ await loadTracts('xtract'); setTractVis((r,i)=>i<12); $('tract3DMode').value='hull'; applyTract3DMode(); $('cortexFade').value=0.7; $('cortexFade').dispatchEvent(new Event('input')); brainAPI.setView('left'); }},
+ {id:'volume', title:'Volume render', desc:'Raymarched stat map glowing inside a glass brain', tags:['volume'], setup:async()=>{ await _demoOverlayURL('examples/neuroquery_language.nii.gz'); _demoGlass(true); $('volOn').checked=true; $('volOn').dispatchEvent(new Event('change')); brainAPI.setView('left'); }},
+ {id:'fmri4d', title:'4D timeseries', desc:'Play a 4D overlay — colors animate, orbit freely', tags:['4d'], setup:async()=>{ const f=await _demoFile('exampleFiles/data/demo4d.nii'); const buf=await f.arrayBuffer(); applyStatVals(statBufferToVals(buf,'demo4d.nii'),'demo4d.nii','A'); $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value='viridis'; $('cmap').dispatchEvent(new Event('change')); brainAPI.setView('left'); }},
+ {id:'surface', title:'GIFTI surface', desc:'Load a .gii surface mesh directly', tags:['surfaces'], setup:async()=>{ const g=parseGIFTI(await (await fetch('exampleFiles/data/demo_surface.gii')).text()); installLoadedSurface(g.vertices,g.faces,'demo_surface'); brainAPI.setView('left'); }},
+ {id:'tractfile', title:'Load TRK streamlines', desc:'Real tractography (.trk) as DTI-colored lines', tags:['tracts'], setup:async()=>{ loadStreamlines(parseTRK(await (await fetch('exampleFiles/data/demo_tracts.trk')).arrayBuffer()),'demo_tracts.trk'); brainAPI.setView('left'); }},
+ {id:'potatohead', title:'PotatoHead (privacy demo)', desc:'Paint face features on a head surface — MRI re-ID risk', tags:['privacy'], setup:async()=>{ const buf=await (await fetch('exampleFiles/data/demo_head.nii')).arrayBuffer(); buildSurfaceFromNifti(parseNifti(buf),'demo_head'); brainAPI.setView('anterior'); await new Promise(r=>setTimeout(r,300));
+    _demoPaint('eye',-0.18,0.12); _demoPaint('eye',0.18,0.12); _demoPaint('nose',0,-0.02); _demoPaint('mouth',0,-0.22); }},
+ {id:'projector', title:'Projector + decal', desc:'Project media onto the cortex; shaped, outlined stamps', tags:['projector'], setup:async()=>{ const c=document.createElement('canvas');c.width=128;c.height=128;const x=c.getContext('2d');const g=x.createLinearGradient(0,0,128,128);g.addColorStop(0,'#ff8a00');g.addColorStop(1,'#e52e71');x.fillStyle=g;x.fillRect(0,0,128,128);
+    $('projMode').value='decal'; $('projMode').dispatchEvent(new Event('change')); loadProjImage(c.toDataURL(),'demo'); await new Promise(r=>setTimeout(r,300));
+    $('projDecalShape').value='4'; $('projDecalSize').value=40; $('projDecalOutW').value=5; brainAPI.setView('left'); await new Promise(r=>setTimeout(r,200));
+    mouse.x=0; mouse.y=0.1; ray.setFromCamera(mouse,camera); const h=ray.intersectObjects(meshes.filter(o=>o.mesh.visible).map(o=>o.mesh),false); if(h.length) placeDecal(h[0]); }},
+ {id:'living', title:'Living figure export', desc:'Export this view as a self-contained interactive .html (Figure panel)', tags:['figure'], setup:async()=>{ applyScheme('lobe'); _demoExplode(0.35); brainAPI.setView('anterior'); }},
+ {id:'keyframe', title:'Keyframe flythrough → MP4', desc:'Interpolated camera/explode/caption recorded to video', tags:['figure','animation'], setup:async()=>{ applyScheme('lobe'); kfs=[];
+    brainAPI.setView('left'); await new Promise(r=>requestAnimationFrame(r)); if($('kfDur'))$('kfDur').value=2.5; if($('kfCaption'))$('kfCaption').value='Lateral'; kfs.push(captureKf());
+    brainAPI.setView('superior'); _demoExplode(0.6); await new Promise(r=>requestAnimationFrame(r)); if($('kfCaption'))$('kfCaption').value='Top, exploded'; kfs.push(captureKf());
+    brainAPI.setView('anterior'); _demoExplode(0); await new Promise(r=>requestAnimationFrame(r)); if($('kfCaption'))$('kfCaption').value='Frontal'; kfs.push(captureKf());
+    buildKfList(); brainAPI.setView('left'); }},
+];
+const DEMO_BY_ID=Object.fromEntries(DEMOS.map(d=>[d.id,d]));
+async function runDemo(id){ const d=DEMO_BY_ID[id]; if(!d){ return; } try{ await d.setup(); _demoBanner(d); requestRender(); window.__demoDone=true; }
+  catch(e){ console.error('demo "'+id+'" failed:', e); window.__demoErr=String(e&&e.message||e); } }
+window.__DEMOS=DEMOS.map(d=>({id:d.id,title:d.title,desc:d.desc,tags:d.tags}));   // exposed for the gallery generator
 
 // ================= REGION SETS =================
 const CANON = {

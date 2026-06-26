@@ -19,3 +19,7 @@ my_*.nii.gz
 my_*.png
 my_*.jpg
 my_*.jpeg
+
+# but DO ship the gallery demo media (the keyframe flythrough)
+!exampleFiles/media/
+!exampleFiles/media/*.mp4
