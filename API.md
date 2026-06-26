@@ -15,6 +15,43 @@ Combine: `index.html?atlas=jhu&demo=fibers_dti`.
 
 ---
 
+## 1b. Embedding in another web page (iframe)
+
+brainWhiz embeds like NiiVue — drop an `<iframe>` and configure it entirely by URL. `?embed=1`
+hides all chrome (just the 3D viewport) and **bypasses the password gate** (an embed is an
+intentional share). Point the data params at any CORS-readable file (same-origin or a host that
+sends `Access-Control-Allow-Origin`).
+
+```html
+<!-- e.g. NeuroSynth/NeuroQuery showing a meta-analytic map on a 3D brain -->
+<iframe width="640" height="420" style="border:0"
+  src="https://rnorlund.github.io/brainWhiz/index.html?embed=1&atlas=jhu&overlay=https://example.org/language_z.nii.gz&cmap=hot&thr=0.3&view=left">
+</iframe>
+```
+
+| Param | Example | Effect |
+|---|---|---|
+| `embed` | `embed=1` | Hide panels/topbar (viewport only); ungated. |
+| `atlas` | `atlas=jhu` | Bundled atlas (default `jhu`). |
+| `overlay` | `overlay=<url>` | Load a remote stat NIfTI as the overlay. |
+| `cmap` `cmin` `cmax` `thr` | `cmap=hot&thr=0.3` | Overlay colormap, min/max, threshold. |
+| `underlay` | `underlay=<url>` | Slice underlay (subject T1 / template). |
+| `surface` | `surface=<url>` | Load a `.gii`/FreeSurface surface as the mesh. |
+| `tracts` | `tracts=<url>` | Load `.trk`/`.tck` streamlines. |
+| `mesh` | `mesh=<label.nii>` | Build an atlas/surface in-browser from a volume. |
+| `scheme` | `scheme=lobe` | Region color scheme. |
+| `explode` | `explode=0.6` | Exploded-brain amount. |
+| `bg` | `bg=000000` | Background color. |
+| `mode` | `mode=slice` | `mesh` (default) / `slice` / `mosaic`. |
+| `view` | `view=left` | Camera preset. |
+| `demo` | `demo=language` | Run a built-in demo (combinable with `embed=1`). |
+
+Notes: remote files must be **CORS-readable** (or same-origin). For a fully self-contained,
+offline embed instead, export a **living figure `.html`** (Figure ▸ Export interactive .html) and
+host that single file. The gallery (`gallery.html`) is the human-facing index of `?demo=` links.
+
+---
+
 ## 2. `window.brainAPI` (headless / console control)
 
 `window.brainAPI.ready` resolves when the scene is loaded. Then:

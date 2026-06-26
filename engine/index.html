@@ -205,6 +205,10 @@
   #gate button{margin-top:12px;width:100%;padding:9px;border:0;border-radius:8px;background:#2f6fed;color:#fff;font-weight:600;cursor:pointer}
   #gate .gmsg{min-height:14px;margin-top:8px;font-size:12px;color:#ff7b7b}
   .phpaint.armed{outline:2px solid #5db0ff;outline-offset:-1px;background:#274a78}
+  /* embed mode (?embed=1): hide all chrome, just the 3D viewport for iframes */
+  body.embed #sidebar, body.embed #sidebarR, body.embed #topbar, body.embed .hint, body.embed #hud, body.embed #demoBanner{display:none!important}
+  body.embed #app{inset:0}
+  #embedBadge{position:fixed;right:8px;bottom:7px;z-index:50;font:600 11px system-ui;color:#9fd0ff;opacity:.6;text-decoration:none;background:rgba(10,16,28,.5);padding:2px 7px;border-radius:8px}
 </style>
 </head>
 <body>
@@ -217,6 +221,7 @@
 <script>
 (function(){
   if(location.hostname!=='rnorlund.github.io') return;           // gate ONLY the public research site (not local dev, not the Engine Edition)
+  if(new URLSearchParams(location.search).get('embed')) return;  // embeds (iframes) are intentional shares -> not gated
   if(sessionStorage.getItem('bwz_ok')==='1') return;             // already unlocked this session
   var HASH='f49fbf54f76506fc377429027a1c43224f966ba71f3fa106bb13848a58feabb9';  // SHA-256 of the password (not the password itself)
   var g=document.getElementById('gate'); if(!g) return; g.style.display='flex';
@@ -1137,8 +1142,31 @@ function finishInit(box, sphere){
   if(NO_DATA) showEmptyState();
   requestRender();   // meshes loaded async — render the initial scene
   if(window.__brainReady) window.__brainReady();   // signal scripting API
-  const demoId=params.get('demo'); if(demoId) setTimeout(()=>runDemo(demoId), 60);   // gallery deep-link
+  if(params.get('embed')){ document.body.classList.add('embed');   // iframe-friendly: hide all chrome
+    if(!document.getElementById('embedBadge')){ const a=document.createElement('a'); a.id='embedBadge'; a.href='https://rnorlund.github.io/brainWhiz/'; a.target='_blank'; a.rel='noopener'; a.textContent='brainWhiz ↗'; document.body.appendChild(a); }
+    window.dispatchEvent(new Event('resize')); }
+  const demoId=params.get('demo');
+  if(demoId) setTimeout(()=>runDemo(demoId), 60);                  // gallery deep-link
+  else setTimeout(()=>loadEmbedData(), 60);                        // ?overlay=…&cmap=… remote-data embedding
 }
+// load remote data + view from URL params (for embedding: index.html?embed=1&overlay=<url>&cmap=hot&view=left)
+async function loadEmbedData(){ try{
+  const bg=params.get('bg'); if(bg){ $('bg').value=bg[0]==='#'?bg:'#'+bg; $('bg').dispatchEvent(new Event('input')); }
+  const sc=params.get('scheme'); if(sc){ $('scheme').value=sc; applyScheme(sc); }
+  const mesh=params.get('mesh'); if(mesh){ const ab=await (await fetch(mesh)).arrayBuffer(); let b=ab; if(/\.gz$/i.test(mesh)) b=window.pako.ungzip(new Uint8Array(ab)).buffer; const nii=parseNifti(b); const nm=mesh.split('/').pop(); looksLikeParcellation(nii)?buildAtlasFromNifti(nii,null,nm):buildSurfaceFromNifti(nii,nm); }
+  const surf=params.get('surface'); if(surf) await loadSurfaceOrTracts(await _demoFile(surf));
+  const trk=params.get('tracts'); if(trk) await loadSurfaceOrTracts(await _demoFile(trk));
+  const ul=params.get('underlay'); if(ul) await loadUnderlayFromFile(await _demoFile(ul));
+  const ov=params.get('overlay'); if(ov){ const nm=ov.split('/').pop(); const ab=await (await fetch(ov)).arrayBuffer(); applyStatVals(statBufferToVals(ab,nm),nm,'A');
+    const cmap=params.get('cmap'); if(cmap){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=cmap; $('cmap').dispatchEvent(new Event('change')); }
+    const cmin=params.get('cmin'); if(cmin!=null){ $('cmin').value=cmin; $('cmin').dispatchEvent(new Event('change')); }
+    const cmax=params.get('cmax'); if(cmax!=null){ $('cmax').value=cmax; $('cmax').dispatchEvent(new Event('change')); }
+    const thr=params.get('thr'); if(thr!=null){ $('cthresh').value=thr; $('cthresh').dispatchEvent(new Event('input')); } }
+  const expl=params.get('explode'); if(expl!=null) setExplode(+expl);
+  const m=params.get('mode'); if(m==='slice') setViewMode('slice'); else if(m==='mosaic') setViewMode('mosaic');
+  const vw=params.get('view'); if(vw) brainAPI.setView(vw);
+  requestRender();
+}catch(e){ console.error('embed data load failed:', e); } }
 function showEmptyState(){ if(document.getElementById('emptyState')) return;
   const d=document.createElement('div'); d.id='emptyState';
   d.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:5;text-align:center;padding:20px;pointer-events:none';

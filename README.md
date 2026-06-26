@@ -48,6 +48,25 @@ A central brainWhiz render is ringed by live demo plates — click any to launch
 
 ---
 
+## 🔗 Embed it (like NiiVue)
+
+Put a live, rotatable brainWhiz view in any web page — a NeuroSynth/NeuroQuery result, a lab
+site, an online journal article. Add `?embed=1` to hide all chrome (just the 3D viewport) and
+point the params at your data:
+
+```html
+<iframe width="640" height="420" style="border:0"
+  src="https://rnorlund.github.io/brainWhiz/index.html?embed=1&atlas=jhu&overlay=https://example.org/language_z.nii.gz&cmap=hot&thr=0.3&view=left">
+</iframe>
+```
+
+Configure entirely by URL: `overlay`/`underlay`/`surface`/`tracts`/`mesh` (remote, CORS-readable),
+`cmap` `cmin` `cmax` `thr`, `scheme`, `explode`, `mode` (`mesh`/`slice`/`mosaic`), `view`, `bg`,
+or a built-in `demo=`. For a fully self-contained, offline embed, export a **living figure `.html`**
+(Figure ▸ Export interactive .html) and host that one file. Full table: **[API.md §1b](API.md)**.
+
+---
+
 ## Quick start
 
 ![quickstart](docs/img/quickstart.gif)
