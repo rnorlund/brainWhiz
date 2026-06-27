@@ -383,6 +383,8 @@
         <label class="toggle"><input type="checkbox" id="cmapAbs"> |abs|</label>
         <label class="toggle" title="Threshold-Free Cluster Enhancement in the slice view (file overlays)"><input type="checkbox" id="ovTfce"> TFCE</label></div>
       <div class="row"><label class="toggle" title="Only show this overlay where the background/underlay has signal — hides out-of-brain artifacts (e.g. fMRI eye-motion activation) when the underlay is a brain-only template/T1"><input type="checkbox" id="ovCropBg"> ✂ Crop to background</label></div>
+      <div class="ctl" style="flex-direction:row;align-items:center;gap:8px"><span class="lab" title="Color of regions WITHOUT an overlay value (the base brain). Darken it to make a light colormap (magma/inferno) pop on a white figure background." style="flex:1">Uncolored regions</span>
+        <input type="color" id="ovBaseColor" value="#8a8f99"><button class="sm" id="ovBaseDark" title="Darken the base brain (charcoal)" style="padding:2px 7px">🌚 dark</button></div>
       <div class="ctl"><div class="lab"><span title="Overlay opacity in the slice & mosaic views">Overlay opacity</span><span id="ovOpacityV">1.0</span></div>
         <input type="range" id="ovOpacity" min="0.05" max="1" step="0.05" value="1"></div>
       <div class="ctl"><div class="lab"><span title="Color vividness / saturation of this overlay in slices & mosaic">Overlay vividness</span><span id="ovVividV">1.0</span></div>
@@ -3087,7 +3089,7 @@ function initAtlasPicker(){
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
-  'ovStyle','cmap','ovColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
+  'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
@@ -3228,6 +3230,9 @@ function initOverlayUI(){
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
   $('ovCropBg').addEventListener('change', ()=>edited());
+  const _recolorBase=()=>{ if(overlay.combine && typeof recolorDual==='function') recolorDual(); else recolorOverlay(); refreshSliceViews(); };
+  $('ovBaseColor').addEventListener('input', _recolorBase);
+  $('ovBaseDark').addEventListener('click', ()=>{ $('ovBaseColor').value='#2a2e37'; _recolorBase(); });
   $('ovFrame').addEventListener('input', e=>{ if(selOv>=0){ ovStopPlay(); setOverlayFrame(overlays[selOv], +e.target.value); } });
   $('ovPlay').addEventListener('click', ovTogglePlay);
   $('ovFps').addEventListener('change', ()=>{ if(_ovPlayTimer){ ovStopPlay(); ovTogglePlay(); } });
@@ -3307,8 +3312,9 @@ function loadRegionCSV(text, fileName){
   applyCsvVals(vals, fileName||'data.csv');
   if($('ovInfo')) $('ovInfo').textContent = `CSV: matched ${matched}/${N} regions ${how}`;
 }
-const NEUTRAL='#8a8f99';   // gray base brain when an overlay is active
-const _gray=new THREE.Color(NEUTRAL);
+// color of uncolored regions (the base brain) while an overlay is active — adjustable so you can
+// darken the brain to make a light colormap (magma/inferno) pop on a white figure background.
+function baseColorHex(){ const e=$('ovBaseColor'); return (e&&e.value)?e.value:'#8a8f99'; }
 // activation-style range: anchor gray baseline at 0 for signed maps
 function rangeOf(vals, abs){
   let mn=Infinity, mx=-Infinity;
@@ -3324,6 +3330,7 @@ function recolorOverlay(){
   const inv=$('cmapInvert').checked, name=$('cmap').value;
   const solid=!styleIsCmap();
   const ovC=new THREE.Color($('ovColor').value);
+  const NEUTRAL=baseColorHex(), _gray=new THREE.Color(NEUTRAL);
   const lo = (solid && mn<0) ? 0 : mn;
   const span=(mx-lo)||1e-6;
   for(const o of meshes){
@@ -3361,7 +3368,7 @@ function syncThreshRange(){
   } else { s.min=0; s.max=1; s.step=0.01; if(+s.value>1) s.value=0; $('cthreshUnit').textContent=''; }
 }
 // shared legend drawers (used by the live panel + figure export)
-function conjMix(out, cA, cB, nA, nB){ out.setStyle(NEUTRAL);
+function conjMix(out, cA, cB, nA, nB){ out.setStyle(baseColorHex());
   out.r += nA*(cA.r-out.r) + nB*(cB.r-out.r);
   out.g += nA*(cA.g-out.g) + nB*(cB.g-out.g);
   out.b += nA*(cA.b-out.b) + nB*(cB.b-out.b); return out; }
@@ -3379,7 +3386,7 @@ function drawBivariate(ctx, x, y, S, colorA, colorB, txt){
   ctx.save(); ctx.translate(x-3, y+S/2); ctx.rotate(-Math.PI/2); ctx.textAlign='center'; ctx.fillText('B →',0,0); ctx.restore();
 }
 function drawDiverging(ctx, x, y, W, H, colorA, colorB){
-  const g=new THREE.Color(NEUTRAL), c=new THREE.Color();
+  const g=new THREE.Color(baseColorHex()), c=new THREE.Color();
   for(let px=0;px<W;px++){ const d=(px/(W-1))*2-1;
     c.copy(g).lerp(new THREE.Color(d<0?colorB:colorA), Math.abs(d));
     ctx.fillStyle='#'+c.getHexString(); ctx.fillRect(x+px,y,1,H); }
