@@ -55,6 +55,7 @@
 
 <script>
 (function(){ // gate (deterrent; same scope as the app)
+  return;       // PASSWORD GATE DISABLED — gallery is public (delete this line to re-enable)
   if(location.hostname==='rnorlund.github.io' && sessionStorage.getItem('bwz_ok')!=='1'){
     const HASH='f49fbf54f76506fc377429027a1c43224f966ba71f3fa106bb13848a58feabb9';
     const g=document.getElementById('gate'); g.classList.add('on'); const inp=document.getElementById('gpw');

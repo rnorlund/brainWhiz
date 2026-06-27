@@ -223,6 +223,7 @@
 </div></div>
 <script>
 (function(){
+  return;                                                        // PASSWORD GATE DISABLED — site is public (delete this line to re-enable the gate below)
   if(location.hostname!=='rnorlund.github.io') return;           // gate ONLY the public research site (not local dev, not the Engine Edition)
   if(new URLSearchParams(location.search).get('embed')) return;  // embeds (iframes) are intentional shares -> not gated
   if(sessionStorage.getItem('bwz_ok')==='1') return;             // already unlocked this session
@@ -3891,6 +3892,10 @@ window.brainAPI = {
     const buf=b64ToBuf(b64); applyStatVals(statBufferToVals(buf, name||'map.nii'), name||'map.nii', which||'A');
     if(selOv>=0) overlays[selOv].raw=b64;
     await nextFrames(2); return true; },
+  // set per-region overlay values from {roiId: value} (factor loadings, scores, activations…).
+  // Regions without a value stay neutral gray. Set colormap/range afterwards via the controls.
+  setRegionValues(vals, name){ const obj={}; for(const k in (vals||{})){ if(isFinite(+vals[k])) obj[+k]=+vals[k]; }
+    if(!Object.keys(obj).length) return 0; applyCsvVals(obj, name||'values'); return Object.keys(obj).length; },
   // render the 3D scene at an exact size and return a PNG data URL (no UI chrome)
   renderTo(w=600,h=480,transparent=false,zoom=1){
     const oldBG=scene.background; if(transparent) scene.background=null;
@@ -3937,7 +3942,8 @@ window.brainAPI = {
   // ---- self-contained Project file: embeds overlay + underlay data + settings + panels + editor ----
   projectJSON(){
     const data={ overlays:{}, underlay: underlayRaw?{name:underlayName,b64:underlayRaw}:null };
-    overlays.forEach((o,i)=>{ if(o.kind==='file' && o.raw) data.overlays[i]=o.raw; });
+    overlays.forEach((o,i)=>{ if(o.kind==='file' && o.raw) data.overlays[i]=o.raw;
+      else if(o.kind==='csv' && o.vals) data.overlays[i]={csv:o.vals, name:o.fileName||o.name}; });
     const tracts = tractAtlasId ? {
       atlas: tractAtlasId, visible: tractRecs.filter(r=>r.visible).map(r=>r.meta.id),
       smooth:$('tractSmooth').value, opacity:$('tractOp').value, renderMode:$('tractRenderMode').value, colorMode:$('tractColorMode').value,
@@ -3956,7 +3962,10 @@ window.brainAPI = {
     if(p.atlas && p.atlas!==ATLAS_ID){ if(confirm(`This project was built on atlas "${p.atlas}". Switch & reload? (then open the project again)`)) location.href=location.pathname+'?atlas='+encodeURIComponent(p.atlas); return false; }
     applyViewerCfg(p.viewer);
     if(p.data){ if(p.data.underlay) this.setUnderlayBytes(p.data.underlay.b64, p.data.underlay.name);
-      if(p.data.overlays) for(const k in p.data.overlays){ const ovc=(p.viewer.overlays||[])[+k]||{}; await this.loadOverlayFile(+k, p.data.overlays[k], ovc.fileName||'overlay.nii'); } }
+      if(p.data.overlays) for(const k in p.data.overlays){ const ent=p.data.overlays[k]; const ovc=(p.viewer.overlays||[])[+k]||{};
+        if(ent && typeof ent==='object' && ent.csv){ const o=overlays[+k]; if(o){ o.kind='csv'; o.vals=ent.csv; o.vol=null; o.volGrid=null; o.fileName=ent.name||o.fileName;
+            if(+k===selOv){ overlay.vals=o.vals; overlay.volA=null; overlay.volA_grid=null; overlay.on=true; recolorOverlay(); updateColorbar(); } refreshSliceViews(); } }
+        else await this.loadOverlayFile(+k, ent, ovc.fileName||'overlay.nii'); } }
     if(p.tracts && p.tracts.atlas){ const t=p.tracts, setv=(id,v)=>{ if(v!=null&&$(id)) $(id).value=v; };
       $('tractAtlas').value=t.atlas;
       setv('tractSmooth',t.smooth); if($('tractSmoothV'))$('tractSmoothV').textContent=t.smooth;
@@ -3999,6 +4008,7 @@ async function _bridgeHandle(d){
     case 'setScheme': $('scheme').value=d.scheme; applyScheme(d.scheme); return true;
     case 'setBackground': { const v=d.color||d.bg||''; $('bg').value=v[0]==='#'?v:'#'+v; $('bg').dispatchEvent(new Event('input')); return true; }
     case 'loadOverlay': return await embedApplyOverlay(d);
+    case 'setRegionValues': return brainAPI.setRegionValues(d.values, d.name);
     case 'setColormap': $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=d.cmap; $('cmap').dispatchEvent(new Event('change')); return true;
     case 'setRange': if(_has(d.cmin)){ $('cmin').value=d.cmin; $('cmin').dispatchEvent(new Event('change')); } if(_has(d.cmax)){ $('cmax').value=d.cmax; $('cmax').dispatchEvent(new Event('change')); } return true;
     case 'setThreshold': $('cthresh').value=d.thr; $('cthresh').dispatchEvent(new Event('input')); return true;

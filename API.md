@@ -79,6 +79,7 @@ Every command is `{brainWhiz:true, cmd, …args, id?}`. brainWhiz replies
 |---|---|---|
 | `ping` | — | `"pong"` (liveness check). |
 | `loadOverlay` | `url`, `cmap?`, `cmin?`, `cmax?`, `thr?` | Fetch + show a remote stat NIfTI. |
+| `setRegionValues` | `values` ({roiId:val}), `name?` | Color regions by per-ROI value (loadings/scores/activations). |
 | `setColormap` | `cmap` | Change overlay colormap. |
 | `setRange` | `cmin?`, `cmax?` | Overlay min/max. |
 | `setThreshold` | `thr` | Overlay threshold. |
@@ -112,6 +113,7 @@ but `?embed=1` is what hides the chrome for a clean inline view.
 | `projectJSON()` | Return a self-contained **project** object (embeds overlay/underlay bytes + panels + settings). |
 | `loadProject(p)` | Restore a project object from `projectJSON()`. |
 | `loadStatArray(b64, which, name)` | Load an overlay NIfTI from base64 bytes (`which` = `'A'`). |
+| `setRegionValues(vals, name)` | Color regions from a `{roiId: value}` map (factor loadings, scores, per-ROI activations). Set colormap/range via controls afterwards. |
 | `setUnderlayBytes(b64, name)` | Set the slice underlay from base64 NIfTI bytes (`null` → MNI template). |
 | `setView(name)` | `'left' \| 'right' \| 'superior' \| 'inferior' \| 'anterior' \| 'posterior'`. |
 | `renderTo(w, h, transparent, zoom)` | Return a PNG data-URL of the current 3D scene at a given size. |
