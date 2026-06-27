@@ -63,7 +63,11 @@ point the params at your data:
 Configure entirely by URL: `overlay`/`underlay`/`surface`/`tracts`/`mesh` (remote, CORS-readable),
 `cmap` `cmin` `cmax` `thr`, `scheme`, `explode`, `mode` (`mesh`/`slice`/`mosaic`), `view`, `bg`,
 or a built-in `demo=`. For a fully self-contained, offline embed, export a **living figure `.html`**
-(Figure ▸ Export interactive .html) and host that one file. Full table: **[API.md §1b](API.md)**.
+(Figure ▸ Export interactive .html) and host that one file.
+
+Want the host page to drive it **live** (swap overlay, move camera, change colormap) with no
+reload? brainWhiz speaks `postMessage` both ways — `{brainWhiz:true, cmd:'loadOverlay', url:…}`.
+Full URL + `postMessage` reference: **[API.md §1b](API.md)**.
 
 ---
 

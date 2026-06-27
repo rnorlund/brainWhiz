@@ -50,6 +50,55 @@ Notes: remote files must be **CORS-readable** (or same-origin). For a fully self
 offline embed instead, export a **living figure `.html`** (Figure ▸ Export interactive .html) and
 host that single file. The gallery (`gallery.html`) is the human-facing index of `?demo=` links.
 
+### Live control via `postMessage` (no reload)
+
+A host page can drive an embedded brainWhiz **after** load — swap the overlay, move the camera,
+change the colormap — without reloading the iframe (the NiiVue-style integration NeuroSynth/journals
+want). Post `{brainWhiz:true, cmd:'…', …}` to the iframe; brainWhiz posts a reply back.
+
+```html
+<iframe id="bw" src="https://rnorlund.github.io/brainWhiz/index.html?embed=1&atlas=jhu"></iframe>
+<script>
+  const bw = document.getElementById('bw');
+  // brainWhiz posts {brainWhiz:true, type:'ready', atlas} when the scene is loaded:
+  window.addEventListener('message', e => {
+    if (e.data?.brainWhiz !== true) return;
+    if (e.data.type === 'ready')  bw.contentWindow.postMessage(
+      {brainWhiz:true, cmd:'loadOverlay', url:'https://example.org/zmap.nii.gz', cmap:'hot', thr:3}, '*');
+    if (e.data.type === 'reply')  console.log(e.data.cmd, e.data.ok, e.data.result);
+  });
+  // later, react to user input on YOUR page:
+  bw.contentWindow.postMessage({brainWhiz:true, cmd:'setView', view:'right'}, '*');
+</script>
+```
+
+Every command is `{brainWhiz:true, cmd, …args, id?}`. brainWhiz replies
+`{brainWhiz:true, type:'reply', id, cmd, ok, result, error}` to the sender (echo back `id` to match).
+
+| `cmd` | Args | Effect / `result` |
+|---|---|---|
+| `ping` | — | `"pong"` (liveness check). |
+| `loadOverlay` | `url`, `cmap?`, `cmin?`, `cmax?`, `thr?` | Fetch + show a remote stat NIfTI. |
+| `setColormap` | `cmap` | Change overlay colormap. |
+| `setRange` | `cmin?`, `cmax?` | Overlay min/max. |
+| `setThreshold` | `thr` | Overlay threshold. |
+| `clearOverlay` | — | Remove the overlay. |
+| `setView` | `view` | Camera preset (`left`/`right`/`superior`/…). |
+| `setMode` | `mode` | `mesh` / `slice` / `mosaic`. |
+| `setExplode` | `amount` | Exploded-brain amount (0–1+). |
+| `setScheme` | `scheme` | Region color scheme. |
+| `setBackground` | `color` | Background color. |
+| `loadUnderlay` | `url` | Slice underlay NIfTI. |
+| `loadSurface` / `loadTracts` | `url` | Load a `.gii`/FreeSurfer surface or `.trk`/`.tck`. |
+| `runDemo` | `demo` | Run a built-in demo by id. |
+| `applyConfig` | `config` | Apply a viewer-config object (see §2). |
+| `screenshot` | — | PNG data-URL of the current view. |
+| `colorbar` | — | Active colorbar descriptor (for a legend), or `null`. |
+| `getState` | — | `{atlas, mode, overlay, explode, scheme}`. |
+
+CORS still applies to any `url` you pass. The bridge works for any embed (with or without `?embed=1`),
+but `?embed=1` is what hides the chrome for a clean inline view.
+
 ---
 
 ## 2. `window.brainAPI` (headless / console control)

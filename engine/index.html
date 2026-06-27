@@ -91,6 +91,9 @@
     border-left:1px solid var(--line);overflow-y:auto;z-index:10}
   body.navhiddenR #sidebarR{display:none}
   #sidebarR .sideRtitle{padding:10px 12px;font-weight:600;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line)}
+  .grouplbl{padding:9px 12px 5px;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--muted);opacity:.62;background:var(--panel);border-bottom:1px solid var(--line)}
+  .grouplbl:first-child{border-top:none}
   .acc{border-bottom:1px solid var(--line)}
   .acc>summary{cursor:pointer;padding:10px 12px;list-style:none;font-weight:600;font-size:12.5px;
     display:flex;align-items:center;gap:7px;position:sticky;top:0;background:var(--panel);z-index:1}
@@ -335,6 +338,7 @@
 <!-- ===== LEFT ACCORDION (task-grouped; only Overlay open) ===== -->
 <div id="sidebar">
 
+  <div class="grouplbl">Data</div>
   <details class="acc" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
     <div id="ovList"></div>
     <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -423,6 +427,7 @@
     <div id="volStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
   </div></details>
 
+  <div class="grouplbl">View &amp; appearance</div>
   <details class="acc" id="accSlices"><summary><span class="chev">▸</span>🔪 Slice view</summary><div class="accb" id="sliceCtlHost">
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:6px">Controls the <b>🔪 Slices</b> view (top bar). Load a stat <b>.nii</b> in Overlay to see a heatmap; click a slice or drag the X/Y/Z sliders to navigate.</div>
     <div class="row" style="margin-bottom:6px"><label title="Anatomical background under the slices/mosaic. Default is the MNI152 template; load a subject T1 (same space as your overlays) for individual results.">Underlay</label>
@@ -524,6 +529,7 @@
     <div id="roiList"></div>
   </div></details>
 
+  <div class="grouplbl">Connectivity</div>
   <details class="acc"><summary><span class="chev">▸</span>🧬 Connectivity</summary><div class="accb">
     <details class="sub"><summary><span class="chev">▸</span>🧵 WM tracts</summary><div class="subb">
       <div class="row"><label title="Overlay white-matter tract meshes from a tract atlas (shown in 3D and cross-sectioned on slices/mosaic), on top of the current atlas">Tract atlas</label>
@@ -601,6 +607,7 @@
     </div></details>
   </div></details>
 
+  <div class="grouplbl">Tools</div>
   <details class="acc"><summary><span class="chev">▸</span>🎬 Projector</summary><div class="accb">
     <div class="row" style="justify-content:space-between"><label class="toggle" title="Project an image, video, or webcam onto the 3D brain surface"><input type="checkbox" id="projOn"> Projector on</label>
       <button class="sm" id="projClearAll" title="Remove all projector media, the wrap/projector layer, and every decal stamp">🗑 Clear all</button></div>
@@ -690,6 +697,7 @@
     <div id="phStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
   </div></details>
 
+  <div class="grouplbl">Output &amp; motion</div>
   <details class="acc"><summary><span class="chev">▸</span>🎥 View &amp; motion</summary><div class="accb">
     <!-- axis options first -->
     <div class="row" style="gap:14px">
@@ -1149,6 +1157,18 @@ function finishInit(box, sphere){
   if(demoId) setTimeout(()=>runDemo(demoId), 60);                  // gallery deep-link
   else setTimeout(()=>loadEmbedData(), 60);                        // ?overlay=…&cmap=… remote-data embedding
 }
+// fetch + apply a remote overlay (shared by URL embedding and the postMessage bridge)
+const _has=v=>v!=null&&v!=='';
+async function embedApplyOverlay(o={}){
+  const url=o.overlay||o.url; if(!_has(url)) return false;
+  const nm=(''+url).split('/').pop(); const ab=await (await fetch(url)).arrayBuffer();
+  applyStatVals(statBufferToVals(ab,nm),nm,'A');
+  if(_has(o.cmap)){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=o.cmap; $('cmap').dispatchEvent(new Event('change')); }
+  if(_has(o.cmin)){ $('cmin').value=o.cmin; $('cmin').dispatchEvent(new Event('change')); }
+  if(_has(o.cmax)){ $('cmax').value=o.cmax; $('cmax').dispatchEvent(new Event('change')); }
+  if(_has(o.thr)){ $('cthresh').value=o.thr; $('cthresh').dispatchEvent(new Event('input')); }
+  requestRender(); return true;
+}
 // load remote data + view from URL params (for embedding: index.html?embed=1&overlay=<url>&cmap=hot&view=left)
 async function loadEmbedData(){ try{
   const bg=params.get('bg'); if(bg){ $('bg').value=bg[0]==='#'?bg:'#'+bg; $('bg').dispatchEvent(new Event('input')); }
@@ -1157,11 +1177,7 @@ async function loadEmbedData(){ try{
   const surf=params.get('surface'); if(surf) await loadSurfaceOrTracts(await _demoFile(surf));
   const trk=params.get('tracts'); if(trk) await loadSurfaceOrTracts(await _demoFile(trk));
   const ul=params.get('underlay'); if(ul) await loadUnderlayFromFile(await _demoFile(ul));
-  const ov=params.get('overlay'); if(ov){ const nm=ov.split('/').pop(); const ab=await (await fetch(ov)).arrayBuffer(); applyStatVals(statBufferToVals(ab,nm),nm,'A');
-    const cmap=params.get('cmap'); if(cmap){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=cmap; $('cmap').dispatchEvent(new Event('change')); }
-    const cmin=params.get('cmin'); if(cmin!=null){ $('cmin').value=cmin; $('cmin').dispatchEvent(new Event('change')); }
-    const cmax=params.get('cmax'); if(cmax!=null){ $('cmax').value=cmax; $('cmax').dispatchEvent(new Event('change')); }
-    const thr=params.get('thr'); if(thr!=null){ $('cthresh').value=thr; $('cthresh').dispatchEvent(new Event('input')); } }
+  const ov=params.get('overlay'); if(ov) await embedApplyOverlay({overlay:ov, cmap:params.get('cmap'), cmin:params.get('cmin'), cmax:params.get('cmax'), thr:params.get('thr')});
   const expl=params.get('explode'); if(expl!=null) setExplode(+expl);
   const m=params.get('mode'); if(m==='slice') setViewMode('slice'); else if(m==='mosaic') setViewMode('mosaic');
   const vw=params.get('view'); if(vw) brainAPI.setView(vw);
@@ -3968,6 +3984,44 @@ window.brainAPI = {
     return true;
   }
 };
+
+// ================= postMessage BRIDGE (host page ↔ embedded brainWhiz) =================
+// A parent page can drive an <iframe src="…?embed=1"> live, no reload. Send:
+//   iframe.contentWindow.postMessage({brainWhiz:true, cmd:'loadOverlay', url:'…', cmap:'hot'}, '*')
+// brainWhiz replies {brainWhiz:true, type:'reply', id, cmd, ok, result, error} and posts
+//   {brainWhiz:true, type:'ready', atlas} to the parent when the scene is loaded.
+async function _bridgeHandle(d){
+  switch(d.cmd){
+    case 'ping': return 'pong';
+    case 'setView': brainAPI.setView(d.view||d.name); return true;
+    case 'setMode': setViewMode(d.mode); return true;
+    case 'setExplode': setExplode(+d.amount); return true;
+    case 'setScheme': $('scheme').value=d.scheme; applyScheme(d.scheme); return true;
+    case 'setBackground': { const v=d.color||d.bg||''; $('bg').value=v[0]==='#'?v:'#'+v; $('bg').dispatchEvent(new Event('input')); return true; }
+    case 'loadOverlay': return await embedApplyOverlay(d);
+    case 'setColormap': $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=d.cmap; $('cmap').dispatchEvent(new Event('change')); return true;
+    case 'setRange': if(_has(d.cmin)){ $('cmin').value=d.cmin; $('cmin').dispatchEvent(new Event('change')); } if(_has(d.cmax)){ $('cmax').value=d.cmax; $('cmax').dispatchEvent(new Event('change')); } return true;
+    case 'setThreshold': $('cthresh').value=d.thr; $('cthresh').dispatchEvent(new Event('input')); return true;
+    case 'clearOverlay': { const b=$('ovClear')||$('clearOverlay'); if(b) b.click(); else { overlay.on=false; recolorOverlay&&recolorOverlay(); } return true; }
+    case 'loadUnderlay': await loadUnderlayFromFile(await _demoFile(d.url)); return true;
+    case 'loadSurface': case 'loadTracts': await loadSurfaceOrTracts(await _demoFile(d.url)); return true;
+    case 'runDemo': runDemo(d.demo||d.id); return true;
+    case 'applyConfig': await brainAPI.applyConfig(d.config||{}); return true;
+    case 'screenshot': return brainAPI.screenshot();
+    case 'colorbar': return brainAPI.colorbar();
+    case 'getState': return { atlas:ATLAS_ID, mode:(mosaicMode?'mosaic':sliceMode?'slice':'mesh'),
+        overlay: overlay.on?overlay.name:null, explode: explodeAmt, scheme: $('scheme')&&$('scheme').value };
+    default: throw new Error('unknown cmd: '+d.cmd);
+  }
+}
+window.addEventListener('message', async (e)=>{
+  const d=e.data; if(!d || d.brainWhiz!==true || !d.cmd) return;
+  let ok=true, result=null, error=null;
+  try{ result=await _bridgeHandle(d); requestRender(); }
+  catch(err){ ok=false; error=String(err&&err.message||err); }
+  try{ e.source && e.source.postMessage({brainWhiz:true, type:'reply', id:d.id, cmd:d.cmd, ok, result, error}, e.origin&&e.origin!=='null'?e.origin:'*'); }catch(_){}
+});
+try{ _ready.then(()=>{ if(window.parent && window.parent!==window) window.parent.postMessage({brainWhiz:true, type:'ready', atlas:ATLAS_ID}, '*'); }); }catch(_){}
 
 // ================= IN-APP PANEL BUILDER =================
 let pbItems = [];  // per-cell {dataURL,label,cbar} | null
