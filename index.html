@@ -475,7 +475,7 @@
     <div class="row"><label title="How pattern cells are rendered: darkened, or cut out entirely (holes through the mesh)">Pattern fill</label>
       <select id="patMode"><option value="0">Darken cells</option><option value="1">Cut out cells (holes)</option></select></div>
     <div class="row"><label title="Lighting model for the mesh surface">Shading</label>
-      <select id="shading"><option>Standard</option><option>Matcap</option></select></div>
+      <select id="shading"><option>Standard</option><option>Matcap</option><option>Cartoon</option></select></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
@@ -1045,7 +1045,9 @@ function applyScheme(scheme){
 const patternUniforms = {
   uPattern:{value:0}, uScale:{value:0.08}, uContrast:{value:0.55}, uPatMode:{value:0}, uPatAngle:{value:0},
   uVivid:{value:1.3}, uRim:{value:0.3}, uRimColor:{value:new THREE.Color('#ffffff')},
-  uWire:{value:0}, uWireWidth:{value:1.0}, uWireFill:{value:0}
+  uWire:{value:0}, uWireWidth:{value:1.0}, uWireFill:{value:0},
+  // "Cartoon" cel-shade: toon banding + black silhouette + crease (sulcal) ink lines — the MRIcroGL look
+  uCartoon:{value:0}, uToonSteps:{value:4.0}, uInkEdge:{value:0.62}, uInkCrease:{value:0.85}, uInkColor:{value:new THREE.Color('#000000')}
 };
 // "on" = 1 for solid cells, 0 for pattern cells. uPatMode 0=darken off cells, 1=make them transparent (cutout).
 const COLOR_GLSL = `
@@ -1079,14 +1081,30 @@ const RIM_GLSL = `
   { float _f = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
     outgoingLight += uRimColor * (_f * uRim); }
 `;
+// MRIcroGL-style cartoon: quantize shading into bands, then ink the silhouette + sulcal creases black.
+// Creases are detected from screen-space normal variation (fwidth) — high in sulci, ~0 on flat gyri.
+const CARTOON_GLSL = `
+  if(uCartoon > 0.5){
+    vec3 _N = normalize(normal); vec3 _V = normalize(vViewPosition);
+    float _L = dot(outgoingLight, vec3(0.2126,0.7152,0.0722));
+    float _st = max(2.0, uToonSteps);
+    float _Lq = (floor(_L*_st) + 0.5)/_st;                 // cel banding
+    if(_L > 1e-4) outgoingLight *= clamp(_Lq/_L, 0.0, 4.0);
+    float _fres = 1.0 - clamp(dot(_N,_V), 0.0, 1.0);
+    float _sil  = smoothstep(uInkEdge, min(0.999,uInkEdge+0.03), _fres);  // thin black silhouette
+    float _crz  = length(fwidth(_N));
+    float _crease = smoothstep(uInkCrease, uInkCrease*2.2, _crz);   // black sulcal / region lines
+    outgoingLight = mix(outgoingLight, uInkColor, clamp(max(_sil,_crease), 0.0, 1.0));
+  }
+`;
 function attachFX(mat){
   mat.onBeforeCompile = (shader)=>{
     for(const k of Object.keys(patternUniforms)) shader.uniforms[k]=patternUniforms[k];
     shader.vertexShader = 'varying vec3 vPatPos;\nattribute vec3 barycentric;\nvarying vec3 vBary;\n' + shader.vertexShader
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPatPos = position;\n  vBary = barycentric;');
-    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\n'
+    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\nuniform float uCartoon;\nuniform float uToonSteps;\nuniform float uInkEdge;\nuniform float uInkCrease;\nuniform vec3 uInkColor;\n'
       + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + COLOR_GLSL);
-    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + '\n#include <opaque_fragment>');
+    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + CARTOON_GLSL + '\n#include <opaque_fragment>');
     shader.fragmentShader = f;
   };
 }
@@ -1104,10 +1122,14 @@ function buildMaterial(type, hex){
 let shadingType='Standard';
 function setShading(type){
   shadingType=type;
+  const cartoon = (type==='Cartoon');
+  patternUniforms.uCartoon.value = cartoon ? 1 : 0;
+  const baseType = (type==='Matcap') ? 'Matcap' : 'Standard';   // Cartoon is a Standard material + ink shader
   for(const o of meshes){ const old=o.mesh.material;
-    const nm=buildMaterial(o.mesh.userData.forceMatcap ? 'Matcap' : type, o.meta.color);  // built surfaces stay matcap (never blow out)
+    const nm=buildMaterial(o.mesh.userData.forceMatcap ? 'Matcap' : baseType, o.meta.color);  // built surfaces stay matcap (never blow out)
+    if(cartoon && nm.isMeshStandardMaterial){ nm.roughness=1.0; nm.metalness=0.0; nm.envMapIntensity=0.0; }  // flat, matte base for crisp ink
     nm.wireframe=old.wireframe; nm.opacity=old.opacity; nm.transparent=old.transparent;
-    nm.flatShading = (type!=='Matcap') && old.flatShading;
+    nm.flatShading = (baseType!=='Matcap') && old.flatShading;
     o.mesh.material=nm; old.dispose();
   }
   applySurfStyle(); setOpacities();
