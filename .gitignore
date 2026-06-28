@@ -23,3 +23,6 @@ my_*.jpeg
 # but DO ship the gallery demo media (the keyframe flythrough)
 !exampleFiles/media/
 !exampleFiles/media/*.mp4
+
+# personal figure use-cases / library data (local only)
+figures_library/

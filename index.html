@@ -475,7 +475,7 @@
     <div class="row"><label title="How pattern cells are rendered: darkened, or cut out entirely (holes through the mesh)">Pattern fill</label>
       <select id="patMode"><option value="0">Darken cells</option><option value="1">Cut out cells (holes)</option></select></div>
     <div class="row"><label title="Lighting model for the mesh surface">Shading</label>
-      <select id="shading"><option>Standard</option><option>Matcap</option><option>Cartoon</option></select></div>
+      <select id="shading"><option>Standard</option><option>Matcap</option><option>Cartoon</option><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Metal</option><option>Hemispheric</option><option>Subsurface</option><option>X-ray</option><option>Curvature</option><option>Iridescent</option><option>Clay</option></select></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
@@ -1047,7 +1047,10 @@ const patternUniforms = {
   uVivid:{value:1.3}, uRim:{value:0.3}, uRimColor:{value:new THREE.Color('#ffffff')},
   uWire:{value:0}, uWireWidth:{value:1.0}, uWireFill:{value:0},
   // "Cartoon" cel-shade: toon banding + black silhouette + crease (sulcal) ink lines — the MRIcroGL look
-  uCartoon:{value:0}, uToonSteps:{value:4.0}, uInkEdge:{value:0.62}, uInkCrease:{value:0.85}, uInkColor:{value:new THREE.Color('#000000')}
+  uCartoon:{value:0}, uToonSteps:{value:4.0}, uInkEdge:{value:0.62}, uInkCrease:{value:0.85}, uInkColor:{value:new THREE.Color('#000000')},
+  // extra analytic shading models (clean-room: standard lighting math, not copied from GPL shaders)
+  // 0=off(Standard) 1=Gooch(warm/cool NPR) 2=Matte(wrap diffuse) 3=Glossy(Blinn-Phong) 4=Metal
+  uShade:{value:0}
 };
 // "on" = 1 for solid cells, 0 for pattern cells. uPatMode 0=darken off cells, 1=make them transparent (cutout).
 const COLOR_GLSL = `
@@ -1097,14 +1100,57 @@ const CARTOON_GLSL = `
     outgoingLight = mix(outgoingLight, uInkColor, clamp(max(_sil,_crease), 0.0, 1.0));
   }
 `;
+// Analytic shading models — clean-room implementations of standard lighting math (NOT copied from
+// any GPL shader). Computed from the view-space normal + view dir + base color. Includes novel
+// brain-friendly looks (subsurface, x-ray, curvature, iridescent, clay) beyond the usual set.
+const SHADE_GLSL = `
+  if(uShade > 0.5){
+    vec3 N = normalize(normal); vec3 V = normalize(vViewPosition);
+    vec3 L = normalize(vec3(0.4,0.6,0.75)); vec3 L2 = normalize(vec3(-0.5,-0.3,0.4));
+    vec3 H = normalize(L+V); vec3 base = diffuseColor.rgb;
+    float ndl = dot(N,L); float d = max(ndl,0.0) + 0.32*max(dot(N,L2),0.0);
+    float fres = clamp(1.0 - dot(N,V), 0.0, 1.0);
+    int sh = int(uShade + 0.5); vec3 col = base;
+    if(sh==1){          // Gooch — warm/cool technical illustration + outline
+      vec3 warm = mix(base, base*vec3(1.15,1.05,0.55)+0.18, 0.65);
+      vec3 cool = mix(base, base*vec3(0.45,0.55,1.0)*0.7, 0.65);
+      col = mix(cool, warm, 0.5*(ndl+1.0)) + vec3(pow(max(dot(N,H),0.0),48.0)*0.5);
+      if(dot(N,V) < 0.22) col = vec3(0.0);
+    } else if(sh==2){   // Matte — wrap diffuse (soft, even)
+      float w = max(0.0,(ndl+0.5)/1.5); col = base*(0.28 + 0.8*w);
+    } else if(sh==3){   // Glossy — Blinn-Phong specular
+      col = base*(0.3 + 0.8*d) + vec3(1.0)*pow(max(dot(N,H),0.0),64.0)*0.5;
+    } else if(sh==4){   // Metal — tight spec + fresnel
+      float s = pow(max(dot(N,H),0.0),220.0);
+      col = base*(0.12 + 0.45*d) + (base*0.6 + 0.4)*s*1.4 + base*pow(fres,3.0)*0.6;
+    } else if(sh==5){   // Hemispheric — sky/ground ambient
+      float t = 0.5 + 0.5*N.y; col = base*mix(vec3(0.34,0.31,0.30), vec3(1.0,1.0,0.96), t);
+    } else if(sh==6){   // Subsurface — waxy translucent glow
+      float w = max(0.0,(ndl+0.6)/1.6);
+      col = base*(0.4 + 0.6*w) + base*vec3(1.0,0.5,0.45)*pow(fres,2.0)*0.55;
+    } else if(sh==7){   // X-ray — fresnel glow, dark core
+      col = base*0.12 + base*pow(fres,1.6)*1.9;
+    } else if(sh==8){   // Curvature — darken sulci (anatomical depth)
+      float sulc = smoothstep(0.4,1.6, length(fwidth(N)));
+      col = base*(0.45 + 0.7*max(ndl,0.0)) * (1.0 - 0.65*sulc);
+    } else if(sh==9){   // Iridescent — thin-film by view angle
+      col = base*0.32 + 0.68*(0.5 + 0.5*cos(6.2831*fres + vec3(0.0,2.1,4.2)));
+      col *= (0.5 + 0.5*max(ndl,0.0));
+    } else if(sh==10){  // Clay — matte + cavity ambient occlusion
+      float ao = 1.0 - 0.6*smoothstep(0.3,1.4, length(fwidth(N)));
+      col = base*(0.35 + 0.7*max(ndl,0.0))*ao;
+    }
+    outgoingLight = col;
+  }
+`;
 function attachFX(mat){
   mat.onBeforeCompile = (shader)=>{
     for(const k of Object.keys(patternUniforms)) shader.uniforms[k]=patternUniforms[k];
     shader.vertexShader = 'varying vec3 vPatPos;\nattribute vec3 barycentric;\nvarying vec3 vBary;\n' + shader.vertexShader
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPatPos = position;\n  vBary = barycentric;');
-    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\nuniform float uCartoon;\nuniform float uToonSteps;\nuniform float uInkEdge;\nuniform float uInkCrease;\nuniform vec3 uInkColor;\n'
+    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\nuniform float uCartoon;\nuniform float uToonSteps;\nuniform float uInkEdge;\nuniform float uInkCrease;\nuniform vec3 uInkColor;\nuniform float uShade;\n'
       + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + COLOR_GLSL);
-    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + CARTOON_GLSL + '\n#include <opaque_fragment>');
+    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + SHADE_GLSL + CARTOON_GLSL + '\n#include <opaque_fragment>');
     shader.fragmentShader = f;
   };
 }
@@ -1120,11 +1166,13 @@ function buildMaterial(type, hex){
   attachFX(m); return m;
 }
 let shadingType='Standard';
+const SHADE_MODE={ Gooch:1, Matte:2, Glossy:3, Metal:4, Hemispheric:5, Subsurface:6, 'X-ray':7, Curvature:8, Iridescent:9, Clay:10 };
 function setShading(type){
   shadingType=type;
   const cartoon = (type==='Cartoon');
   patternUniforms.uCartoon.value = cartoon ? 1 : 0;
-  const baseType = (type==='Matcap') ? 'Matcap' : 'Standard';   // Cartoon is a Standard material + ink shader
+  patternUniforms.uShade.value = SHADE_MODE[type] || 0;          // analytic shading models
+  const baseType = (type==='Matcap') ? 'Matcap' : 'Standard';   // Cartoon/Gooch/… are Standard material + custom frag
   for(const o of meshes){ const old=o.mesh.material;
     const nm=buildMaterial(o.mesh.userData.forceMatcap ? 'Matcap' : baseType, o.meta.color);  // built surfaces stay matcap (never blow out)
     if(cartoon && nm.isMeshStandardMaterial){ nm.roughness=1.0; nm.metalness=0.0; nm.envMapIntensity=0.0; }  // flat, matte base for crisp ink
