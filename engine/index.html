@@ -497,8 +497,12 @@
         <option>Standard</option><option>Matcap</option><option>Cartoon</option>
         <optgroup label="Lighting"><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Phong</option><option>Metal</option><option>Anisotropic</option><option>Hemispheric</option></optgroup>
         <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
-        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option></optgroup>
+        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option><option>Hatching</option><option>Hologram</option></optgroup>
         <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
+    <div class="row"><label title="Constant-width black ink outline around the brain (inverted-hull) — composes with any shading/material">✒ Ink outline</label>
+      <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
+    <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
+      <input type="range" id="outlineW" min="0.5" max="6" step="0.5" value="2"></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
@@ -1244,6 +1248,17 @@ const SHADE_GLSL = `
     } else if(sh==24){  // Ambient occlusion — strong cavity darkening
       float ao = 1.0 - 0.85*smoothstep(0.2,1.4, length(fwidth(N)));
       col = base * ao * (0.55 + 0.45*max(ndl,0.0));
+    } else if(sh==25){  // Hatching — pen-and-ink tonal cross-hatch
+      float tone = max(ndl,0.0)*0.85 + 0.15; vec2 sc = gl_FragCoord.xy; float h=1.0;
+      if(tone<0.85) h*= step(0.35, fract((sc.x+sc.y)*0.11));
+      if(tone<0.60) h*= step(0.35, fract((sc.x-sc.y)*0.11));
+      if(tone<0.40) h*= step(0.35, fract(sc.x*0.15));
+      if(tone<0.22) h*= step(0.35, fract(sc.y*0.15));
+      col = mix(vec3(0.08), vec3(0.96,0.95,0.92), h);
+    } else if(sh==26){  // Hologram — sci-fi fresnel + scanlines
+      float scan = 0.55 + 0.45*sin(gl_FragCoord.y*0.7);
+      vec3 holo = mix(vec3(0.0,0.45,0.7), vec3(0.4,0.92,1.0), pow(fres,1.5));
+      col = holo*(0.35 + 0.4*max(ndl,0.0))*(0.7+0.3*scan) + vec3(0.3,0.8,1.0)*pow(fres,3.0)*0.85;
     }
     outgoingLight = col;
   }
@@ -1272,7 +1287,7 @@ function buildMaterial(type, hex){
 }
 let shadingType='Standard';
 const SHADE_MODE={ Gooch:1, Matte:2, Glossy:3, Metal:4, Hemispheric:5, Subsurface:6, 'X-ray':7, Curvature:8, Iridescent:9, Clay:10,
-  Phong:11, Anisotropic:12, Velvet:13, Pearl:14, Chrome:15, Normals:16, Glass:17, Blueprint:18, Contour:19, Wax:20, Spectral:21, Thermal:22, 'Curvature 2-tone':23, 'Ambient occlusion':24 };
+  Phong:11, Anisotropic:12, Velvet:13, Pearl:14, Chrome:15, Normals:16, Glass:17, Blueprint:18, Contour:19, Wax:20, Spectral:21, Thermal:22, 'Curvature 2-tone':23, 'Ambient occlusion':24, Hatching:25, Hologram:26 };
 function setShading(type){
   shadingType=type;
   const cartoon = (type==='Cartoon');
@@ -1290,6 +1305,21 @@ function setShading(type){
     o.mesh.material=nm; old.dispose();
   }
   applySurfStyle(); setOpacities();
+}
+
+// ---- inverted-hull ink outline (constant-width black border; composes with any shading) ----
+let outlineMeshes=[];
+function hullMaterial(t){ return new THREE.ShaderMaterial({ side:THREE.BackSide, depthWrite:true, depthTest:true,
+  uniforms:{ uT:{value:t} },
+  vertexShader:'uniform float uT; void main(){ vec3 p=position+normalize(normal)*uT; gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0); }',
+  fragmentShader:'void main(){ gl_FragColor=vec4(0.0,0.0,0.0,1.0); }' }); }
+function refreshOutline(){
+  outlineMeshes.forEach(h=>{ if(h.parent) h.parent.remove(h); h.material.dispose(); }); outlineMeshes=[];
+  if(!$('outlineOn') || !$('outlineOn').checked || !meshes.length){ requestRender(); return; }
+  const t=(modelRadius||80)*0.004*(+$('outlineW').value||2);
+  for(const o of meshes){ const h=new THREE.Mesh(o.mesh.geometry, hullMaterial(t)); h.renderOrder=-1; h.frustumCulled=false;
+    o.mesh.add(h); outlineMeshes.push(h); }
+  requestRender();
 }
 
 // ---------- load model ----------
@@ -1534,6 +1564,8 @@ $('saveColored').addEventListener('click', ()=>{
 
 // ---------- render style (shading / vividness / rim glow) ----------
 $('shading').addEventListener('change', e=>setShading(e.target.value));
+$('outlineOn').addEventListener('change', refreshOutline);
+$('outlineW').addEventListener('input', e=>{ $('outlineWV').textContent=e.target.value; refreshOutline(); });
 $('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
@@ -1646,7 +1678,7 @@ function smoothMesh(rec, iters){
   for(let i=0;i<nv;i++){ const g=vg[i]; arr[3*i]=P[3*g];arr[3*i+1]=P[3*g+1];arr[3*i+2]=P[3*g+2]; }
   posAttr.needsUpdate=true; rebuildSmoothNormals(rec);
 }
-function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); if(typeof refreshGlassShellGeo==='function') refreshGlassShellGeo(); }
+function applySmoothing(){ const it=+$('smooth').value; meshes.forEach(rec=>smoothMesh(rec,it)); requestRender(); refreshSliceViews(); if(typeof refreshAuraGeo==='function') refreshAuraGeo(); if(typeof refreshGlassShellGeo==='function') refreshGlassShellGeo(); if(typeof refreshOutline==='function') refreshOutline(); }
 // ---------- whole-brain glass shell (context "underlay", independent of which regions are toggled on) ----------
 let glassShell=null, glassShellGeo=null;
 function mergeAllRegions(filter){ const list=meshes.filter(filter||(()=>true)); if(!list.length) list.push(...meshes);
@@ -3266,7 +3298,7 @@ function initAtlasPicker(){
 // Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
-  'shading','vivid','rim','rimColor','patMode','wireWidth','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
+  'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
   'coloredOp','grayOp','satCut','glass','smooth',
