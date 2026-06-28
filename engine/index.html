@@ -407,6 +407,14 @@
         <input type="range" id="ovOpacity" min="0.05" max="1" step="0.05" value="1"></div>
       <div class="ctl"><div class="lab"><span title="Color vividness / saturation of this overlay in slices & mosaic">Overlay vividness</span><span id="ovVividV">1.0</span></div>
         <input type="range" id="ovVivid" min="0.5" max="2.5" step="0.05" value="1"></div>
+      <div class="row"><label title="Make active regions glimmer/twinkle in the 3D mesh — conveys that fMRI is functional/live. Best in Mesh view.">✨ Functional sparkle</label>
+        <label class="toggle"><input type="checkbox" id="fxSparkle"> on</label></div>
+      <div class="ctl" id="sparkRow1" style="display:none"><div class="lab"><span>Sparkle strength</span><span id="sparkAmtV">0.8</span></div>
+        <input type="range" id="sparkAmt" min="0" max="2" step="0.05" value="0.8"></div>
+      <div class="ctl" id="sparkRow2" style="display:none"><div class="lab"><span>Sparkle speed</span><span id="sparkSpeedV">1.0</span></div>
+        <input type="range" id="sparkSpeed" min="0.1" max="4" step="0.1" value="1"></div>
+      <div class="ctl" id="sparkRow3" style="display:none"><div class="lab"><span>Twinkle (sharpness)</span><span id="sparkTwV">6</span></div>
+        <input type="range" id="sparkTw" min="1" max="16" step="1" value="6"></div>
       <div class="ctl" id="ovFrameRow" style="display:none"><div class="lab"><span title="4D timeseries frame — animates the 3D mesh colors and the 2D slices; orbit/zoom while it plays">⏱ 4D frame</span><span id="ovFrameV">1/1</span></div>
         <div class="row" style="gap:6px"><button class="sm" id="ovPlay" title="Play / pause the 4D timeseries">▶</button>
           <input type="range" id="ovFrame" min="0" max="0" step="1" value="0" style="flex:1">
@@ -1119,7 +1127,9 @@ const patternUniforms = {
   uCartoon:{value:0}, uToonSteps:{value:4.0}, uInkEdge:{value:0.62}, uInkCrease:{value:0.85}, uInkColor:{value:new THREE.Color('#000000')},
   // extra analytic shading models (clean-room: standard lighting math, not copied from GPL shaders)
   // 0=off(Standard) 1=Gooch(warm/cool NPR) 2=Matte(wrap diffuse) 3=Glossy(Blinn-Phong) 4=Metal
-  uShade:{value:0}
+  uShade:{value:0},
+  // fMRI "functional sparkle": active overlay regions glimmer/twinkle (shared time + params)
+  uTime:{value:0}, uSparkAmt:{value:0}, uSparkSpeed:{value:1.0}, uSparkTw:{value:6.0}
 };
 // "on" = 1 for solid cells, 0 for pattern cells. uPatMode 0=darken off cells, 1=make them transparent (cutout).
 const COLOR_GLSL = `
@@ -1263,14 +1273,27 @@ const SHADE_GLSL = `
     outgoingLight = col;
   }
 `;
+// fMRI functional sparkle — added at the very end of shading so it works under any model.
+// Active overlay regions glimmer (slow shimmer + sharp per-region twinkle), conveying "this is live".
+const SPARKLE_GLSL = `
+  if(uSparkAmt > 0.001 && uActive > 0.5){
+    float t = uTime*uSparkSpeed + uPhase;
+    float glow = 0.5 + 0.5*sin(t*2.0);
+    float spk = pow(0.5 + 0.5*sin(t*9.0 + vPatPos.x*7.0 + vPatPos.y*5.0 + vPatPos.z*6.0), uSparkTw);
+    float m = mix(glow, spk, 0.62) * (0.5 + 0.7*uActVal);
+    outgoingLight += outgoingLight*(uSparkAmt*(0.25 + m)) + vec3(uSparkAmt*spk*0.7);
+  }
+`;
 function attachFX(mat){
+  if(!mat.userData.fx) mat.userData.fx={ uActive:{value:0}, uActVal:{value:0}, uPhase:{value:Math.random()*6.2831} };
   mat.onBeforeCompile = (shader)=>{
     for(const k of Object.keys(patternUniforms)) shader.uniforms[k]=patternUniforms[k];
+    shader.uniforms.uActive=mat.userData.fx.uActive; shader.uniforms.uActVal=mat.userData.fx.uActVal; shader.uniforms.uPhase=mat.userData.fx.uPhase;
     shader.vertexShader = 'varying vec3 vPatPos;\nattribute vec3 barycentric;\nvarying vec3 vBary;\n' + shader.vertexShader
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPatPos = position;\n  vBary = barycentric;');
-    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\nuniform float uCartoon;\nuniform float uToonSteps;\nuniform float uInkEdge;\nuniform float uInkCrease;\nuniform vec3 uInkColor;\nuniform float uShade;\n'
+    let f = 'varying vec3 vPatPos;\nvarying vec3 vBary;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\nuniform float uVivid;\nuniform float uRim;\nuniform vec3 uRimColor;\nuniform float uWire;\nuniform float uWireWidth;\nuniform float uWireFill;\nuniform float uCartoon;\nuniform float uToonSteps;\nuniform float uInkEdge;\nuniform float uInkCrease;\nuniform vec3 uInkColor;\nuniform float uShade;\nuniform float uTime;\nuniform float uSparkAmt;\nuniform float uSparkSpeed;\nuniform float uSparkTw;\nuniform float uActive;\nuniform float uActVal;\nuniform float uPhase;\n'
       + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + COLOR_GLSL);
-    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + SHADE_GLSL + CARTOON_GLSL + '\n#include <opaque_fragment>');
+    if(f.includes('#include <opaque_fragment>')) f = f.replace('#include <opaque_fragment>', RIM_GLSL + SHADE_GLSL + CARTOON_GLSL + SPARKLE_GLSL + '\n#include <opaque_fragment>');
     shader.fragmentShader = f;
   };
 }
@@ -1305,6 +1328,7 @@ function setShading(type){
     o.mesh.material=nm; old.dispose();
   }
   applySurfStyle(); setOpacities();
+  if(overlay.on) recolorOverlay();   // re-apply overlay colors + sparkle-active flags to the new materials
 }
 
 // ---- inverted-hull ink outline (constant-width black border; composes with any shading) ----
@@ -3300,7 +3324,7 @@ function initAtlasPicker(){
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
-  'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode',
+  'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
@@ -3482,6 +3506,14 @@ function initOverlayUI(){
   const _recolorBase=()=>{ if(overlay.combine && typeof recolorDual==='function') recolorDual(); else recolorOverlay(); refreshSliceViews(); };
   $('ovBaseColor').addEventListener('input', _recolorBase);
   $('ovBaseDark').addEventListener('click', ()=>{ $('ovBaseColor').value='#2a2e37'; _recolorBase(); });
+  // fMRI functional sparkle
+  const sparkSync=()=>{ const on=$('fxSparkle').checked; patternUniforms.uSparkAmt.value = on?(+$('sparkAmt').value):0;
+    patternUniforms.uSparkSpeed.value=+$('sparkSpeed').value; patternUniforms.uSparkTw.value=+$('sparkTw').value;
+    ['sparkRow1','sparkRow2','sparkRow3'].forEach(id=>{ const e=$(id); if(e) e.style.display=on?'':'none'; }); requestRender(); };
+  $('fxSparkle').addEventListener('change', sparkSync);
+  $('sparkAmt').addEventListener('input', e=>{ $('sparkAmtV').textContent=(+e.target.value).toFixed(2); sparkSync(); });
+  $('sparkSpeed').addEventListener('input', e=>{ $('sparkSpeedV').textContent=(+e.target.value).toFixed(1); sparkSync(); });
+  $('sparkTw').addEventListener('input', e=>{ $('sparkTwV').textContent=e.target.value; sparkSync(); });
   $('ovFrame').addEventListener('input', e=>{ if(selOv>=0){ ovStopPlay(); setOverlayFrame(overlays[selOv], +e.target.value); } });
   $('ovPlay').addEventListener('click', ovTogglePlay);
   $('ovFps').addEventListener('change', ()=>{ if(_ovPlayTimer){ ovStopPlay(); ovTogglePlay(); } });
@@ -3584,7 +3616,7 @@ function recolorOverlay(){
   const span=(mx-lo)||1e-6;
   for(const o of meshes){
     const raw=overlay.vals[o.meta.id];
-    let hex=NEUTRAL;
+    let hex=NEUTRAL, active=false, nv=0;
     if(raw!==undefined && isFinite(raw)){
       const v=curVal(raw);
       if(threshPass(v,lo,span) && (v-lo) > 0){
@@ -3592,10 +3624,11 @@ function recolorOverlay(){
         let c;
         if(solid){ c=_gray.clone().lerp(ovC, n); }
         else { const a=sampleCmap(name,n); c=new THREE.Color(a[0],a[1],a[2]); }
-        hex='#'+c.getHexString();
+        hex='#'+c.getHexString(); active=true; nv=n;
       }
     }
     o.meta.color=hex; o.mesh.material.color.set(hex); setSwatch(o.meta.node,hex);
+    const fx=o.mesh.material.userData.fx; if(fx){ fx.uActive.value=active?1:0; fx.uActVal.value=nv; }  // mark active for fMRI sparkle
   }
   setOpacities();
   $('ovInfo').textContent=`${overlay.name} · range ${mn.toFixed(2)}…${mx.toFixed(2)}`;
@@ -5280,8 +5313,10 @@ function tick(){
   const projSpinOn = projOnNow && projLayer && $('projMode').value==='wrap' && +$('projSpin').value>0;
   if(projSpinOn){ _projT+=dt; PROJ_UN.uTime.value=_projT; }
   const projVidOn = projOnNow && projVideo && !projVideo.paused;
+  const sparkleOn = patternUniforms.uSparkAmt.value>0.001;
+  if(sparkleOn) patternUniforms.uTime.value += dt;
   // ongoing animations must keep rendering every frame
-  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim || projSpinOn || projVidOn || _recording;
+  const continuous = playing || spinOn || controls.autoRotate || pulseOn || flowOn || auraAnim || projSpinOn || projVidOn || sparkleOn || _recording;
   if(playing){
     animPhase += dt*(+$('animSpeed').value)*0.9;
     const v=Math.sin(animPhase-Math.PI/2)*0.5+0.5; // 0..1 eased loop
