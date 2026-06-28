@@ -497,7 +497,7 @@
         <option>Standard</option><option>Matcap</option><option>Cartoon</option>
         <optgroup label="Lighting"><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Phong</option><option>Metal</option><option>Anisotropic</option><option>Hemispheric</option></optgroup>
         <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
-        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option></optgroup>
+        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option></optgroup>
         <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
@@ -1238,6 +1238,12 @@ const SHADE_GLSL = `
     } else if(sh==22){  // Thermal — heat-map (jet) by shading
       float tt = clamp(0.12 + 0.95*max(ndl,0.0) + 0.22*fres, 0.0, 1.0);
       col = clamp(vec3(1.5-abs(4.0*tt-3.0), 1.5-abs(4.0*tt-2.0), 1.5-abs(4.0*tt-1.0)), 0.0, 1.0);
+    } else if(sh==23){  // Curvature 2-tone — FreeSurfer-style binary gyri/sulci
+      float sulc = smoothstep(0.5,1.25, length(fwidth(N)));
+      col = mix(vec3(0.80), vec3(0.40), sulc) * (0.7 + 0.3*max(ndl,0.0));
+    } else if(sh==24){  // Ambient occlusion — strong cavity darkening
+      float ao = 1.0 - 0.85*smoothstep(0.2,1.4, length(fwidth(N)));
+      col = base * ao * (0.55 + 0.45*max(ndl,0.0));
     }
     outgoingLight = col;
   }
@@ -1266,7 +1272,7 @@ function buildMaterial(type, hex){
 }
 let shadingType='Standard';
 const SHADE_MODE={ Gooch:1, Matte:2, Glossy:3, Metal:4, Hemispheric:5, Subsurface:6, 'X-ray':7, Curvature:8, Iridescent:9, Clay:10,
-  Phong:11, Anisotropic:12, Velvet:13, Pearl:14, Chrome:15, Normals:16, Glass:17, Blueprint:18, Contour:19, Wax:20, Spectral:21, Thermal:22 };
+  Phong:11, Anisotropic:12, Velvet:13, Pearl:14, Chrome:15, Normals:16, Glass:17, Blueprint:18, Contour:19, Wax:20, Spectral:21, Thermal:22, 'Curvature 2-tone':23, 'Ambient occlusion':24 };
 function setShading(type){
   shadingType=type;
   const cartoon = (type==='Cartoon');
