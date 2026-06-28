@@ -160,6 +160,40 @@ All coordinates are **MNI152** unless noted; meshes use three.js axes (+X=Right,
 
 ---
 
+## 4b. Shading, materials & volume
+
+All clean-room (our own GLSL / procedural matcaps — no third-party shader code or assets) and
+persisted in presets / `.bwzproj`.
+
+**Shading menu** (`#shading`) — 45 looks, each with a thumbnail in the dropdown:
+- *Base:* Standard, Matcap, Cartoon (cel-shade + black inked sulci).
+- *Lighting:* Gooch, Matte, Glossy, Phong, Metal, Anisotropic, Hemispheric.
+- *Material FX:* Subsurface, Velvet, Pearl, Chrome, Glass, Wax, Clay, Iridescent.
+- *Imaging / NPR:* X-ray, Curvature, Curvature 2-tone, Ambient occlusion, Normals, Blueprint,
+  Contour, Spectral, Thermal, Hatching, Hologram.
+- *Materials (matcap)*, value `matcap:<Name>`: Clay, Skin, Pearl, Jade, Bronze, Chrome, Gold, Glass,
+  Wax, Basalt, Copper, Pewter, Ruby, Emerald, Sapphire, Porcelain (environment-lit: metals reflect,
+  glass refracts, gems sparkle, pearl iridesces).
+
+**Ink outline** — `#outlineOn` (checkbox) + `#outlineW` (width): constant-width inverted-hull black
+outline; composes with any shading.
+
+**Base-brain color** — `#ovBaseColor` (+ "🌚 dark"): color of uncolored regions when an overlay is
+active. Darken it so a light colormap pops on a white figure background.
+
+**Functional sparkle (fMRI)** — `#fxSparkle` (checkbox) + `#sparkAmt` / `#sparkSpeed` / `#sparkTw`:
+active overlay regions glimmer/twinkle; animates continuously while on.
+
+**Volume render** (`#volOn`) — `#volMode`: `0` MIP · `1` Accumulate · `2` MinIP · `3` X-ray/DRR ·
+`4` Isosurface (lit); `#volCmap`, `#volThr`, `#volOp`, `#volSteps`. Fade the brain (glass/opacity) to
+see the voxels inside.
+
+**Visual dropdowns** — the colormap selects (`#cmap`, `#connCmap`) show a gradient swatch and the
+`#shading` select a brain thumbnail beside each option (a generic `richSelect()` over the native
+`<select>`, which stays the source of truth).
+
+---
+
 ## 5. Demo registry (`?demo=<id>`)
 
 `index.html?demo=<id>` runs a scripted setup. The gallery (`gallery.html`) links to these. Current ids:

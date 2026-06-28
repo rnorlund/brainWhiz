@@ -25,7 +25,9 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 - **Every ROI is its own 3D object** — explode, rotate, isolate, recolor, fade.
 - **Overlay stack** — task maps *and* your own MNI maps, each with color/colormap/threshold/|abs|/TFCE, plus **✂ crop-to-background** to hide out-of-brain artifacts; one drives the 3D brain, all blend in slices/mosaic.
 - **4D timeseries** — scrub/▶ play a 4D overlay; the 3D mesh and 2D slices animate while you orbit.
-- **Volume rendering** — GLSL raymarch (MIP / accumulate) of a map as glowing voxels **inside a glass brain**.
+- **45-look shading library** — Cartoon (MRIcroGL pink+ink), Gooch, X-ray, Iridescent, Thermal, Hatching, Hologram… + a 16-material **matcap** set (gold, chrome, jade, ruby, glass…), all procedural; **✒ ink outline**; thumbnail previews in the menu.
+- **✨ Functional fMRI sparkle** — active regions glimmer/twinkle to signal live activity while you orbit.
+- **Volume rendering** — GLSL raymarch (MIP / Accumulate / MinIP / X-ray-DRR / Isosurface) of a map as glowing voxels **inside a glass brain**.
 - **White-matter tracts** — solid hulls *or* synthesized **fiber strands** (white, or DTI-orientation colored).
 - **Three view modes** — 3D mesh, ortho slices, mosaic/lightbox — with **28 colormaps** and TFCE.
 - **DTI connectivity** averaged across ABC participants — strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows.
@@ -123,7 +125,18 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 
 **Connectivity** — averaged DTI streamline strength; cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection.
 
-**Render** — vividness (saturation), rim/fresnel glow, Standard vs **Matcap** shading, soft studio environment; surface styles: solid, flat, **wireframe (adjustable thickness)**, and procedural **checkerboard / stripes / grid / dots / hatch** with *darken* or *transparent* (perforated lattice) fill; per-tier opacity (colored / gray / all); any background color; **save/load presets**.
+**Render & shading** — a **45-look shading library** in the Shading menu (each with a thumbnail preview):
+Standard, Matcap, and **Cartoon** (MRIcroGL-style pink cel-shade + black inked folds), plus ~20
+analytic models — **Gooch, Matte, Glossy, Phong, Metal, Anisotropic, Hemispheric, Subsurface, X-ray,
+Curvature, Curvature 2-tone, Ambient occlusion, Iridescent, Spectral, Thermal, Velvet, Pearl, Chrome,
+Glass, Blueprint, Contour, Wax, Normals, Hatching, Hologram** — and a **16-material matcap library**
+(Clay, Skin, Pearl, Jade, Bronze, Chrome, Gold, Glass, Wax, Basalt, Copper, Pewter, Ruby, Emerald,
+Sapphire, Porcelain), all procedurally generated (no external assets). Plus a constant-width **✒ ink
+outline** (inverted-hull, composes with any look), an adjustable **base-brain color** (darken to make a
+light colormap pop), vividness, rim/fresnel glow; surface styles: solid, flat, **wireframe**, and
+procedural **checkerboard / stripes / grid / dots / hatch**; per-tier opacity; any background; **presets**.
+**Visual dropdowns**: the colormap menus show a gradient swatch and the Shading menu a brain thumbnail
+beside each option.
 
 **Loading data (drag-and-drop)** — drop files onto the viewport; the drop zone splits into **Background / Overlay / Build-atlas** bands (in Mesh view the top band is **Build mesh**). Accepts NIfTI, GIFTI, FreeSurfer, TRK/TCK, CSV, `.bwz`, `.bwzproj` — see [API.md §3](API.md).
 
@@ -133,7 +146,15 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 
 **4D timeseries** — drop a 4D overlay and a **▶ frame player** appears; the 3D mesh colors and the 2D slices animate frame-by-frame (stable range) while you orbit/zoom.
 
-**Volume rendering** — raymarch the active overlay as a 3D `Data3DTexture` (**MIP** or **accumulate**, threshold/opacity/colormap/quality); pair with the **glass brain** to see glowing voxels inside the shell. 4D volumes animate on playback.
+**Volume rendering** — raymarch the active overlay as a 3D `Data3DTexture` with five transfer functions:
+**MIP** (max), **Accumulate** (composite), **MinIP** (min), **X-ray / DRR** (attenuation integral —
+simulated radiograph), and **Isosurface** (gradient-lit solid). Threshold/opacity/colormap/quality; pair
+with the **glass brain** to see glowing voxels inside the shell. 4D volumes animate on playback.
+
+**Functional sparkle (fMRI)** — a **✨ toggle** in the overlay editor makes active overlay regions
+*glimmer/twinkle* (strength / speed / twinkle-sharpness sliders) — a slow glow plus sharp per-region
+twinkle that signals "this is live/functional," especially while orbiting or zooming. Works under any
+shading model; the inactive base brain stays calm.
 
 **Projector** — project an image, video, or **webcam** onto the cortex (wrap, project-from-view, or **decal stamp**). Decals conform to the surface, take **shapes** (circle/heart/star/…), and support **editable size/rotation + an outline** (color & thickness).
 
@@ -141,7 +162,7 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 
 **Shareable outputs** — **PNG**; **MP4/WebM** screen recording of the 3D viewport; a **🔗 living interactive `.html`** figure (self-contained, rotate/zoom/explode — for journal supplementary); and a **🎬 keyframe director** that interpolates camera/explode/overlay/4D/caption keyframes and records a captioned MP4 flythrough.
 
-**Access** — the public site is behind a lightweight password gate (deterrent; the app is client-side). Local use and the Engine edition are never gated.
+**Access** — the public site is open (the password gate is disabled; re-enable by deleting one `return;` line in the gate IIFE). Embeds (`?embed=1`) are never gated. Local use and the Engine edition are ungated.
 
 ---
 
