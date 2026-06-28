@@ -511,6 +511,12 @@
       <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
     <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
       <input type="range" id="outlineW" min="0.5" max="6" step="0.5" value="2"></div>
+    <div class="row"><label title="Screen-space ambient occlusion — real cavity/sulcal depth darkening (mesh view)">🌑 Ambient occlusion (SSAO)</label>
+      <label class="toggle"><input type="checkbox" id="ssaoOn"> on</label></div>
+    <div class="ctl" id="ssaoRow1" style="display:none"><div class="lab"><span>SSAO strength</span><span id="ssaoIntV">1.0</span></div>
+      <input type="range" id="ssaoInt" min="0" max="2.5" step="0.1" value="1"></div>
+    <div class="ctl" id="ssaoRow2" style="display:none"><div class="lab"><span>SSAO radius</span><span id="ssaoRadiusV">1.0</span></div>
+      <input type="range" id="ssaoRadius" min="0.2" max="3" step="0.1" value="1"></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
@@ -1380,6 +1386,46 @@ function refreshOutline(){
   requestRender();
 }
 
+// ---- SSAO (screen-space ambient occlusion) — optional post-process, MAIN MESH VIEW ONLY ----
+// When OFF the render path is unchanged (zero regression). When ON: render scene to a target with a
+// depth texture, then a fullscreen pass reconstructs view position + normal from depth and darkens
+// cavities. Clean-room standard SSAO.
+function ssaoOn(){ return $('ssaoOn') && $('ssaoOn').checked; }
+let _ssao=null;
+function ensureSSAO(){ if(_ssao) return _ssao;
+  const dp=new THREE.Vector2(); renderer.getDrawingBufferSize(dp);
+  const depth=new THREE.DepthTexture(dp.x, dp.y); depth.type=THREE.UnsignedIntType;
+  const rt=new THREE.WebGLRenderTarget(dp.x, dp.y, {depthTexture:depth, depthBuffer:true});
+  const mat=new THREE.ShaderMaterial({ extensions:{derivatives:true},
+    uniforms:{ tColor:{value:rt.texture}, tDepth:{value:depth}, uRes:{value:new THREE.Vector2(dp.x,dp.y)},
+      uInt:{value:1.0}, uRadius:{value:1.0}, uProjInv:{value:new THREE.Matrix4()} },
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`,
+    fragmentShader:`varying vec2 vUv; uniform sampler2D tColor,tDepth; uniform vec2 uRes; uniform float uInt,uRadius; uniform mat4 uProjInv;
+      vec3 viewPos(vec2 uv){ float d=texture2D(tDepth,uv).x; vec4 c=uProjInv*vec4(uv*2.0-1.0, d*2.0-1.0, 1.0); return c.xyz/c.w; }
+      void main(){ vec4 col=texture2D(tColor,vUv); float d=texture2D(tDepth,vUv).x;
+        if(d>=0.9999){ gl_FragColor=col; return; }
+        vec3 P=viewPos(vUv); vec3 N=normalize(cross(dFdx(P),dFdy(P))); vec2 px=1.0/uRes;
+        vec2 dirs[12]; dirs[0]=vec2(1.,0.);dirs[1]=vec2(-1.,0.);dirs[2]=vec2(0.,1.);dirs[3]=vec2(0.,-1.);
+        dirs[4]=vec2(.7,.7);dirs[5]=vec2(-.7,.7);dirs[6]=vec2(.7,-.7);dirs[7]=vec2(-.7,-.7);
+        dirs[8]=vec2(.45,.2);dirs[9]=vec2(-.3,.55);dirs[10]=vec2(.2,-.6);dirs[11]=vec2(-.6,-.25);
+        float occ=0.0;
+        for(int i=0;i<12;i++){ float jit=8.0+24.0*fract(sin(dot(vUv+float(i),vec2(12.99,78.23)))*43758.5);
+          vec2 o=dirs[i]*jit*px; vec3 Q=viewPos(vUv+o); vec3 dir=Q-P; float dist=length(dir)+1e-4;
+          float rc=smoothstep(uRadius*2.5, 0.0, dist);
+          occ += max(dot(N, dir/dist),0.0)*rc; }
+        occ/=12.0; float ao=clamp(1.0 - uInt*occ, 0.0, 1.0);
+        gl_FragColor=vec4(col.rgb*ao, col.a); }` });
+  const scn=new THREE.Scene(); scn.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), mat));
+  _ssao={rt, depth, mat, scn, cam:new THREE.Camera()}; return _ssao;
+}
+function renderSSAO(){ const s=ensureSSAO(); const dp=new THREE.Vector2(); renderer.getDrawingBufferSize(dp);
+  if(s.rt.width!==dp.x||s.rt.height!==dp.y){ s.rt.setSize(dp.x,dp.y); s.mat.uniforms.uRes.value.set(dp.x,dp.y); }
+  s.mat.uniforms.uInt.value=+$('ssaoInt').value; s.mat.uniforms.uRadius.value=(+$('ssaoRadius').value)*(modelRadius||80)*0.06;
+  s.mat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
+  renderer.setRenderTarget(s.rt); renderer.clear(); renderer.render(scene,camera);
+  renderer.setRenderTarget(null); renderer.render(s.scn, s.cam);
+}
+
 // ---------- load model ----------
 function b64ToBuf(b64){
   const bin = atob(b64); const len = bin.length; const bytes = new Uint8Array(len);
@@ -1624,6 +1670,9 @@ $('saveColored').addEventListener('click', ()=>{
 $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('outlineOn').addEventListener('change', refreshOutline);
 $('outlineW').addEventListener('input', e=>{ $('outlineWV').textContent=e.target.value; refreshOutline(); });
+$('ssaoOn').addEventListener('change', ()=>{ const on=$('ssaoOn').checked; ['ssaoRow1','ssaoRow2'].forEach(id=>{const e=$(id);if(e)e.style.display=on?'':'none';}); requestRender(); });
+$('ssaoInt').addEventListener('input', e=>{ $('ssaoIntV').textContent=(+e.target.value).toFixed(1); requestRender(); });
+$('ssaoRadius').addEventListener('input', e=>{ $('ssaoRadiusV').textContent=(+e.target.value).toFixed(1); requestRender(); });
 $('vivid').addEventListener('input', e=>{ patternUniforms.uVivid.value=+e.target.value; $('vividVal').textContent=(+e.target.value).toFixed(2)+'×'; refreshSliceViews(); });
 $('rim').addEventListener('input', e=>{ patternUniforms.uRim.value=+e.target.value; $('rimVal').textContent=(+e.target.value).toFixed(2); });
 $('rimColor').addEventListener('input', e=>patternUniforms.uRimColor.value.set(e.target.value));
@@ -3356,7 +3405,7 @@ function initAtlasPicker(){
 // Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
-  'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
+  'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth',
@@ -5367,7 +5416,8 @@ function tick(){
   if(renderRequested){
     renderRequested=false;
     headlight.position.copy(camera.position);
-    renderer.render(scene,camera);
+    if(ssaoOn() && !sliceMode && !mosaicMode){ try{ renderSSAO(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
+    else renderer.render(scene,camera);
     if(sliceMode) _sl3dDirty=true;          // 3D scene changed -> the slice-grid thumbnail is now stale
   }
   // refresh the slice-grid 3D thumbnail when the 3D look changes (wireframe, rim, shading, …),
