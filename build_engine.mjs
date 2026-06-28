@@ -19,7 +19,7 @@ const OUT  = path.join(ROOT, 'engine');
 
 // Files/dirs copied verbatim (kept byte-identical to main so sync is trivial).
 const COPY = [
-  'index.html', 'colormaps.js', 'vendor',
+  'index.html', 'colormaps.js', 'shading_thumbs.js', 'vendor',
   'build_bundle.py', 'build_colormaps.py', 'regen_registry.py', 'interpolate_conn.py',
   'make_figure.mjs', 'BWZ_FORMAT.md', 'brainwhiz_logo.png', 'favicon.png',
 ];
