@@ -108,6 +108,7 @@
   .rs-item img{width:50px;height:38px;border-radius:4px;object-fit:cover;flex:none;background:#fff}
   .rs-item canvas{border-radius:3px;flex:none}
   .rs-item span{font-size:12px;white-space:nowrap}
+  .rs-grp{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#9fb3c8);opacity:.7;padding:7px 8px 3px}
   .grouplbl{padding:9px 12px 5px;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
     color:var(--muted);opacity:.62;background:var(--panel);border-bottom:1px solid var(--line)}
   .grouplbl:first-child{border-top:none}
@@ -492,7 +493,12 @@
     <div class="row"><label title="How pattern cells are rendered: darkened, or cut out entirely (holes through the mesh)">Pattern fill</label>
       <select id="patMode"><option value="0">Darken cells</option><option value="1">Cut out cells (holes)</option></select></div>
     <div class="row"><label title="Lighting model for the mesh surface">Shading</label>
-      <select id="shading"><option>Standard</option><option>Matcap</option><option>Cartoon</option><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Metal</option><option>Hemispheric</option><option>Subsurface</option><option>X-ray</option><option>Curvature</option><option>Iridescent</option><option>Clay</option><option>Phong</option><option>Anisotropic</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Normals</option><option>Glass</option><option>Blueprint</option><option>Contour</option><option>Wax</option><option>Spectral</option><option>Thermal</option></select></div>
+      <select id="shading">
+        <option>Standard</option><option>Matcap</option><option>Cartoon</option>
+        <optgroup label="Lighting"><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Phong</option><option>Metal</option><option>Anisotropic</option><option>Hemispheric</option></optgroup>
+        <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
+        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option></optgroup>
+        <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
       <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
     <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
@@ -966,16 +972,57 @@ app.appendChild(renderer.domElement);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-// procedurally generated matcap (studio sphere) for the Matcap shading option
-function makeMatcap(){
-  const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
-  const g=x.createRadialGradient(96,80,20, 128,128,150);
-  g.addColorStop(0,'#ffffff'); g.addColorStop(0.35,'#cfd6e0');
-  g.addColorStop(0.75,'#6a7180'); g.addColorStop(1,'#2a2f3a');
-  x.fillStyle=g; x.beginPath(); x.arc(128,128,128,0,7); x.fill();
+// ---- procedural matcap library (clean-room: our own per-normal studio lighting, no external assets) ----
+// A matcap maps the view-space normal to a lit sphere image. We synthesize each material by shading
+// a sphere with Lambert + specular + Fresnel rim using per-material parameters. Original code.
+const _hex2rgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255]; };
+function makeMatcapTex(o){
+  const N=256, c=document.createElement('canvas'); c.width=c.height=N; const x=c.getContext('2d');
+  const img=x.createImageData(N,N), d=img.data;
+  const base=_hex2rgb(o.base), spec=_hex2rgb(o.spec||'#ffffff'), rim=_hex2rgb(o.rim||'#ffffff');
+  const Lx=-0.42, Ly=0.55, Lz=0.72, ll=Math.hypot(Lx,Ly,Lz);
+  const lx=Lx/ll, ly=Ly/ll, lz=Lz/ll;
+  const amb=o.amb??0.4, sExp=o.sExp??40, sInt=o.sInt??0.4, rExp=o.rExp??3, rInt=o.rInt??0.25, irid=o.irid?1:0, gain=o.gain??1;
+  for(let py=0;py<N;py++){ for(let px=0;px<N;px++){
+    const nx=(px-128)/128, ny=-(py-128)/128, r2=nx*nx+ny*ny, i=(py*N+px)*4;
+    if(r2>1){ d[i+3]=0; continue; }
+    const nz=Math.sqrt(1-r2);
+    const ndl=Math.max(0, nx*lx+ny*ly+nz*lz);
+    // reflect light about normal, dot with view (0,0,1)
+    const rl=2*ndl, rz=rl*nz - lz, sp=Math.pow(Math.max(0,rz), sExp)*sInt;
+    const fres=Math.pow(1-nz, rExp)*rInt;
+    let rr=base[0]*(amb+(1-amb)*ndl) + spec[0]*sp, gg=base[1]*(amb+(1-amb)*ndl) + spec[1]*sp, bb=base[2]*(amb+(1-amb)*ndl) + spec[2]*sp;
+    if(irid){ rr+=fres*(0.5+0.5*Math.cos(6.28*nz)); gg+=fres*(0.5+0.5*Math.cos(6.28*nz+2.1)); bb+=fres*(0.5+0.5*Math.cos(6.28*nz+4.2)); }
+    else { rr+=rim[0]*fres; gg+=rim[1]*fres; bb+=rim[2]*fres; }
+    d[i]=Math.min(255,rr*gain*255); d[i+1]=Math.min(255,gg*gain*255); d[i+2]=Math.min(255,bb*gain*255); d[i+3]=255;
+  }}
+  x.putImageData(img,0,0);
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
+// material presets (display name -> params). Original palette.
+const MATCAP_PRESETS={
+  Clay:{base:'#c0876a',amb:0.5,sExp:4,sInt:0.05,rInt:0.08,rim:'#ffd8c0'},
+  Skin:{base:'#e6b496',amb:0.5,sExp:10,sInt:0.16,rInt:0.22,rim:'#ffd9c4'},
+  Pearl:{base:'#ece4f0',amb:0.55,sExp:30,sInt:0.5,rInt:0.45,irid:true},
+  Jade:{base:'#3fa37a',amb:0.38,sExp:40,sInt:0.5,rInt:0.32,rim:'#bfffe2'},
+  Bronze:{base:'#8a5a2a',amb:0.3,sExp:60,sInt:0.7,rInt:0.18,spec:'#ffe0b0'},
+  Chrome:{base:'#aab0bc',amb:0.16,sExp:200,sInt:1.0,rInt:0.55,rim:'#eaf2ff',gain:1.05},
+  Gold:{base:'#c9a23c',amb:0.26,sExp:120,sInt:0.9,rInt:0.25,spec:'#fff0c0'},
+  Glass:{base:'#28323f',amb:0.12,sExp:90,sInt:0.8,rExp:2,rInt:0.95,rim:'#cfe6ff'},
+  Wax:{base:'#e8c98a',amb:0.5,sExp:10,sInt:0.2,rExp:2.2,rInt:0.5,rim:'#ffcaa0'},
+  Basalt:{base:'#3a3f47',amb:0.32,sExp:20,sInt:0.2,rInt:0.14,rim:'#9fb3c8'},
+  Copper:{base:'#b06a40',amb:0.28,sExp:80,sInt:0.7,rInt:0.2,spec:'#ffd0a0'},
+  Pewter:{base:'#8c93a0',amb:0.35,sExp:40,sInt:0.4,rInt:0.2},
+  Ruby:{base:'#9b1c39',amb:0.25,sExp:80,sInt:0.7,rInt:0.4,rim:'#ffd0d8'},
+  Emerald:{base:'#1f7a52',amb:0.25,sExp:80,sInt:0.7,rInt:0.4,rim:'#c0ffe0'},
+  Sapphire:{base:'#1f3a8a',amb:0.25,sExp:80,sInt:0.7,rInt:0.45,rim:'#cfe0ff'},
+  Porcelain:{base:'#f0eee8',amb:0.6,sExp:50,sInt:0.4,rInt:0.2,rim:'#ffffff'}
+};
+const MATCAP_NAMES=Object.keys(MATCAP_PRESETS);
+const MATCAPS={}; for(const k of MATCAP_NAMES) MATCAPS[k]=makeMatcapTex(MATCAP_PRESETS[k]);
+function makeMatcap(){ return makeMatcapTex({base:'#cfd6e0',amb:0.32,sExp:24,sInt:0.5,rInt:0.25,rim:'#ffffff'}); }
 const matcapTex = makeMatcap();
+let activeMatcap = matcapTex;   // current matcap texture (set by setShading for named materials)
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -1209,7 +1256,7 @@ function attachFX(mat){
 function buildMaterial(type, hex){
   let m;
   if(type==='Matcap'){
-    m=new THREE.MeshMatcapMaterial({matcap:matcapTex, color:new THREE.Color(hex||'#fff'),
+    m=new THREE.MeshMatcapMaterial({matcap:activeMatcap||matcapTex, color:new THREE.Color(hex||'#fff'),
       side:THREE.DoubleSide, transparent:true, opacity:1});
   } else {
     m=new THREE.MeshStandardMaterial({color:new THREE.Color(hex||'#fff'), roughness:0.62, metalness:0.0,
@@ -1223,9 +1270,12 @@ const SHADE_MODE={ Gooch:1, Matte:2, Glossy:3, Metal:4, Hemispheric:5, Subsurfac
 function setShading(type){
   shadingType=type;
   const cartoon = (type==='Cartoon');
+  const mat = type.indexOf('matcap:')===0 ? type.slice(7) : null;   // named matcap material
+  const isMatcap = (type==='Matcap') || !!mat;
   patternUniforms.uCartoon.value = cartoon ? 1 : 0;
-  patternUniforms.uShade.value = SHADE_MODE[type] || 0;          // analytic shading models
-  const baseType = (type==='Matcap') ? 'Matcap' : 'Standard';   // Cartoon/Gooch/… are Standard material + custom frag
+  patternUniforms.uShade.value = (mat || isMatcap) ? 0 : (SHADE_MODE[type] || 0);  // analytic shading models
+  activeMatcap = mat ? (MATCAPS[mat] || matcapTex) : matcapTex;
+  const baseType = isMatcap ? 'Matcap' : 'Standard';            // Cartoon/Gooch/… are Standard material + custom frag
   for(const o of meshes){ const old=o.mesh.material;
     const nm=buildMaterial(o.mesh.userData.forceMatcap ? 'Matcap' : baseType, o.meta.color);  // built surfaces stay matcap (never blow out)
     if(cartoon && nm.isMeshStandardMaterial){ nm.roughness=1.0; nm.metalness=0.0; nm.envMapIntensity=0.0; }  // flat, matte base for crisp ink
@@ -3336,12 +3386,13 @@ function richSelect(selId, makeSwatch, smallSwatch){
   sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel); sel.classList.add('rs-native');
   const btn=document.createElement('button'); btn.type='button'; btn.className='rs-btn';
   const pop=document.createElement('div'); pop.className='rs-pop'; wrap.appendChild(btn); wrap.appendChild(pop);
+  function addOpt(o){ const it=document.createElement('div'); it.className='rs-item'; it.dataset.val=o.value;
+    const sw=makeSwatch(o.value); if(sw) it.appendChild(sw);
+    const t=document.createElement('span'); t.textContent=o.textContent; it.appendChild(t);
+    it.addEventListener('click', e=>{ e.stopPropagation(); sel.value=o.value; sel.dispatchEvent(new Event('change',{bubbles:true})); close(); });
+    pop.appendChild(it); }
   function rebuild(){ pop.innerHTML='';
-    [...sel.options].forEach(o=>{ const it=document.createElement('div'); it.className='rs-item'; it.dataset.val=o.value;
-      const sw=makeSwatch(o.value); if(sw) it.appendChild(sw);
-      const t=document.createElement('span'); t.textContent=o.textContent; it.appendChild(t);
-      it.addEventListener('click', e=>{ e.stopPropagation(); sel.value=o.value; sel.dispatchEvent(new Event('change',{bubbles:true})); close(); });
-      pop.appendChild(it); }); }
+    [...sel.children].forEach(ch=>{ if(ch.tagName==='OPTGROUP'){ const h=document.createElement('div'); h.className='rs-grp'; h.textContent=ch.label; pop.appendChild(h); [...ch.children].forEach(addOpt); } else addOpt(ch); }); }
   function syncBtn(){ btn.innerHTML=''; const sw=(smallSwatch||makeSwatch)(sel.value); if(sw) btn.appendChild(sw);
     const t=document.createElement('span'); t.className='rs-lab'; const o=sel.options[sel.selectedIndex];
     t.textContent=o?o.textContent:sel.value; btn.appendChild(t);
