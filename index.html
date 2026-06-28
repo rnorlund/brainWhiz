@@ -437,7 +437,7 @@
       Press ▶ on a 4D overlay to animate the volume.</div>
     <div class="row"><label class="toggle"><input type="checkbox" id="volOn"> Volume render on</label></div>
     <div class="row"><label title="MIP = brightest voxel along each ray · Accumulate = front-to-back alpha blend">Mode</label>
-      <select id="volMode"><option value="0">MIP (max intensity)</option><option value="1">Accumulate</option></select></div>
+      <select id="volMode"><option value="0">MIP (max intensity)</option><option value="1">Accumulate (composite)</option><option value="2">MinIP (min intensity)</option><option value="3">X-ray / DRR</option><option value="4">Isosurface (lit)</option></select></div>
     <div class="row"><label>Colormap</label><select id="volCmap"></select></div>
     <div class="ctl"><div class="lab"><span>Threshold</span><span id="volThrV">0.15</span></div>
       <input type="range" id="volThr" min="0" max="1" step="0.01" value="0.15"></div>
@@ -3772,13 +3772,24 @@ function ensureVolMesh(){ if(volMesh) return volMesh;
     fragmentShader:`precision highp float; precision highp sampler3D; in vec3 vOrigin; in vec3 vDir; out vec4 fragColor;
       uniform sampler3D uTex; uniform sampler2D uCmap; uniform float uThresh,uOpacity,uSteps,uMode;
       vec2 hitBox(vec3 o, vec3 d){ vec3 inv=1.0/d, a=(vec3(-0.5)-o)*inv, b=(vec3(0.5)-o)*inv, t1=min(a,b), t2=max(a,b); return vec2(max(max(t1.x,t1.y),t1.z), min(min(t2.x,t2.y),t2.z)); }
+      float samp(vec3 p){ return texture(uTex,p+0.5).r; }
+      vec3 grad(vec3 p){ float e=0.004; return normalize(vec3(samp(p+vec3(e,0,0))-samp(p-vec3(e,0,0)), samp(p+vec3(0,e,0))-samp(p-vec3(0,e,0)), samp(p+vec3(0,0,e))-samp(p-vec3(0,0,e)))+1e-6); }
       void main(){ vec3 rd=normalize(vDir); vec2 bnd=hitBox(vOrigin,rd); if(bnd.x>bnd.y) discard; bnd.x=max(bnd.x,0.0);
-        float steps=uSteps; vec3 p=vOrigin+bnd.x*rd; float dt=(bnd.y-bnd.x)/steps;
-        if(uMode<0.5){ float mip=0.0; for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=texture(uTex,p+0.5).r; mip=max(mip,v); p+=rd*dt; }
-          if(mip<=uThresh) discard; vec3 col=texture(uCmap,vec2(mip,0.5)).rgb; fragColor=vec4(col, clamp((mip-uThresh)*uOpacity,0.0,1.0)); }
-        else { vec4 acc=vec4(0.0); for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=texture(uTex,p+0.5).r;
+        float steps=uSteps; vec3 p=vOrigin+bnd.x*rd; float dt=(bnd.y-bnd.x)/steps; int M=int(uMode+0.5);
+        if(M==0){ float mip=0.0; for(float i=0.0;i<512.0;i++){ if(i>=steps) break; mip=max(mip,samp(p)); p+=rd*dt; }   // MIP
+          if(mip<=uThresh) discard; fragColor=vec4(texture(uCmap,vec2(mip,0.5)).rgb, clamp((mip-uThresh)*uOpacity,0.0,1.0)); }
+        else if(M==1){ vec4 acc=vec4(0.0); for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=samp(p);   // accumulate / composite
             if(v>uThresh){ vec3 col=texture(uCmap,vec2(v,0.5)).rgb; float a=clamp((v-uThresh)*uOpacity*0.08,0.0,1.0); acc.rgb+=(1.0-acc.a)*col*a; acc.a+=(1.0-acc.a)*a; if(acc.a>0.97) break; } p+=rd*dt; }
-          if(acc.a<0.01) discard; fragColor=acc; } }`
+          if(acc.a<0.01) discard; fragColor=acc; }
+        else if(M==2){ float mn=1.0; bool any=false; for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=samp(p); if(v>0.02){ mn=min(mn,v); any=true; } p+=rd*dt; }   // MinIP
+          if(!any) discard; fragColor=vec4(texture(uCmap,vec2(mn,0.5)).rgb, clamp(uOpacity*0.7,0.0,1.0)); }
+        else if(M==3){ float sum=0.0; for(float i=0.0;i<512.0;i++){ if(i>=steps) break; sum+=samp(p)*dt; p+=rd*dt; }   // X-ray / DRR (attenuation integral)
+          float att=clamp(sum*uOpacity*3.0,0.0,1.0); if(att<=0.01) discard; fragColor=vec4(texture(uCmap,vec2(att,0.5)).rgb, att); }
+        else { for(float i=0.0;i<512.0;i++){ if(i>=steps) break; float v=samp(p);   // isosurface, gradient-lit
+            if(v>=max(uThresh,0.02)){ vec3 n=grad(p); vec3 L=normalize(vec3(0.4,0.6,0.85));
+              float d=0.35+0.65*max(dot(n,L),0.0); vec3 base=texture(uCmap,vec2(v,0.5)).rgb;
+              vec3 col=base*d + vec3(pow(max(dot(reflect(-L,n),-rd),0.0),26.0))*0.4;
+              fragColor=vec4(col, clamp(uOpacity,0.0,1.0)); return; } p+=rd*dt; } discard; } }`
   });
   volMesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1), mat); volMesh.matrixAutoUpdate=false; volMesh.frustumCulled=false; volMesh.renderOrder=1;
   volMesh.onBeforeRender=(r,s,cam)=>{ VOL_UN.uCam.value.copy(cam.position); };   // feed camera world pos (GLSL3 raw uniform)
