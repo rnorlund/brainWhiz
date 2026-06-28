@@ -984,55 +984,89 @@ app.appendChild(renderer.domElement);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-// ---- procedural matcap library (clean-room: our own per-normal studio lighting, no external assets) ----
-// A matcap maps the view-space normal to a lit sphere image. We synthesize each material by shading
-// a sphere with Lambert + specular + Fresnel rim using per-material parameters. Original code.
+// ---- procedural matcap library (clean-room: our own baked studio environment, no external assets) ----
+// A matcap maps the view-space normal to a lit sphere. To make materials read as MATERIALS (mirror
+// metal, glassy glass, sparkling gems, pearlescent sheen) we bake a small studio ENVIRONMENT (sky
+// gradient + horizon band + key/fill/back lights) and, per material TYPE, reflect/refract it.
 const _hex2rgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255]; };
+const _sm=t=>{ t=t<0?0:t>1?1:t; return t*t*(3-2*t); };
+// studio environment sampled by a direction — returns linear-ish rgb
+function _env(dx,dy,dz){
+  const t=_sm(dy*0.5+0.5);
+  let r=0.16+0.82*t, g=0.18+0.84*t, b=0.22+0.86*t;                // sky gradient (lifted floor so metals aren't muddy)
+  const hb=Math.exp(-((dy)/0.10)*((dy)/0.10))*0.85; r+=hb; g+=hb; b+=hb;   // crisp bright horizon band
+  const kx=-0.45,ky=0.66,kz=0.6, kl=Math.hypot(kx,ky,kz); const kd=Math.max(0,(dx*kx+dy*ky+dz*kz)/kl);
+  const key=Math.pow(kd,120)*3.2; r+=key; g+=key; b+=key;         // hot key light (upper-left)
+  const fx=0.72,fy=0.08,fz=0.45, fl=Math.hypot(fx,fy,fz); const fd=Math.max(0,(dx*fx+dy*fy+dz*fz)/fl);
+  const fill=Math.pow(fd,26)*1.1; r+=fill*0.8; g+=fill*0.88; b+=fill*1.05;  // cool fill spot (right)
+  const sx=0.1,sy=0.9,sz=0.2, sl=Math.hypot(sx,sy,sz); const sd=Math.max(0,(dx*sx+dy*sy+dz*sz)/sl);
+  const top=Math.pow(sd,40)*1.4; r+=top; g+=top; b+=top;          // overhead softbox
+  const bd=Math.max(0,-dz); const back=Math.pow(bd,8)*0.22; r+=back; g+=back; b+=back;
+  return [r,g,b];
+}
 function makeMatcapTex(o){
   const N=256, c=document.createElement('canvas'); c.width=c.height=N; const x=c.getContext('2d');
   const img=x.createImageData(N,N), d=img.data;
-  const base=_hex2rgb(o.base), spec=_hex2rgb(o.spec||'#ffffff'), rim=_hex2rgb(o.rim||'#ffffff');
-  const Lx=-0.42, Ly=0.55, Lz=0.72, ll=Math.hypot(Lx,Ly,Lz);
-  const lx=Lx/ll, ly=Ly/ll, lz=Lz/ll;
-  const amb=o.amb??0.4, sExp=o.sExp??40, sInt=o.sInt??0.4, rExp=o.rExp??3, rInt=o.rInt??0.25, irid=o.irid?1:0, gain=o.gain??1;
+  const base=_hex2rgb(o.base), tint=o.tint?_hex2rgb(o.tint):base;
+  const type=o.type||'matte', refl=o.refl??0.0, gain=o.gain??1;
   for(let py=0;py<N;py++){ for(let px=0;px<N;px++){
     const nx=(px-128)/128, ny=-(py-128)/128, r2=nx*nx+ny*ny, i=(py*N+px)*4;
     if(r2>1){ d[i+3]=0; continue; }
-    const nz=Math.sqrt(1-r2);
-    const ndl=Math.max(0, nx*lx+ny*ly+nz*lz);
-    // reflect light about normal, dot with view (0,0,1)
-    const rl=2*ndl, rz=rl*nz - lz, sp=Math.pow(Math.max(0,rz), sExp)*sInt;
-    const fres=Math.pow(1-nz, rExp)*rInt;
-    let rr=base[0]*(amb+(1-amb)*ndl) + spec[0]*sp, gg=base[1]*(amb+(1-amb)*ndl) + spec[1]*sp, bb=base[2]*(amb+(1-amb)*ndl) + spec[2]*sp;
-    if(irid){ rr+=fres*(0.5+0.5*Math.cos(6.28*nz)); gg+=fres*(0.5+0.5*Math.cos(6.28*nz+2.1)); bb+=fres*(0.5+0.5*Math.cos(6.28*nz+4.2)); }
-    else { rr+=rim[0]*fres; gg+=rim[1]*fres; bb+=rim[2]*fres; }
+    const nz=Math.sqrt(1-r2);                                   // normal; view V=(0,0,1)
+    const ndv=nz, fres=Math.pow(1-ndv,3);
+    // reflection vector R = 2(N·V)N - V
+    const rx=2*nz*nx, ry=2*nz*ny, rz=2*nz*nz-1; const e=_env(rx,ry,rz);
+    // diffuse from key light
+    const kx=-0.42,ky=0.6,kz=0.68, kl=Math.hypot(kx,ky,kz); const ndl=Math.max(0,(nx*kx+ny*ky+nz*kz)/kl);
+    let rr,gg,bb;
+    if(type==='metal'){
+      rr=base[0]*0.10 + e[0]*tint[0]*refl; gg=base[1]*0.10 + e[1]*tint[1]*refl; bb=base[2]*0.10 + e[2]*tint[2]*refl;
+    } else if(type==='chrome'){
+      rr=e[0]*(0.85+0.15*base[0]); gg=e[1]*(0.85+0.15*base[1]); bb=e[2]*(0.85+0.15*base[2]);
+    } else if(type==='glass'){
+      const f=0.15+0.85*fres; rr=e[0]*0.4*f + base[0]*0.18 + fres*1.1; gg=e[1]*0.4*f + base[1]*0.2 + fres*1.15; bb=e[2]*0.45*f + base[2]*0.26 + fres*1.25;
+    } else if(type==='gem'){
+      const body=0.35+0.65*ndl; const sp=e[0]*refl;
+      rr=base[0]*body + e[0]*refl*0.5 + base[0]*fres*0.7 + Math.pow(Math.max(0,rz),60)*1.2;
+      gg=base[1]*body + e[1]*refl*0.5 + base[1]*fres*0.7 + Math.pow(Math.max(0,rz),60)*1.2;
+      bb=base[2]*body + e[2]*refl*0.5 + base[2]*fres*0.7 + Math.pow(Math.max(0,rz),60)*1.2;
+    } else if(type==='pearl'){
+      const ph=fres*2.0+ndl; const ir=[0.5+0.5*Math.cos(6.28*ph),0.5+0.5*Math.cos(6.28*ph+2.1),0.5+0.5*Math.cos(6.28*ph+4.2)];
+      const body=0.55+0.45*ndl; const sp=Math.pow(Math.max(0,rz),70)*0.6;
+      rr=base[0]*body + ir[0]*0.32*(0.4+fres) + sp; gg=base[1]*body + ir[1]*0.32*(0.4+fres) + sp; bb=base[2]*body + ir[2]*0.32*(0.4+fres) + sp;
+    } else { // matte / ceramic (clay, skin, wax, basalt, porcelain) — soft diffuse + gentle env ambient + optional SSS
+      const amb=o.amb??0.4, sp=Math.pow(Math.max(0,rz), o.sExp??30)*(o.sInt??0.25);
+      const envamb=0.12*refl;
+      rr=base[0]*(amb+(1-amb)*ndl) + e[0]*envamb*base[0] + sp; gg=base[1]*(amb+(1-amb)*ndl)+e[1]*envamb*base[1]+sp; bb=base[2]*(amb+(1-amb)*ndl)+e[2]*envamb*base[2]+sp;
+      if(o.sss){ rr+=tint[0]*fres*o.sss; gg+=tint[1]*fres*o.sss; bb+=tint[2]*fres*o.sss; }
+    }
     d[i]=Math.min(255,rr*gain*255); d[i+1]=Math.min(255,gg*gain*255); d[i+2]=Math.min(255,bb*gain*255); d[i+3]=255;
   }}
   x.putImageData(img,0,0);
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
-// material presets (display name -> params). Original palette.
+// material presets — typed for real material character. Original palette.
 const MATCAP_PRESETS={
-  Clay:{base:'#c0876a',amb:0.5,sExp:4,sInt:0.05,rInt:0.08,rim:'#ffd8c0'},
-  Skin:{base:'#e6b496',amb:0.5,sExp:10,sInt:0.16,rInt:0.22,rim:'#ffd9c4'},
-  Pearl:{base:'#ece4f0',amb:0.55,sExp:30,sInt:0.5,rInt:0.45,irid:true},
-  Jade:{base:'#3fa37a',amb:0.38,sExp:40,sInt:0.5,rInt:0.32,rim:'#bfffe2'},
-  Bronze:{base:'#8a5a2a',amb:0.3,sExp:60,sInt:0.7,rInt:0.18,spec:'#ffe0b0'},
-  Chrome:{base:'#aab0bc',amb:0.16,sExp:200,sInt:1.0,rInt:0.55,rim:'#eaf2ff',gain:1.05},
-  Gold:{base:'#c9a23c',amb:0.26,sExp:120,sInt:0.9,rInt:0.25,spec:'#fff0c0'},
-  Glass:{base:'#28323f',amb:0.12,sExp:90,sInt:0.8,rExp:2,rInt:0.95,rim:'#cfe6ff'},
-  Wax:{base:'#e8c98a',amb:0.5,sExp:10,sInt:0.2,rExp:2.2,rInt:0.5,rim:'#ffcaa0'},
-  Basalt:{base:'#3a3f47',amb:0.32,sExp:20,sInt:0.2,rInt:0.14,rim:'#9fb3c8'},
-  Copper:{base:'#b06a40',amb:0.28,sExp:80,sInt:0.7,rInt:0.2,spec:'#ffd0a0'},
-  Pewter:{base:'#8c93a0',amb:0.35,sExp:40,sInt:0.4,rInt:0.2},
-  Ruby:{base:'#9b1c39',amb:0.25,sExp:80,sInt:0.7,rInt:0.4,rim:'#ffd0d8'},
-  Emerald:{base:'#1f7a52',amb:0.25,sExp:80,sInt:0.7,rInt:0.4,rim:'#c0ffe0'},
-  Sapphire:{base:'#1f3a8a',amb:0.25,sExp:80,sInt:0.7,rInt:0.45,rim:'#cfe0ff'},
-  Porcelain:{base:'#f0eee8',amb:0.6,sExp:50,sInt:0.4,rInt:0.2,rim:'#ffffff'}
+  Clay:{type:'matte',base:'#c0876a',amb:0.5,sExp:6,sInt:0.05,sss:0.12,tint:'#ffd8c0'},
+  Skin:{type:'matte',base:'#e6b496',amb:0.5,sExp:14,sInt:0.14,sss:0.28,tint:'#ff9a86'},
+  Pearl:{type:'pearl',base:'#e8e0ee'},
+  Jade:{type:'gem',base:'#2f9f72',refl:0.5},
+  Bronze:{type:'metal',base:'#8a5a2a',tint:'#caa05a',refl:0.9},
+  Chrome:{type:'chrome',base:'#aab0bc'},
+  Gold:{type:'metal',base:'#c9a23c',tint:'#ffd76a',refl:1.0,gain:1.05},
+  Glass:{type:'glass',base:'#2a3340'},
+  Wax:{type:'matte',base:'#e8c98a',amb:0.52,sExp:12,sInt:0.18,sss:0.5,tint:'#ff9d5a'},
+  Basalt:{type:'matte',base:'#3a3f47',amb:0.34,sExp:18,sInt:0.18,refl:0.4},
+  Copper:{type:'metal',base:'#a05a34',tint:'#e08a5a',refl:0.92},
+  Pewter:{type:'metal',base:'#8c93a0',tint:'#c8cdd6',refl:0.7},
+  Ruby:{type:'gem',base:'#a01030',refl:0.55},
+  Emerald:{type:'gem',base:'#0f7a48',refl:0.55},
+  Sapphire:{type:'gem',base:'#173a9a',refl:0.6},
+  Porcelain:{type:'matte',base:'#f0eee8',amb:0.62,sExp:60,sInt:0.5,refl:0.5}
 };
 const MATCAP_NAMES=Object.keys(MATCAP_PRESETS);
 const MATCAPS={}; for(const k of MATCAP_NAMES) MATCAPS[k]=makeMatcapTex(MATCAP_PRESETS[k]);
-function makeMatcap(){ return makeMatcapTex({base:'#cfd6e0',amb:0.32,sExp:24,sInt:0.5,rInt:0.25,rim:'#ffffff'}); }
+function makeMatcap(){ return makeMatcapTex({type:'matte',base:'#cfd6e0',amb:0.34,sExp:30,sInt:0.5,refl:0.5}); }
 const matcapTex = makeMatcap();
 let activeMatcap = matcapTex;   // current matcap texture (set by setShading for named materials)
 
