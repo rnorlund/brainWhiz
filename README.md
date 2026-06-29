@@ -8,6 +8,11 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 ![hero](docs/img/hero.png)
 
+<p align="center">
+  <img src="docs/img/exploding_brain.gif" width="460" alt="exploding-brain animation recorded in brainWhiz"><br>
+  <em>Every region is its own 3-D object — explode it, light it up, orbit it. Recorded straight from the viewer (Figure ▸ Record MP4).</em>
+</p>
+
 > **Why "brainWhiz"?** There's a well-known finding ([McCabe & Castel, 2008, *Cognition*](https://doi.org/10.1016/j.cognition.2007.07.017))
 > that simply *adding a brain image* to a write-up makes the reasoning seem more credible — it
 > measurably nudged people toward believing (and editors toward publishing). It's the neuroscience
@@ -30,7 +35,7 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 - **Volume rendering** — GLSL raymarch (MIP / Accumulate / MinIP / X-ray-DRR / Isosurface) of a map as glowing voxels **inside a glass brain**.
 - **White-matter tracts** — solid hulls *or* synthesized **fiber strands** (white, or DTI-orientation colored).
 - **Three view modes** — 3D mesh, ortho slices, mosaic/lightbox — with **28 colormaps** and TFCE.
-- **DTI connectivity** averaged across ABC participants — strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows.
+- **Connectivity, two kinds** — **DTI** structural (measured for JHU/AICHA) *and* **rs-fMRI** functional (measured for 7 atlases, estimated for 7 more); strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows. Switch DTI ↔ rs-fMRI per atlas.
 - **Projector** — cast an image / video / **webcam** onto the cortex; surface-conforming, shaped, **outlined decals**.
 - **🥔 PotatoHead** — paint realistic face features on a T1-derived head (MRI re-identification / privacy demo).
 - **Outputs** — PNG, **MP4/WebM recording**, a **🔗 living interactive `.html`** figure (rotate/zoom/explode), a **🎬 keyframe director → narrated MP4**, and multi-panel figure builder (PNG/PDF/SVG/`.bwz`).
@@ -88,26 +93,39 @@ Switch atlas with the **Atlas** dropdown or the URL: `index.html?atlas=jhu` (`aa
 
 ## Atlases (16 bundled)
 
-| id | atlas | ROIs | connectivity | task maps |
-|----|-------|-----:|:---:|:---:|
-| `jhu` | JHU (Johns Hopkins) | 189 | ✅ | ✅ |
-| `aicha` | AICHA | 384 | ✅ | ✅ |
-| `anatomy3` | SPM Anatomy v3 | 186 | – | ✅ |
-| `aal3` | AAL3 | 161 | – | ✅ |
-| `aalcat` | AAL (categorized) | 150 | – | ✅ |
-| `neuromorph` | Neuromorphometrics | 134 | – | ✅ |
-| `ho` | Harvard-Oxford | 117 | – | ✅ |
-| `aal` | AAL | 116 | – | ✅ |
-| `bro` | Brodmann | 82 | – | ✅ |
-| `lpba40` | LPBA40 | 56 | – | ✅ |
-| `cobra` | COBRA (subcortical/cerebellar) | 52 | – | ✅ |
-| `xtract` | XTRACT white-matter tracts | 42 | – | ✅ |
-| `arterial` | Arterial territories | 32 | – | ✅ |
-| `hammers` | Hammers | 95 | – | ✅ |
-| `catani` | Catani tracts | 27 | – | ✅ |
-| `fox` | Fox | 10 | – | ✅ |
+![16 atlases — JHU, AICHA, Harvard-Oxford, AAL, …](docs/img/multiatlas.png)
 
-All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha` — those are the only atlases with DTI matrices in the source ABC participant data (`dti_jhu`/`dti_AICHA`). Overlays and task maps work for every atlas (sampled/resampled into each atlas's own grid).
+*Switch parcellation from the dropdown (or `?atlas=…`) — cortical, subcortical, white-matter tract and arterial atlases, all in MNI space.*
+
+| id | atlas | ROIs | DTI | rs-fMRI | task maps |
+|----|-------|-----:|:---:|:---:|:---:|
+| `jhu` | JHU (Johns Hopkins) | 189 | ✅ | ✅ | ✅ |
+| `aicha` | AICHA | 384 | ✅ | ✅ | ✅ |
+| `anatomy3` | SPM Anatomy v3 | 186 | – | RS\* | ✅ |
+| `aal3` | AAL3 | 161 | – | RS\* | ✅ |
+| `aalcat` | AAL (categorized) | 150 | – | ✅ | ✅ |
+| `neuromorph` | Neuromorphometrics | 134 | – | RS\* | ✅ |
+| `ho` | Harvard-Oxford | 117 | – | RS\* | ✅ |
+| `aal` | AAL | 116 | – | ✅ | ✅ |
+| `hammers` | Hammers | 95 | – | RS\* | ✅ |
+| `bro` | Brodmann | 82 | – | ✅ | ✅ |
+| `lpba40` | LPBA40 | 56 | – | RS\* | ✅ |
+| `cobra` | COBRA (subcortical/cerebellar) | 52 | – | RS\* | ✅ |
+| `xtract` | XTRACT white-matter tracts | 42 | – | – | ✅ |
+| `arterial` | Arterial territories | 32 | – | – | ✅ |
+| `catani` | Catani tracts | 27 | – | ✅ | ✅ |
+| `fox` | Fox | 10 | – | ✅ | ✅ |
+
+✅ = measured connectivity bundled · **RS\*** = rs-fMRI *estimated* by overlap-projection from the
+measured atlases ([`interpolate_conn.py`](interpolate_conn.py)) · – = none.
+
+All atlases are in MNI space. **DTI** (white-matter streamline) connectivity is measured only for
+`jhu` and `aicha` — the only atlases with DTI matrices in the source ABC participant data
+(`dti_jhu`/`dti_AICHA`); DTI is **never interpolated** (validated ~r≈0.1, unreliable). **rs-fMRI**
+functional connectivity is measured for **7 atlases** (`jhu`, `aicha`, `aal`, `aalcat`, `bro`,
+`catani`, `fox`) and **estimated (RS\*)** for 7 more by projecting the AICHA/JHU matrices through
+ROI overlap — useful as a prior, not a substitute for measured data. Overlays and task maps work
+for **every** atlas (sampled/resampled into each atlas's own grid).
 
 ---
 
@@ -123,7 +141,7 @@ All atlases are in MNI space. **Connectivity** exists only for `jhu` and `aicha`
 
 **Slices & Mosaic** — ortho viewer (axial/sagittal/coronal + 3D, click/drag to navigate, per-plane zoom; voxel heatmap or solid mesh cross-sections) and a publication-style **mosaic / lightbox** of evenly-spaced slices (choose plane, count, columns). Drop either into a figure panel.
 
-**Connectivity** — averaged DTI streamline strength; cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection.
+**Connectivity** — two networks per atlas: **DTI** averaged streamline strength (measured for `jhu`/`aicha`) and **rs-fMRI** functional correlation (measured for 7 atlases, overlap-estimated **RS\*** for 7 more). Pick the network, then threshold and style edges: cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection; arced 3-D arrows for directed views.
 
 **Render & shading** — a **45-look shading library** in the Shading menu (each with a thumbnail preview):
 Standard, Matcap, and **Cartoon** (MRIcroGL-style pink cel-shade + black inked folds), plus ~20
@@ -378,7 +396,7 @@ clinical use.
 ## Notes & credits
 
 - Task maps use **NeuroQuery** (the modern successor to Neurosynth); edit `NEURO_TERMS` in `build_bundle.py` to change them.
-- DTI connectivity is averaged from ABC-participant `.mat` files (`dti_jhu` / `dti_AICHA` fields).
+- **DTI** connectivity is averaged from ABC-participant `.mat` files (`dti_jhu` / `dti_AICHA` fields). **rs-fMRI** functional connectivity is bundled for 7 atlases; the **RS\*** atlases are *estimated* by projecting the measured AICHA/JHU matrices through ROI overlap ([`interpolate_conn.py`](interpolate_conn.py)) — a prior, not measured data. DTI is never interpolated.
 - Lobe grouping is a name-based heuristic for coloring, not a formal parcellation.
 
 🤖 Built with [Claude Code](https://claude.com/claude-code)
