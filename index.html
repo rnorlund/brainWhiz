@@ -1865,7 +1865,7 @@ function mniShellGeo(){
   if(mniShellGeoCache) return mniShellGeoCache;
   const mni=ensureMNI(); if(!mni) return mergeAllRegions();
   const {data,dim,worldOf}=mni, nx=dim[0],ny=dim[1],nz=dim[2];
-  let mx=0; for(let i=0;i<data.length;i+=257) if(data[i]>mx) mx=data[i]; const thr=Math.max(1,mx*0.04);
+  const thr=6;   // SAME cutoff as crop-to-background (tv>6) so the shell encloses exactly the voxels the volume clip keeps
   let minx=nx,miny=ny,minz=nz,maxx=-1,maxy=-1,maxz=-1,cnt=0;
   for(let k=0;k<nz;k++){const ko=k*nx*ny;for(let j=0;j<ny;j++){const jo=ko+j*nx;for(let i=0;i<nx;i++){
     if(data[jo+i]>thr){cnt++;if(i<minx)minx=i;if(i>maxx)maxx=i;if(j<miny)miny=j;if(j>maxy)maxy=j;if(k<minz)minz=k;if(k>maxz)maxz=k;}}}}
@@ -1873,6 +1873,12 @@ function mniShellGeo(){
   const bw=maxx-minx+1,bh=maxy-miny+1,bd=maxz-minz+1,PAD=3,fw=bw+2*PAD,fh=bh+2*PAD,fd=bd+2*PAD,occ=new Float32Array(fw*fh*fd);
   for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
     if(data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny]>thr) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
+  // dilate 1 voxel (6-neighbour) so the smoothed shell surface sits OUTSIDE the raw tv>6 boundary —
+  // guarantees it encloses every voxel the volume clip (also tv>6) keeps, incl. thin cerebellar/edge tips
+  const dil=Float32Array.from(occ), aO=(x,y,z)=>(x<0||y<0||z<0||x>=fw||y>=fh||z>=fd)?0:occ[x+y*fw+z*fw*fh];
+  for(let z=0;z<fd;z++)for(let y=0;y<fh;y++)for(let x=0;x<fw;x++){ const i=x+y*fw+z*fw*fh;
+    if(!occ[i] && (aO(x-1,y,z)||aO(x+1,y,z)||aO(x,y-1,z)||aO(x,y+1,z)||aO(x,y,z-1)||aO(x,y,z+1))) dil[i]=1; }
+  dil.forEach((v,i)=>occ[i]=v);
   gaussianBlur3D(occ,[fw,fh,fd],1.2);
   // isosurface at occ=0.3 (well outside the 0.5 midline) so the shell fully wraps marginal
   // cortex/cerebellar voxels instead of cutting them at the smoothed boundary
@@ -3680,7 +3686,7 @@ function initOverlayUI(){
   $('cthresh').addEventListener('input', ()=>edited());
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
-  $('ovCropBg').addEventListener('change', ()=>edited());
+  $('ovCropBg').addEventListener('change', ()=>{ edited(); if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked) updateVolume(true); });
   const _recolorBase=()=>{ if(overlay.combine && typeof recolorDual==='function') recolorDual(); else recolorOverlay(); refreshSliceViews(); };
   $('ovBaseColor').addEventListener('input', _recolorBase);
   $('ovBaseDark').addEventListener('click', ()=>{ $('ovBaseColor').value='#2a2e37'; _recolorBase(); });
@@ -3995,26 +4001,21 @@ function ovTogglePlay(){ if(_ovPlayTimer){ ovStopPlay(); return; }
 let volMesh=null, volMax=0;
 const VOL_UN={ uTex:{value:null}, uCmap:{value:null}, uThresh:{value:0.15}, uOpacity:{value:1}, uSteps:{value:160}, uMode:{value:0}, uCam:{value:new THREE.Vector3()}, uTime:{value:0}, uSpark:{value:0}, _cmap:'' };
 function volDownStep(dim){ return Math.max(1, Math.ceil(Math.max(dim[0],dim[1],dim[2])/160)); }
-// brain mask for "clip to brain": 1 where the MNI152 template has signal, sampled on the
-// (downsampled) overlay grid. Cached on the nii so 4D playback doesn't recompute it.
+// brain mask for the volume — identical criterion to the slice/mosaic "✂ Crop to background"
+// (overlay shown only where the underlay/MNI template has tissue, sampleMM > 6). Sampled on the
+// (downsampled) overlay grid; cached on the nii so 4D playback doesn't recompute it.
 function volBrainMask(nii, st, ox, oy, oz){
   if(nii.__bmSt===st && nii.__bm) return nii.__bm;
   const mni=ensureMNI(); if(!mni){ nii.__bm=null; nii.__bmSt=st; return null; }
-  const [nx,ny,nz]=nii.dim, wo=nii.worldOf, raw=new Uint8Array(ox*oy*oz);
-  let tmax=0; for(let i=0;i<mni.data.length;i+=257){ if(mni.data[i]>tmax) tmax=mni.data[i]; } const BR=Math.max(1,tmax*0.12);
+  const [nx,ny,nz]=nii.dim, wo=nii.worldOf, m=new Uint8Array(ox*oy*oz);
   for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
-    const w=wo(sx,sy,sz), mv=mni.sampleMM(w[0],w[1],w[2]); raw[x+y*ox+z*ox*oy]=(mv!=null&&mv>BR)?1:0; }
-  // erode 1 voxel (drop the brain-edge rim where the template halo / partial-volume lives) so
-  // stray stat voxels hugging the outside of the cortex don't survive the clip
-  const m=new Uint8Array(ox*oy*oz), at=(x,y,z)=>(x<0||y<0||z<0||x>=ox||y>=oy||z>=oz)?0:raw[x+y*ox+z*ox*oy];
-  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const i=x+y*ox+z*ox*oy;
-    m[i]=(raw[i]&&at(x-1,y,z)&&at(x+1,y,z)&&at(x,y-1,z)&&at(x,y+1,z)&&at(x,y,z-1)&&at(x,y,z+1))?1:0; }
+    const w=wo(sx,sy,sz), tv=mni.sampleMM(w[0],w[1],w[2])||0; m[x+y*ox+z*ox*oy]=(tv>6)?1:0; }   // tv>6 == crop-to-background
   nii.__bm=m; nii.__bmSt=st; return m;
 }
 function buildVolTexture(nii, normMax){
   const [nx,ny,nz]=nii.dim, st=volDownStep(nii.dim), ox=Math.ceil(nx/st), oy=Math.ceil(ny/st), oz=Math.ceil(nz/st);
   const data=nii.data, out=new Uint8Array(ox*oy*oz);
-  const clip=$('volClip')&&$('volClip').checked, mask=clip?volBrainMask(nii,st,ox,oy,oz):null;
+  const clip=($('volClip')&&$('volClip').checked)||($('ovCropBg')&&$('ovCropBg').checked), mask=clip?volBrainMask(nii,st,ox,oy,oz):null;
   let mx=normMax; if(!mx){ const s=[]; for(let i=0;i<data.length;i+=Math.max(1,(data.length/40000)|0)){ const v=data[i]; if(isFinite(v)&&v>0) s.push(v); } s.sort((a,b)=>a-b); mx=s.length?s[Math.floor(s.length*0.99)]:1; mx=mx||1; }
   for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
     const oi=x+y*ox+z*ox*oy; if(mask&&!mask[oi]){ out[oi]=0; continue; }
