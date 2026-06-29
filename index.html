@@ -1865,7 +1865,7 @@ function mniShellGeo(){
   if(mniShellGeoCache) return mniShellGeoCache;
   const mni=ensureMNI(); if(!mni) return mergeAllRegions();
   const {data,dim,worldOf}=mni, nx=dim[0],ny=dim[1],nz=dim[2];
-  let mx=0; for(let i=0;i<data.length;i+=257) if(data[i]>mx) mx=data[i]; const thr=Math.max(1,mx*0.06);
+  let mx=0; for(let i=0;i<data.length;i+=257) if(data[i]>mx) mx=data[i]; const thr=Math.max(1,mx*0.04);
   let minx=nx,miny=ny,minz=nz,maxx=-1,maxy=-1,maxz=-1,cnt=0;
   for(let k=0;k<nz;k++){const ko=k*nx*ny;for(let j=0;j<ny;j++){const jo=ko+j*nx;for(let i=0;i<nx;i++){
     if(data[jo+i]>thr){cnt++;if(i<minx)minx=i;if(i>maxx)maxx=i;if(j<miny)miny=j;if(j>maxy)maxy=j;if(k<minz)minz=k;if(k>maxz)maxz=k;}}}}
@@ -1874,9 +1874,9 @@ function mniShellGeo(){
   for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
     if(data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny]>thr) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
   gaussianBlur3D(occ,[fw,fh,fd],1.2);
-  // isosurface at occ=0.38 (slightly outside the 0.5 midline) so the shell fully wraps marginal
+  // isosurface at occ=0.3 (well outside the 0.5 midline) so the shell fully wraps marginal
   // cortex/cerebellar voxels instead of cutting them at the smoothed boundary
-  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.38-occ[i];
+  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.3-occ[i];
   const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) return mergeAllRegions();
   const tjs=(i,j,k)=>{ const w=worldOf(i,j,k); return [w[0],w[2],-w[1]]; };
   const vmap=sn.positions.map(p=>tjs(minx-PAD+p[0],miny-PAD+p[1],minz-PAD+p[2]));
