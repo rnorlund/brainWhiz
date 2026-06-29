@@ -52,6 +52,7 @@
   #feBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
   .febtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
   .febtn:hover{border-color:var(--accent)}
+  .febtn.active{background:#19c37d;color:#06281a;border-color:#19c37d;font-weight:600}
   .fesep{width:1px;height:22px;background:var(--line);margin:0 2px}
   .femut{color:var(--muted);font-size:11px}
   #feStage{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#0a0d12;padding:20px}
@@ -842,6 +843,7 @@
     <button class="febtn" id="feDel" title="Delete the selected item (Delete key)">🗑</button>
     <span class="fesep"></span>
     <button class="febtn" id="feCrop" title="Crop the canvas to fit your content — removes empty space after you've arranged things">⤢ Crop to fit</button>
+    <button class="febtn" id="feClipEdges" title="Clip edges: when ON, drag a selected image's side / top / bottom handles INWARD to trim empty space off that edge (corner handles still scale). Click again to turn off.">✂ Clip edges</button>
     <button class="febtn" id="feUndo" title="Undo (⌘/Ctrl-Z)">↶</button>
     <button class="febtn" id="feRedo" title="Redo (⌘/Ctrl-Shift-Z)">↷</button>
     <span style="flex:1"></span>
@@ -5353,6 +5355,39 @@ function feCrop(){ const objs=feCanvas.getObjects(); if(!objs.length) return; co
   const dx=pad-x0, dy=pad-y0;
   objs.forEach(o=>{ o.left+=dx; o.top+=dy; o.setCoords(); });
   $('feW').value=Math.round(x1-x0+2*pad); $('feH').value=Math.round(y1-y0+2*pad); feResize(); feCanvas.requestRenderAll(); fePush(); }
+// ---- "Clip edges": drag an image's side/top/bottom handle INWARD to trim that edge (corners still scale) ----
+let feClipMode=false;
+function feNatSize(t){ const el=t._originalElement||t._element||{}; return {w:el.naturalWidth||el.width||t.width, h:el.naturalHeight||el.height||t.height}; }
+// pointer (canvas px) -> object-local source-px, origin at the crop centre (range [-width/2..width/2])
+function feLocalPt(t,absX,absY){ const inv=fabric.util.invertTransform(t.calcTransformMatrix());
+  return fabric.util.transformPoint(new fabric.Point(absX,absY), inv); }
+function feCropHandler(side){ return function(eventData, transform, absX, absY){ const t=transform.target;
+  if(t.type!=='image') return false; const nat=feNatSize(t), p=feLocalPt(t,absX,absY); let keep, kx, ky;
+  if(side==='r'){ keep=t.getPointByOrigin('left','center'); kx='left'; ky='center';
+    t.set('width', Math.max(12, Math.min(nat.w - t.cropX, p.x + t.width/2))); }
+  else if(side==='l'){ keep=t.getPointByOrigin('right','center'); kx='right'; ky='center';
+    const trim=Math.max(0, Math.min(t.width-12, p.x + t.width/2)); t.set({cropX:t.cropX+trim, width:t.width-trim}); }
+  else if(side==='b'){ keep=t.getPointByOrigin('center','top'); kx='center'; ky='top';
+    t.set('height', Math.max(12, Math.min(nat.h - t.cropY, p.y + t.height/2))); }
+  else { keep=t.getPointByOrigin('center','bottom'); kx='center'; ky='bottom';
+    const trim=Math.max(0, Math.min(t.height-12, p.y + t.height/2)); t.set({cropY:t.cropY+trim, height:t.height-trim}); }
+  t.setPositionByOrigin(keep, kx, ky); t.setCoords(); return true; }; }
+function feMakeCropControl(side,x,y,cursor){ return new fabric.Control({ x, y, offsetX:0, offsetY:0,
+  cursorStyle:cursor, actionName:'cropEdge', actionHandler:feCropHandler(side),
+  render:function(ctx,left,top,_,o){ ctx.save(); ctx.fillStyle='#19c37d'; ctx.strokeStyle='#0a3'; ctx.lineWidth=1;
+    const s=(side==='l'||side==='r')?[7,18]:[18,7]; ctx.beginPath(); ctx.rect(left-s[0]/2,top-s[1]/2,s[0],s[1]); ctx.fill(); ctx.stroke(); ctx.restore(); } }); }
+let FE_CROP_CTRLS=null;   // built lazily — fabric is lazy-loaded, not present at module eval
+function feCropControls(){ if(FE_CROP_CTRLS) return FE_CROP_CTRLS;
+  FE_CROP_CTRLS={ ml:feMakeCropControl('l',-0.5,0,'ew-resize'), mr:feMakeCropControl('r',0.5,0,'ew-resize'),
+    mt:feMakeCropControl('t',0,-0.5,'ns-resize'), mb:feMakeCropControl('b',0,0.5,'ns-resize') }; return FE_CROP_CTRLS; }
+function feApplyClipControls(img){ if(!img||img.type!=='image'||!window.fabric) return;
+  if(feClipMode){ if(!img._savedCtrls) img._savedCtrls=img.controls;
+    img.controls=Object.assign({}, fabric.Image.prototype.controls, feCropControls()); }
+  else if(img._savedCtrls){ img.controls=img._savedCtrls; img._savedCtrls=null; } }
+function feSetClipMode(on){ feClipMode=on; const btn=$('feClipEdges'); if(btn) btn.classList.toggle('active', on);
+  feCanvas.getObjects().forEach(o=>{ if(o.type==='image') feApplyClipControls(o); });
+  const a=feSel(); if(a&&a.type==='image') feCanvas.setActiveObject(a);
+  feCanvas.requestRenderAll(); }
 let feHist=[], feHi=-1, feLock=false;
 function fePush(){ if(!feCanvas||feLock) return; feHist=feHist.slice(0,feHi+1);
   feHist.push(JSON.stringify({json:feCanvas.toJSON(), w:feCanvas.getWidth(), h:feCanvas.getHeight(), bg:feCanvas.backgroundColor}));
@@ -5385,6 +5420,7 @@ async function openFigEditor(){
   if(!await ensureFabric()){ alert('Could not load the figure-editor library (offline?).'); $('figEditor').classList.remove('on'); return; }
   if(!feCanvas){
     feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:$('feBg').value, preserveObjectStacking:true});
+    window.feCanvas=feCanvas;   // expose the editor canvas (automation / headless figure export)
     feResize();
     document.addEventListener('keydown',e=>{ if(!$('figEditor').classList.contains('on')) return; const o=feSel();
       if((e.key==='Delete'||e.key==='Backspace') && o && !o.isEditing){ feDelSel(); e.preventDefault(); }
@@ -5394,10 +5430,10 @@ async function openFigEditor(){
     $('figEditor').addEventListener('paste',e=>{ const items=e.clipboardData&&e.clipboardData.items; if(!items) return;
       for(const it of items){ if(it.type.indexOf('image')===0){ const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(it.getAsFile()); e.preventDefault(); } } });
     feCanvas.on('object:modified', fePush);
-    feCanvas.on('object:added', fePush);
+    feCanvas.on('object:added', e=>{ if(feClipMode&&e.target) feApplyClipControls(e.target); fePush(); });
     feCanvas.on('object:removed', fePush);
-    feCanvas.on('selection:created', feSyncStyleBar);
-    feCanvas.on('selection:updated', feSyncStyleBar);
+    feCanvas.on('selection:created', e=>{ feSyncStyleBar(); if(feClipMode){ (e.selected||[feSel()]).forEach(o=>o&&feApplyClipControls(o)); } });
+    feCanvas.on('selection:updated', e=>{ feSyncStyleBar(); if(feClipMode){ (e.selected||[feSel()]).forEach(o=>o&&feApplyClipControls(o)); } });
     if(window._projEditor) feLoadProjectEditor(); else feImportPanels();   // restore project layout, else seed from panels
     setTimeout(fePush, 400);   // initial history state (after imported images load)
   }
@@ -5424,6 +5460,7 @@ async function openFigEditor(){
   $('feImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>feImg(rd.result,{left:40,top:40}); rd.readAsDataURL(f); e.target.value=''; });
   $('feExport').addEventListener('click', feExport);
   $('feCrop').addEventListener('click', feCrop);
+  $('feClipEdges').addEventListener('click', ()=>feSetClipMode(!feClipMode));
   $('feUndo').addEventListener('click', feUndo); $('feRedo').addEventListener('click', feRedo);
   $('feFormat').addEventListener('change', ()=>{ $('feQualWrap').style.display = $('feFormat').value==='jpeg'?'inline-flex':'none'; });
   // per-object style (outline / shadow / gradient)
