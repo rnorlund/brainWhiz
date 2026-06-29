@@ -4461,7 +4461,9 @@ async function _bridgeHandle(d){
     case 'loadOverlay': return await embedApplyOverlay(d);
     case 'loadOverlayBytes': {
       // Load a NIfTI from a base64 string (lets the host embed bytes when no CORS-friendly URL is available).
-      // Args: b64 (required), name (optional, suffix .nii.gz hints gzip), cmap?, cmin?, cmax?, thr?
+      // Args: b64 (required), name (optional, suffix .nii.gz hints gzip), cmap?, cmin?, cmax?, thr?,
+      //       volumeOnly? (suppress atlas-ROI coloring; render only as volumetric raymarch),
+      //       volMode? (0=MIP 1=Accumulate 2=MinIP 3=X-ray 4=Isosurface), volThr?, volOp?, volCmap?
       const nm = d.name || 'overlay.nii.gz';
       await brainAPI.loadStatArray(d.b64, 'A', nm);
       if (_has(d.cmap)){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change'));
@@ -4469,6 +4471,19 @@ async function _bridgeHandle(d){
       if (_has(d.cmin)){ $('cmin').value=d.cmin; $('cmin').dispatchEvent(new Event('change')); }
       if (_has(d.cmax)){ $('cmax').value=d.cmax; $('cmax').dispatchEvent(new Event('change')); }
       if (_has(d.thr)){ $('cthresh').value=d.thr; $('cthresh').dispatchEvent(new Event('input')); }
+      // Volume-render shortcut + suppress ROI coloring so the lesion shows ONLY as a 3D blob
+      if (_has(d.volMode)){ $('volMode').value=d.volMode; $('volMode').dispatchEvent(new Event('change')); }
+      if (_has(d.volThr)){ $('volThr').value=d.volThr; $('volThr').dispatchEvent(new Event('input')); }
+      if (_has(d.volOp)){ $('volOp').value=d.volOp; $('volOp').dispatchEvent(new Event('input')); }
+      if (_has(d.volCmap)){ $('volCmap').value=d.volCmap; $('volCmap').dispatchEvent(new Event('change')); }
+      if (d.volumeOnly){
+        $('volOn').checked = true; $('volOn').dispatchEvent(new Event('change'));
+        // Stash the volume data, then turn off ROI overlay coloring so only the raymarched
+        // 3D blob is visible (volume render reads overlay.volA directly, independent of overlay.on)
+        overlay.on = false;
+        if (typeof recolorOverlay === 'function') recolorOverlay();
+        if (typeof updateColorbar === 'function') updateColorbar();
+      }
       requestRender(); return true;
     }
     case 'setRegionValues': return brainAPI.setRegionValues(d.values, d.name);
