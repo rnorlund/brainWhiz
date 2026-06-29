@@ -729,7 +729,7 @@
     <div id="projStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-top:2px"></div>
   </div></details>
 
-  <details class="acc"><summary><span class="chev">▸</span>🥔 PotatoHead</summary><div class="accb">
+  <details class="acc" id="accPotato"><summary><span class="chev">▸</span>🥔 PotatoHead</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
       Build a head from a T1 (drop a whole-head/skull-stripped .nii on <b>BUILD MESH</b>), then
       <b>paint</b> realistic face features onto the surface and try to re-identify the person —
@@ -2981,7 +2981,7 @@ function phRebuildDecal(rec){
   else { rec.mesh=new THREE.Mesh(geo, phDecalMat(rec.tex)); rec.mesh.renderOrder=4; rec.mesh.userData.phRoot=true; rec.mesh.userData.phRec=rec; potatoGroup.add(rec.mesh); }
   requestRender();
 }
-function phPlaceDecal(hit){ const type=phPlaceType; if(!type) return;
+function phPlaceDecal(hit){ const type=phPlaceType; if(!type) return; phPushUndo();
   const posL=group.worldToLocal(hit.point.clone());
   const nW=hit.face?hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize():new THREE.Vector3(0,0,-1);
   const nrmL=nW.transformDirection(new THREE.Matrix4().copy(group.matrixWorld).invert()).normalize();
@@ -2990,7 +2990,7 @@ function phPlaceDecal(hit){ const type=phPlaceType; if(!type) return;
   phRebuildDecal(rec); phParts.push(rec); phPlaceType=null; document.querySelectorAll('.phpaint.armed').forEach(b=>b.classList.remove('armed'));
   phSelectRec(rec); phStatus(phParts.length+' feature(s). Adjust with the sliders · ⇄ Mirror for the other side.');
 }
-function phAddHair(){ const u=Math.max(6,(modelRadius||90)*0.07), R=modelRadius||90, c=sceneCenter;
+function phAddHair(){ phPushUndo(); const u=Math.max(6,(modelRadius||90)*0.07), R=modelRadius||90, c=sceneCenter;
   const h=new THREE.Mesh(new THREE.SphereGeometry(u*2.6,28,20,0,Math.PI*2,0,Math.PI*0.55),
     new THREE.MeshStandardMaterial({color:new THREE.Color(PH_TINT.hair),roughness:0.9,metalness:0,envMapIntensity:0.1,side:THREE.DoubleSide}));
   h.scale.set(1.05,1.0,1.15); h.position.set(c.x,c.y+R*0.55,c.z); h.userData.phRoot=true;
@@ -3006,9 +3006,9 @@ function phSelectRec(rec){ phSel=rec;
   requestRender();
 }
 function phDisposeRec(rec){ if(rec.mesh){ potatoGroup.remove(rec.mesh); rec.mesh.geometry.dispose(); if(rec.mesh.material.map) rec.mesh.material.map.dispose(); rec.mesh.material.dispose&&rec.mesh.material.dispose(); } }
-function phDelete(){ if(!phSel) return; phTC.detach(); phDisposeRec(phSel); phParts=phParts.filter(p=>p!==phSel); phSel=null; $('phGizmoRow').style.display='none'; phStatus(phParts.length+' feature(s).'); requestRender(); }
-function phClear(){ phTC.detach(); phParts.forEach(phDisposeRec); phParts=[]; phSel=null; phPlaceType=null; $('phGizmoRow').style.display='none'; document.querySelectorAll('.phpaint.armed').forEach(b=>b.classList.remove('armed')); phStatus(''); requestRender(); }
-function phMirror(){ if(!phSel) return;
+function phDelete(){ if(!phSel) return; phPushUndo(); phTC.detach(); phDisposeRec(phSel); phParts=phParts.filter(p=>p!==phSel); phSel=null; $('phGizmoRow').style.display='none'; phStatus(phParts.length+' feature(s).'); requestRender(); }
+function phClear(){ if(phParts.length) phPushUndo(); phTC.detach(); phParts.forEach(phDisposeRec); phParts=[]; phSel=null; phPlaceType=null; $('phGizmoRow').style.display='none'; document.querySelectorAll('.phpaint.armed').forEach(b=>b.classList.remove('armed')); phStatus(''); requestRender(); }
+function phMirror(){ if(!phSel) return; phPushUndo();
   if(phSel.kind==='decal'){ const r=phSel, posL=r.posL.clone(); posL.x=2*sceneCenter.x-posL.x; const nrmL=r.nrmL.clone(); nrmL.x*=-1;
     const rec={ kind:'decal', type:r.type, posL, nrmL, rot:-r.rot, size:r.size, aspect:r.aspect, tint:r.tint, tex:phTex(r.type,r.tint), mesh:null };
     phRebuildDecal(rec); phParts.push(rec); phSelectRec(rec); }
@@ -3020,6 +3020,26 @@ function phColorSel(hex){ if(!phSel) return;
   if(phSel.kind==='decal'){ phSel.tint=hex; const old=phSel.tex; phSel.tex=phTex(phSel.type,hex); phSel.mesh.material.map=phSel.tex; phSel.mesh.material.needsUpdate=true; if(old) old.dispose(); }
   else phSel.mesh.material.color.set(hex); requestRender();
 }
+// ---- unlimited undo: snapshot the whole PotatoHead state before each edit, restore on Ctrl/Cmd+Z ----
+let phUndoStack=[];
+function phSerialize(){ return phParts.map(r=> r.kind==='hair'
+  ? {kind:'hair', tint:'#'+r.mesh.material.color.getHexString(), pos:r.mesh.position.toArray(), quat:r.mesh.quaternion.toArray(), scale:r.mesh.scale.toArray()}
+  : {kind:'decal', type:r.type, posL:r.posL.toArray(), nrmL:r.nrmL.toArray(), rot:r.rot, size:r.size, aspect:r.aspect, tint:r.tint}); }
+function phPushUndo(){ phUndoStack.push(phSerialize()); if(phUndoStack.length>500) phUndoStack.shift(); }   // ~unlimited
+function phRestoreState(state){
+  phTC.detach(); phParts.forEach(phDisposeRec); phParts=[]; phSel=null; $('phGizmoRow').style.display='none';
+  for(const s of state){
+    if(s.kind==='hair'){ const u=Math.max(6,(modelRadius||90)*0.07);
+      const h=new THREE.Mesh(new THREE.SphereGeometry(u*2.6,28,20,0,Math.PI*2,0,Math.PI*0.55),
+        new THREE.MeshStandardMaterial({color:new THREE.Color(s.tint),roughness:0.9,metalness:0,envMapIntensity:0.1,side:THREE.DoubleSide}));
+      h.position.fromArray(s.pos); h.quaternion.fromArray(s.quat); h.scale.fromArray(s.scale); h.userData.phRoot=true;
+      const rec={kind:'hair',type:'hair',mesh:h,tint:s.tint}; h.userData.phRec=rec; potatoGroup.add(h); phParts.push(rec); }
+    else { const rec={kind:'decal', type:s.type, posL:new THREE.Vector3().fromArray(s.posL), nrmL:new THREE.Vector3().fromArray(s.nrmL),
+        rot:s.rot, size:s.size, aspect:s.aspect, tint:s.tint, tex:phTex(s.type,s.tint), mesh:null};
+      phRebuildDecal(rec); phParts.push(rec); } }
+  requestRender();
+}
+function phUndo(){ if(!phUndoStack.length){ phStatus('Nothing to undo.'); return; } phRestoreState(phUndoStack.pop()); phStatus(phParts.length+' feature(s) · undo ('+phUndoStack.length+' left)'); }
 document.querySelectorAll('.phpaint').forEach(b=>b.addEventListener('click', ()=>{ phPlaceType=b.dataset.ph;
   document.querySelectorAll('.phpaint.armed').forEach(x=>x.classList.remove('armed')); b.classList.add('armed');
   phStatus('Click on the head to paint the '+b.dataset.ph+'.'); }));
@@ -3028,6 +3048,20 @@ $('phSize').addEventListener('input', e=>{ $('phSizeV').textContent=e.target.val
 $('phWidth').addEventListener('input', e=>{ $('phWidthV').textContent=(+e.target.value).toFixed(2); if(phSel&&phSel.kind==='decal'){ phSel.aspect=+e.target.value; phRebuildDecal(phSel); } });
 $('phRot').addEventListener('input', e=>{ $('phRotV').textContent=e.target.value+'°'; if(phSel&&phSel.kind==='decal'){ phSel.rot=(+e.target.value)*Math.PI/180; phRebuildDecal(phSel); } });
 $('phColor').addEventListener('input', e=>phColorSel(e.target.value));
+// one undo step per slider drag / colour pick / gizmo drag (snapshot at the start of the interaction)
+['phSize','phWidth','phRot','phColor'].forEach(id=>{ const el=$(id); if(!el) return; let armed=false;
+  const arm=()=>{ if(!armed && phSel){ phPushUndo(); armed=true; } }; const reset=()=>{ armed=false; };
+  el.addEventListener('pointerdown', arm); el.addEventListener('keydown', arm);
+  el.addEventListener('change', reset); el.addEventListener('pointerup', reset); el.addEventListener('blur', reset); });
+phTC.addEventListener('mouseDown', ()=>{ if(phSel) phPushUndo(); });   // hair gizmo move/rotate/scale
+// Ctrl/Cmd+Z = unlimited PotatoHead undo (while the 🥔 panel is open, outside text fields)
+window.addEventListener('keydown', e=>{
+  if((e.metaKey||e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key==='z'||e.key==='Z')){
+    const pan=$('accPotato'), a=document.activeElement;
+    const isText=a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&/^(text|number|search|email|url|tel|password)$/i.test(a.type||'text')));
+    if(pan&&pan.open&&!isText){ e.preventDefault(); phUndo(); }
+  }
+});
 $('phMirror').addEventListener('click', phMirror);
 $('phDelete').addEventListener('click', phDelete);
 $('phClear').addEventListener('click', phClear);
