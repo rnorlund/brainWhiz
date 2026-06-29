@@ -467,6 +467,7 @@
       <input type="range" id="volOp" min="0.05" max="3" step="0.05" value="1"></div>
     <div class="ctl"><div class="lab"><span title="Raymarch steps — higher = smoother, slower">Quality</span><span id="volStepsV">160</span></div>
       <input type="range" id="volSteps" min="40" max="320" step="10" value="160"></div>
+    <div class="row"><label class="toggle" title="Mask the volume to the MNI brain — hides stat-map voxels that fall outside the brain (skull, edges, FOV padding)"><input type="checkbox" id="volClip" checked> Clip to brain</label></div>
     <div id="volStatus" style="font-size:11px;opacity:.8;min-height:13px"></div>
   </div></details>
 
@@ -504,6 +505,7 @@
       <input type="color" id="shellColor" value="#aebfd4" title="Shell color"></div>
     <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
       <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
+    <div class="row"><label class="toggle" title="Build the shell from the MNI152 template (a complete brain incl. cerebellum & brainstem) instead of the current atlas — best for enclosing a volume render whose signal extends into cerebellum/subcortex that cortical atlases don't cover"><input type="checkbox" id="shellMNI"> 🧠 Whole-brain shell (MNI, incl. cerebellum)</label></div>
     <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
       <input type="range" id="smooth" min="0" max="50" step="1" value="4"></div>
     <div class="row"><label>Surface</label>
@@ -1854,8 +1856,39 @@ function mergeAllRegions(filter){ const list=meshes.filter(filter||(()=>true)); 
   for(const o of list){ const g=o.mesh.geometry, p=g.attributes.position.array, n=g.attributes.normal&&g.attributes.normal.array;
     pos.set(p,off); if(n) nrm.set(n,off); off+=p.length; }
   const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3)); return geo; }
-function disposeGlassShell(){ if(!glassShell) return; group.remove(glassShell); glassShell.material.dispose(); if(glassShellGeo) glassShellGeo.dispose(); glassShell=null; glassShellGeo=null; }
-function ensureGlassShell(){ if(glassShell || !meshes.length) return; glassShellGeo=mergeAllRegions();
+// Whole-brain glass shell from the MNI152 template (includes cerebellum/brainstem — unlike the
+// cortical atlases) so a volume render or a few highlighted regions sit inside a complete brain
+// envelope regardless of which atlas is loaded. Same coordinate frame as the region meshes
+// (three.js = [RAS.x, RAS.z, -RAS.y]). Cached — built once, reused.
+let mniShellGeoCache=null;
+function mniShellGeo(){
+  if(mniShellGeoCache) return mniShellGeoCache;
+  const mni=ensureMNI(); if(!mni) return mergeAllRegions();
+  const {data,dim,worldOf}=mni, nx=dim[0],ny=dim[1],nz=dim[2];
+  let mx=0; for(let i=0;i<data.length;i+=257) if(data[i]>mx) mx=data[i]; const thr=Math.max(1,mx*0.06);
+  let minx=nx,miny=ny,minz=nz,maxx=-1,maxy=-1,maxz=-1,cnt=0;
+  for(let k=0;k<nz;k++){const ko=k*nx*ny;for(let j=0;j<ny;j++){const jo=ko+j*nx;for(let i=0;i<nx;i++){
+    if(data[jo+i]>thr){cnt++;if(i<minx)minx=i;if(i>maxx)maxx=i;if(j<miny)miny=j;if(j>maxy)maxy=j;if(k<minz)minz=k;if(k>maxz)maxz=k;}}}}
+  if(cnt<100) return mergeAllRegions();
+  const bw=maxx-minx+1,bh=maxy-miny+1,bd=maxz-minz+1,PAD=3,fw=bw+2*PAD,fh=bh+2*PAD,fd=bd+2*PAD,occ=new Float32Array(fw*fh*fd);
+  for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    if(data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny]>thr) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
+  gaussianBlur3D(occ,[fw,fh,fd],1.2);
+  // isosurface at occ=0.38 (slightly outside the 0.5 midline) so the shell fully wraps marginal
+  // cortex/cerebellar voxels instead of cutting them at the smoothed boundary
+  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.38-occ[i];
+  const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) return mergeAllRegions();
+  const tjs=(i,j,k)=>{ const w=worldOf(i,j,k); return [w[0],w[2],-w[1]]; };
+  const vmap=sn.positions.map(p=>tjs(minx-PAD+p[0],miny-PAD+p[1],minz-PAD+p[2]));
+  const pos=[]; for(const c of sn.cells){ const a=vmap[c[0]],b=vmap[c[1]],d=vmap[c[2]],f=vmap[c[3]];
+    pos.push(a[0],a[1],a[2],b[0],b[1],b[2],d[0],d[1],d[2], a[0],a[1],a[2],d[0],d[1],d[2],f[0],f[1],f[2]); }
+  const geo=new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3)); geo.computeVertexNormals();
+  mniShellGeoCache=geo; return geo;
+}
+function useMNIShell(){ return $('shellMNI') && $('shellMNI').checked; }
+function disposeGlassShell(){ if(!glassShell) return; group.remove(glassShell); glassShell.material.dispose();
+  if(glassShellGeo && glassShellGeo!==mniShellGeoCache) glassShellGeo.dispose(); glassShell=null; glassShellGeo=null; }
+function ensureGlassShell(){ if(glassShell || (!meshes.length && !useMNIShell())) return; glassShellGeo=useMNIShell()?mniShellGeo():mergeAllRegions();
   const mat=new THREE.MeshStandardMaterial({color:new THREE.Color($('shellColor').value), transparent:true, opacity:+$('shellOp').value,
     depthWrite:false, roughness:0.55, metalness:0, side:THREE.DoubleSide, envMapIntensity:0.4});
   glassShell=new THREE.Mesh(glassShellGeo, mat); glassShell.renderOrder=-3; group.add(glassShell); }   // whole brain at rest positions = context
@@ -1864,6 +1897,7 @@ function updateGlassShell(){ const on=$('shellOn').checked; if(on) ensureGlassSh
   requestRender(); }
 function refreshGlassShellGeo(){ if(glassShell && $('shellOn').checked){ disposeGlassShell(); ensureGlassShell(); requestRender(); } }
 $('shellOn').addEventListener('change', updateGlassShell);
+if($('shellMNI')) $('shellMNI').addEventListener('change', ()=>{ if($('shellOn').checked){ disposeGlassShell(); ensureGlassShell(); updateGlassShell(); } });
 $('shellColor').addEventListener('input', updateGlassShell);
 $('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
 // ================= PROJECTOR: image / video / webcam onto the brain =================
@@ -3466,9 +3500,10 @@ function initAtlasPicker(){
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','edgeOn','edgeW','edgeStr','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
-  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
+  'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','shellMNI','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth',
+  'volOn','volMode','volCmap','volThr','volOp','volSteps','volClip',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
   const p={};
@@ -3960,12 +3995,30 @@ function ovTogglePlay(){ if(_ovPlayTimer){ ovStopPlay(); return; }
 let volMesh=null, volMax=0;
 const VOL_UN={ uTex:{value:null}, uCmap:{value:null}, uThresh:{value:0.15}, uOpacity:{value:1}, uSteps:{value:160}, uMode:{value:0}, uCam:{value:new THREE.Vector3()}, uTime:{value:0}, uSpark:{value:0}, _cmap:'' };
 function volDownStep(dim){ return Math.max(1, Math.ceil(Math.max(dim[0],dim[1],dim[2])/160)); }
+// brain mask for "clip to brain": 1 where the MNI152 template has signal, sampled on the
+// (downsampled) overlay grid. Cached on the nii so 4D playback doesn't recompute it.
+function volBrainMask(nii, st, ox, oy, oz){
+  if(nii.__bmSt===st && nii.__bm) return nii.__bm;
+  const mni=ensureMNI(); if(!mni){ nii.__bm=null; nii.__bmSt=st; return null; }
+  const [nx,ny,nz]=nii.dim, wo=nii.worldOf, raw=new Uint8Array(ox*oy*oz);
+  let tmax=0; for(let i=0;i<mni.data.length;i+=257){ if(mni.data[i]>tmax) tmax=mni.data[i]; } const BR=Math.max(1,tmax*0.12);
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
+    const w=wo(sx,sy,sz), mv=mni.sampleMM(w[0],w[1],w[2]); raw[x+y*ox+z*ox*oy]=(mv!=null&&mv>BR)?1:0; }
+  // erode 1 voxel (drop the brain-edge rim where the template halo / partial-volume lives) so
+  // stray stat voxels hugging the outside of the cortex don't survive the clip
+  const m=new Uint8Array(ox*oy*oz), at=(x,y,z)=>(x<0||y<0||z<0||x>=ox||y>=oy||z>=oz)?0:raw[x+y*ox+z*ox*oy];
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const i=x+y*ox+z*ox*oy;
+    m[i]=(raw[i]&&at(x-1,y,z)&&at(x+1,y,z)&&at(x,y-1,z)&&at(x,y+1,z)&&at(x,y,z-1)&&at(x,y,z+1))?1:0; }
+  nii.__bm=m; nii.__bmSt=st; return m;
+}
 function buildVolTexture(nii, normMax){
   const [nx,ny,nz]=nii.dim, st=volDownStep(nii.dim), ox=Math.ceil(nx/st), oy=Math.ceil(ny/st), oz=Math.ceil(nz/st);
   const data=nii.data, out=new Uint8Array(ox*oy*oz);
+  const clip=$('volClip')&&$('volClip').checked, mask=clip?volBrainMask(nii,st,ox,oy,oz):null;
   let mx=normMax; if(!mx){ const s=[]; for(let i=0;i<data.length;i+=Math.max(1,(data.length/40000)|0)){ const v=data[i]; if(isFinite(v)&&v>0) s.push(v); } s.sort((a,b)=>a-b); mx=s.length?s[Math.floor(s.length*0.99)]:1; mx=mx||1; }
   for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
-    let v=data[sx+sy*nx+sz*nx*ny]/mx; v=v<0?0:v>1?1:v; out[x+y*ox+z*ox*oy]=(v*255)|0; }
+    const oi=x+y*ox+z*ox*oy; if(mask&&!mask[oi]){ out[oi]=0; continue; }
+    let v=data[sx+sy*nx+sz*nx*ny]/mx; v=v<0?0:v>1?1:v; out[oi]=(v*255)|0; }
   const tex=new THREE.Data3DTexture(out,ox,oy,oz); tex.format=THREE.RedFormat; tex.type=THREE.UnsignedByteType;
   tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; tex.unpackAlignment=1; tex.needsUpdate=true;
   return {tex, max:mx};
@@ -3973,11 +4026,16 @@ function buildVolTexture(nii, normMax){
 function cmapTexture(name){ const N=256, arr=new Uint8Array(N*4); for(let i=0;i<N;i++){ const c=sampleCmap(name,i/(N-1)); arr[i*4]=c[0]*255;arr[i*4+1]=c[1]*255;arr[i*4+2]=c[2]*255;arr[i*4+3]=255; }
   const t=new THREE.DataTexture(arr,N,1); t.minFilter=THREE.LinearFilter; t.magFilter=THREE.LinearFilter; t.colorSpace=THREE.SRGBColorSpace; t.needsUpdate=true; return t; }
 function volBoxMatrix(nii){ const d=nii.dim, M=nii.M, T=nii.T;
-  const Toff=new THREE.Matrix4().makeTranslation(0.5,0.5,0.5);
-  const Sdim=new THREE.Matrix4().makeScale(d[0],d[1],d[2]);
+  // BoxGeometry spans local [-0.5,0.5]; map it to voxel-index space [-0.5, d-0.5] so the box edges
+  // sit on the OUTER faces of the first/last voxels. With LinearFilter, the shader's texcoord
+  // (p+0.5) then samples texel u*d-0.5 — exactly matching this box position (no half-voxel shift,
+  // which otherwise pushes signal ~1 voxel posterior/edge-ward and outside the brain).
+  const Toff=new THREE.Matrix4().makeTranslation(0.5,0.5,0.5);            // local [-0.5,0.5] -> [0,1]
+  const Sdim=new THREE.Matrix4().makeScale(d[0],d[1],d[2]);              // [0,1] -> [0,d]
+  const Tctr=new THREE.Matrix4().makeTranslation(-0.5,-0.5,-0.5);        // [0,d] -> [-0.5, d-0.5]
   const Mvox=new THREE.Matrix4().set(M[0],M[1],M[2],T[0], M[3],M[4],M[5],T[1], M[6],M[7],M[8],T[2], 0,0,0,1);
   const P=new THREE.Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);   // RAS -> three.js axes
-  return P.multiply(Mvox).multiply(Sdim).multiply(Toff);
+  return P.multiply(Mvox).multiply(Tctr).multiply(Sdim).multiply(Toff);
 }
 function ensureVolMesh(){ if(volMesh) return volMesh;
   const mat=new THREE.ShaderMaterial({ uniforms:VOL_UN, transparent:true, side:THREE.BackSide, depthWrite:false, depthTest:true, glslVersion:THREE.GLSL3,
@@ -4025,6 +4083,7 @@ function updateVolume(rebuildTex){
 }
 (function initVolUI(){ const sel=$('volCmap'); if(sel){ const names=Object.keys(window.JHU_CMAPS||{}); (names.length?names:['fire','hot','viridis']).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); }); sel.value = names.includes('fire')?'fire':(names.includes('hot')?'hot':sel.value); }
   $('volOn').addEventListener('change', ()=>{ volMax=0; updateVolume(true); });
+  if($('volClip')) $('volClip').addEventListener('change', ()=>updateVolume(true));
   $('volMode').addEventListener('change', ()=>updateVolume(false));
   $('volCmap').addEventListener('change', ()=>updateVolume(false));
   $('volThr').addEventListener('input', e=>{ $('volThrV').textContent=(+e.target.value).toFixed(2); updateVolume(false); });
