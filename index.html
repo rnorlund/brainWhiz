@@ -4459,6 +4459,18 @@ async function _bridgeHandle(d){
     case 'setScheme': $('scheme').value=d.scheme; applyScheme(d.scheme); return true;
     case 'setBackground': { const v=d.color||d.bg||''; $('bg').value=v[0]==='#'?v:'#'+v; $('bg').dispatchEvent(new Event('input')); return true; }
     case 'loadOverlay': return await embedApplyOverlay(d);
+    case 'loadOverlayBytes': {
+      // Load a NIfTI from a base64 string (lets the host embed bytes when no CORS-friendly URL is available).
+      // Args: b64 (required), name (optional, suffix .nii.gz hints gzip), cmap?, cmin?, cmax?, thr?
+      const nm = d.name || 'overlay.nii.gz';
+      await brainAPI.loadStatArray(d.b64, 'A', nm);
+      if (_has(d.cmap)){ $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change'));
+                          $('cmap').value=d.cmap; $('cmap').dispatchEvent(new Event('change')); }
+      if (_has(d.cmin)){ $('cmin').value=d.cmin; $('cmin').dispatchEvent(new Event('change')); }
+      if (_has(d.cmax)){ $('cmax').value=d.cmax; $('cmax').dispatchEvent(new Event('change')); }
+      if (_has(d.thr)){ $('cthresh').value=d.thr; $('cthresh').dispatchEvent(new Event('input')); }
+      requestRender(); return true;
+    }
     case 'setRegionValues': return brainAPI.setRegionValues(d.values, d.name);
     case 'setColormap': $('ovStyle').value='cmap'; $('ovStyle').dispatchEvent(new Event('change')); $('cmap').value=d.cmap; $('cmap').dispatchEvent(new Event('change')); return true;
     case 'setRange': if(_has(d.cmin)){ $('cmin').value=d.cmin; $('cmin').dispatchEvent(new Event('change')); } if(_has(d.cmax)){ $('cmax').value=d.cmax; $('cmax').dispatchEvent(new Event('change')); } return true;
