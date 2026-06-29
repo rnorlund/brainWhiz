@@ -4331,7 +4331,13 @@ window.brainAPI = {
     const oldBG=scene.background; if(transparent) scene.background=null;
     const oldZoom=camera.zoom; if(zoom!==1){ camera.zoom*=zoom; }
     renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
-    renderer.render(scene,camera);
+    if(edgesOn()){                                   // apply the constant-width edge ink (alpha-preserving) for figure exports
+      const s=ensureEdges(); s.rt.setSize(w,h); s.mat.uniforms.uRes.value.set(w,h);
+      s.mat.uniforms.uW.value=+$('edgeW').value; s.mat.uniforms.uStr.value=+$('edgeStr').value;
+      s.mat.uniforms.uThresh.value=(modelRadius||80)*0.006; s.mat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
+      renderer.setRenderTarget(s.rt); renderer.setClearColor(0x000000,0); renderer.clear(); renderer.render(scene,camera);
+      renderer.setRenderTarget(null); renderer.render(s.scn, s.cam);
+    } else renderer.render(scene,camera);
     const url=renderer.domElement.toDataURL('image/png');
     scene.background=oldBG; camera.zoom=oldZoom; resize(); renderer.render(scene,camera);
     return url;
