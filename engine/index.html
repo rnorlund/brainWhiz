@@ -511,6 +511,12 @@
       <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
     <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
       <input type="range" id="outlineW" min="0.5" max="6" step="0.5" value="2"></div>
+    <div class="row"><label title="Constant-width black outline of every region/sulcus/edge, screen-space — stays the SAME thickness no matter how you rotate the brain (mesh view)">✑ Edge ink (constant width)</label>
+      <label class="toggle"><input type="checkbox" id="edgeOn"> on</label></div>
+    <div class="ctl" id="edgeRow1" style="display:none"><div class="lab"><span>Edge width (px)</span><span id="edgeWV">1.5</span></div>
+      <input type="range" id="edgeW" min="0.5" max="5" step="0.5" value="1.5"></div>
+    <div class="ctl" id="edgeRow2" style="display:none"><div class="lab"><span>Edge strength</span><span id="edgeStrV">1.0</span></div>
+      <input type="range" id="edgeStr" min="0" max="1" step="0.05" value="1"></div>
     <div class="row"><label title="Screen-space ambient occlusion — real cavity/sulcal depth darkening (mesh view)">🌑 Ambient occlusion (SSAO)</label>
       <label class="toggle"><input type="checkbox" id="ssaoOn"> on</label></div>
     <div class="ctl" id="ssaoRow1" style="display:none"><div class="lab"><span>SSAO strength</span><span id="ssaoIntV">1.0</span></div>
@@ -1213,9 +1219,9 @@ const CARTOON_GLSL = `
     float _Lq = (floor(_L*_st) + 0.5)/_st;                 // cel banding
     if(_L > 1e-4) outgoingLight *= clamp(_Lq/_L, 0.0, 4.0);
     float _fres = 1.0 - clamp(dot(_N,_V), 0.0, 1.0);
-    float _sil  = smoothstep(uInkEdge, min(0.999,uInkEdge+0.03), _fres);  // thin black silhouette
-    float _crz  = length(fwidth(_N));
-    float _crease = smoothstep(uInkCrease, uInkCrease*2.2, _crz);   // black sulcal / region lines
+    float _sil  = smoothstep(uInkEdge, min(0.999,uInkEdge+0.05), _fres);  // black silhouette
+    float _crz  = length(fwidth(_N))*2.6;                           // boost so faint (flat/frontal) region boundaries register too
+    float _crease = smoothstep(uInkCrease, uInkCrease+0.45, _crz);  // crisp, consistent-width region/sulcal lines
     outgoingLight = mix(outgoingLight, uInkColor, clamp(max(_sil,_crease), 0.0, 1.0));
   }
 `;
@@ -1421,6 +1427,42 @@ function ensureSSAO(){ if(_ssao) return _ssao;
 function renderSSAO(){ const s=ensureSSAO(); const dp=new THREE.Vector2(); renderer.getDrawingBufferSize(dp);
   if(s.rt.width!==dp.x||s.rt.height!==dp.y){ s.rt.setSize(dp.x,dp.y); s.mat.uniforms.uRes.value.set(dp.x,dp.y); }
   s.mat.uniforms.uInt.value=+$('ssaoInt').value; s.mat.uniforms.uRadius.value=(+$('ssaoRadius').value)*(modelRadius||80)*0.06;
+  s.mat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
+  renderer.setRenderTarget(s.rt); renderer.clear(); renderer.render(scene,camera);
+  renderer.setRenderTarget(null); renderer.render(s.scn, s.cam);
+}
+// ---- Edge ink: screen-space constant-WIDTH outline (depth-discontinuity), view-independent ----
+// Lines stay the same pixel thickness no matter how the brain is rotated; depth steps catch region-mesh
+// boundaries (incl. flat frontal ones the curvature-based cartoon creases miss) + sulci + silhouette.
+function edgesOn(){ return $('edgeOn') && $('edgeOn').checked; }
+let _edges=null;
+function ensureEdges(){ if(_edges) return _edges;
+  const dp=new THREE.Vector2(); renderer.getDrawingBufferSize(dp);
+  const depth=new THREE.DepthTexture(dp.x, dp.y); depth.type=THREE.UnsignedIntType;
+  const rt=new THREE.WebGLRenderTarget(dp.x, dp.y, {depthTexture:depth, depthBuffer:true});
+  const mat=new THREE.ShaderMaterial({
+    uniforms:{ tColor:{value:rt.texture}, tDepth:{value:depth}, uRes:{value:new THREE.Vector2(dp.x,dp.y)},
+      uW:{value:1.5}, uThresh:{value:1.0}, uStr:{value:1.0}, uProjInv:{value:new THREE.Matrix4()}, uInk:{value:new THREE.Color('#000000')} },
+    vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`,
+    fragmentShader:`varying vec2 vUv; uniform sampler2D tColor,tDepth; uniform vec2 uRes; uniform float uW,uThresh,uStr; uniform mat4 uProjInv; uniform vec3 uInk;
+      float vz(vec2 uv){ float d=texture2D(tDepth,uv).x; vec4 c=uProjInv*vec4(uv*2.0-1.0, d*2.0-1.0, 1.0); return (c.xyz/c.w).z; }
+      float fg(vec2 uv){ return texture2D(tDepth,uv).x<0.9999 ? 1.0 : 0.0; }
+      void main(){ vec4 col=texture2D(tColor,vUv); vec2 o=uW/uRes;
+        float zC=vz(vUv), zL=vz(vUv-vec2(o.x,0.)), zR=vz(vUv+vec2(o.x,0.)), zU=vz(vUv-vec2(0.,o.y)), zD=vz(vUv+vec2(0.,o.y));
+        float grad=max(max(abs(zC-zL),abs(zC-zR)),max(abs(zC-zU),abs(zC-zD)));   // depth steps: gaps/silhouette
+        float lap=abs(4.0*zC-zL-zR-zU-zD);                                       // 2nd deriv: creases
+        float interior = max(smoothstep(uThresh,uThresh*2.0,grad), smoothstep(uThresh*1.6,uThresh*3.2,lap));  // grad=boundaries/gaps, lap=creases (de-noised)
+        float fgC=fg(vUv), sil=abs(fgC-max(max(fg(vUv-vec2(o.x,0.)),fg(vUv+vec2(o.x,0.))),max(fg(vUv-vec2(0.,o.y)),fg(vUv+vec2(0.,o.y))))); // outer outline
+        float edge=clamp(max(fgC>0.5?interior:0.0, sil),0.0,1.0)*uStr;
+        gl_FragColor=vec4(mix(col.rgb, uInk, edge), max(col.a, edge)); }` });
+  const scn=new THREE.Scene(); scn.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), mat));
+  _edges={rt, depth, mat, scn, cam:new THREE.Camera()}; return _edges;
+}
+function renderEdges(){ const s=ensureEdges(); const dp=new THREE.Vector2(); renderer.getDrawingBufferSize(dp);
+  if(s.rt.width!==dp.x||s.rt.height!==dp.y){ s.rt.setSize(dp.x,dp.y); s.mat.uniforms.uRes.value.set(dp.x,dp.y); }
+  s.mat.uniforms.uW.value=+$('edgeW').value;
+  s.mat.uniforms.uStr.value=+$('edgeStr').value;
+  s.mat.uniforms.uThresh.value=(modelRadius||80)*0.006;
   s.mat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
   renderer.setRenderTarget(s.rt); renderer.clear(); renderer.render(scene,camera);
   renderer.setRenderTarget(null); renderer.render(s.scn, s.cam);
@@ -1670,6 +1712,9 @@ $('saveColored').addEventListener('click', ()=>{
 $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('outlineOn').addEventListener('change', refreshOutline);
 $('outlineW').addEventListener('input', e=>{ $('outlineWV').textContent=e.target.value; refreshOutline(); });
+$('edgeOn').addEventListener('change', ()=>{ const on=$('edgeOn').checked; ['edgeRow1','edgeRow2'].forEach(id=>{const e=$(id);if(e)e.style.display=on?'':'none';}); requestRender(); });
+$('edgeW').addEventListener('input', e=>{ $('edgeWV').textContent=(+e.target.value).toFixed(1); requestRender(); });
+$('edgeStr').addEventListener('input', e=>{ $('edgeStrV').textContent=(+e.target.value).toFixed(2); requestRender(); });
 $('ssaoOn').addEventListener('change', ()=>{ const on=$('ssaoOn').checked; ['ssaoRow1','ssaoRow2'].forEach(id=>{const e=$(id);if(e)e.style.display=on?'':'none';}); requestRender(); });
 $('ssaoInt').addEventListener('input', e=>{ $('ssaoIntV').textContent=(+e.target.value).toFixed(1); requestRender(); });
 $('ssaoRadius').addEventListener('input', e=>{ $('ssaoRadiusV').textContent=(+e.target.value).toFixed(1); requestRender(); });
@@ -3405,7 +3450,7 @@ function initAtlasPicker(){
 // Saves the whole look (render/overlay/emphasis settings) so it can be re-applied
 // to a different overlay map. Excludes the data source itself (task/file/region).
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
-  'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
+  'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','edgeOn','edgeW','edgeStr','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth',
@@ -4574,14 +4619,19 @@ function drawCbar(x, cb, bx, by, W, H, txt){
   }
   const lut = cb.style==='cmap' ? (CMAPS[cb.cmap]||CMAPS.viridis)
     : [[0.54,0.56,0.6], new THREE.Color(cb.color).toArray()];
+  // traditional colorbar: gradient bar (upper portion) + min/mid/max tick labels below + name above
+  const barH=Math.max(5, Math.round(H*0.52));
   for(let i=0;i<W;i++){ const t=i/(W-1),f=t*(lut.length-1),a=Math.floor(f),g=f-a;
     const c0=lut[a],c1=lut[Math.min(lut.length-1,a+1)];
     x.fillStyle=`rgb(${Math.round(255*(c0[0]+(c1[0]-c0[0])*g))},${Math.round(255*(c0[1]+(c1[1]-c0[1])*g))},${Math.round(255*(c0[2]+(c1[2]-c0[2])*g))})`;
-    x.fillRect(bx+i,by,1,H); }
-  x.strokeStyle=txt; x.globalAlpha=0.4; x.strokeRect(bx,by,W,H); x.globalAlpha=1;
-  x.fillStyle=txt;
-  x.textAlign='left';  x.fillText((cb.min).toFixed(1), bx, by-3);
-  x.textAlign='right'; x.fillText((cb.max).toFixed(1), bx+W, by-3);
+    x.fillRect(bx+i,by,1,barH); }
+  x.strokeStyle=txt; x.globalAlpha=0.5; x.strokeRect(bx,by,W,barH); x.globalAlpha=1;
+  const fmt=v=>(Math.abs(v)>=100?Math.round(v).toString():Math.abs(v)>=1?(+v).toFixed(1):(+v).toFixed(2));
+  const mid=(cb.min+cb.max)/2; x.fillStyle=txt; x.textBaseline='top';
+  const ticks=[[bx,cb.min,'left'],[bx+W/2,mid,'center'],[bx+W,cb.max,'right']];
+  for(const [tx0,va,al] of ticks){ x.strokeStyle=txt; x.globalAlpha=0.6; x.beginPath(); x.moveTo(tx0,by+barH); x.lineTo(tx0,by+barH+Math.max(2,fs*0.3)); x.stroke(); x.globalAlpha=1;
+    x.textAlign=al; x.fillText(fmt(va), tx0, by+barH+Math.max(3,fs*0.45)); }
+  if(cb.name){ x.textAlign='center'; x.textBaseline='alphabetic'; x.font='600 '+fs+'px system-ui'; x.fillText(cb.name, bx+W/2, by-3); x.font=fs+'px system-ui'; }
 }
 async function pbExport(){ try{
   const items=pbItems; if(!items.some(Boolean)){ alert('Click tiles to add views first.'); return; }
@@ -5416,7 +5466,8 @@ function tick(){
   if(renderRequested){
     renderRequested=false;
     headlight.position.copy(camera.position);
-    if(ssaoOn() && !sliceMode && !mosaicMode){ try{ renderSSAO(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
+    if(edgesOn() && !sliceMode && !mosaicMode){ try{ renderEdges(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
+    else if(ssaoOn() && !sliceMode && !mosaicMode){ try{ renderSSAO(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
     else renderer.render(scene,camera);
     if(sliceMode) _sl3dDirty=true;          // 3D scene changed -> the slice-grid thumbnail is now stale
   }
