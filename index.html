@@ -4038,15 +4038,47 @@ function ovTogglePlay(){ if(_ovPlayTimer){ ovStopPlay(); return; }
 let volMesh=null, volMax=0;
 const VOL_UN={ uTex:{value:null}, uCmap:{value:null}, uThresh:{value:0.15}, uOpacity:{value:1}, uSteps:{value:160}, uMode:{value:0}, uCam:{value:new THREE.Vector3()}, uTime:{value:0}, uSpark:{value:0}, _cmap:'' };
 function volDownStep(dim){ return Math.max(1, Math.ceil(Math.max(dim[0],dim[1],dim[2])/160)); }
-// brain mask for the volume — identical criterion to the slice/mosaic "✂ Crop to background"
-// (overlay shown only where the underlay/MNI template has tissue, sampleMM > 6). Sampled on the
-// (downsampled) overlay grid; cached on the nii so 4D playback doesn't recompute it.
+// SOLID occupancy of the displayed atlas (union of all region meshes), voxelised onto the overlay's
+// downsampled grid: splat every mesh vertex, dilate to seal the shell, flood-fill the exterior, keep
+// the interior. This is the "brain you actually see" — clipping the volume to it means activation can
+// never render outside the rendered brain (atlas is fixed per page load, so cache by grid dims).
+let _atlasOcc=null, _atlasOccKey='';
+function atlasOccMask(nii, st, ox, oy, oz){
+  const key=ox+'x'+oy+'x'+oz; if(_atlasOccKey===key && _atlasOcc) return _atlasOcc;
+  const Minv=nii.Minv, T=nii.T, shell=new Uint8Array(ox*oy*oz);
+  for(const rec of meshes){ if(!rec.mesh) continue; const p=rec.mesh.geometry.attributes.position.array;
+    for(let q=0;q<p.length;q+=3){ const rx=p[q], ry=-p[q+2], rz=p[q+1];          // three.js (R,S,-A) -> RAS (R,A,S)
+      const dx=rx-T[0],dy=ry-T[1],dz=rz-T[2];
+      const i=Math.round((Minv[0]*dx+Minv[1]*dy+Minv[2]*dz)/st), j=Math.round((Minv[3]*dx+Minv[4]*dy+Minv[5]*dz)/st), k=Math.round((Minv[6]*dx+Minv[7]*dy+Minv[8]*dz)/st);
+      if(i<0||j<0||k<0||i>=ox||j>=oy||k>=oz) continue; shell[i+j*ox+k*ox*oy]=1; } }
+  const at=(a,x,y,z)=>(x<0||y<0||z<0||x>=ox||y>=oy||z>=oz)?0:a[x+y*ox+z*ox*oy];
+  const dil=Uint8Array.from(shell);                                                // dilate 1: seal gaps between abutting regions
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ if(shell[x+y*ox+z*ox*oy]) continue;
+    if(at(shell,x-1,y,z)||at(shell,x+1,y,z)||at(shell,x,y-1,z)||at(shell,x,y+1,z)||at(shell,x,y,z-1)||at(shell,x,y,z+1)) dil[x+y*ox+z*ox*oy]=1; }
+  const out=new Uint8Array(ox*oy*oz), stk=[];                                       // flood-fill exterior through empty cells
+  const push=(x,y,z)=>{ if(x<0||y<0||z<0||x>=ox||y>=oy||z>=oz) return; const id=x+y*ox+z*ox*oy; if(out[id]||dil[id]) return; out[id]=1; stk.push(id); };
+  for(let x=0;x<ox;x++)for(let y=0;y<oy;y++){ push(x,y,0); push(x,y,oz-1); }
+  for(let x=0;x<ox;x++)for(let z=0;z<oz;z++){ push(x,0,z); push(x,oy-1,z); }
+  for(let y=0;y<oy;y++)for(let z=0;z<oz;z++){ push(0,y,z); push(ox-1,y,z); }
+  while(stk.length){ const id=stk.pop(), x=id%ox, y=((id/ox)|0)%oy, z=(id/(ox*oy))|0; push(x-1,y,z);push(x+1,y,z);push(x,y-1,z);push(x,y+1,z);push(x,y,z-1);push(x,y,z+1); }
+  const solid=new Uint8Array(ox*oy*oz); for(let id=0;id<solid.length;id++) solid[id]=(dil[id]||!out[id])?1:0;   // shell + interior
+  // erode 1 voxel so the clip sits just INSIDE the mesh — kills the trilinear-interpolation bleed that
+  // otherwise lets a thin isosurface shell render ~1 voxel outside the rendered brain
+  const mask=new Uint8Array(ox*oy*oz);
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const id=x+y*ox+z*ox*oy;
+    mask[id]=(solid[id]&&at(solid,x-1,y,z)&&at(solid,x+1,y,z)&&at(solid,x,y-1,z)&&at(solid,x,y+1,z)&&at(solid,x,y,z-1)&&at(solid,x,y,z+1))?1:0; }
+  _atlasOcc=mask; _atlasOccKey=key; return mask;
+}
+// brain mask for the volume = inside the displayed atlas mesh AND on-template (tv>6, == "✂ Crop to
+// background"). Clipping to the atlas mesh is what stops activation rendering outside the brain you see.
 function volBrainMask(nii, st, ox, oy, oz){
   if(nii.__bmSt===st && nii.__bm) return nii.__bm;
-  const mni=ensureMNI(); if(!mni){ nii.__bm=null; nii.__bmSt=st; return null; }
-  const [nx,ny,nz]=nii.dim, wo=nii.worldOf, m=new Uint8Array(ox*oy*oz);
-  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st);
-    const w=wo(sx,sy,sz), tv=mni.sampleMM(w[0],w[1],w[2])||0; m[x+y*ox+z*ox*oy]=(tv>6)?1:0; }   // tv>6 == crop-to-background
+  const mni=ensureMNI(); const [nx,ny,nz]=nii.dim, wo=nii.worldOf, m=new Uint8Array(ox*oy*oz);
+  const occ=meshes.length?atlasOccMask(nii,st,ox,oy,oz):null;
+  for(let z=0;z<oz;z++)for(let y=0;y<oy;y++)for(let x=0;x<ox;x++){ const idx=x+y*ox+z*ox*oy;
+    if(occ && !occ[idx]){ m[idx]=0; continue; }                                     // outside the displayed mesh -> clip
+    const sx=Math.min(nx-1,x*st),sy=Math.min(ny-1,y*st),sz=Math.min(nz-1,z*st), w=wo(sx,sy,sz);
+    const tv=mni?(mni.sampleMM(w[0],w[1],w[2])||0):255; m[idx]=(tv>6)?1:0; }
   nii.__bm=m; nii.__bmSt=st; return m;
 }
 function buildVolTexture(nii, normMax){
