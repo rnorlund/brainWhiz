@@ -376,7 +376,7 @@
 <div id="sidebar">
 
   <div class="grouplbl">Data</div>
-  <details class="acc" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
+  <details class="acc" id="accOverlays" open><summary><span class="chev">▸</span>📊 Overlays</summary><div class="accb">
     <div id="ovList"></div>
     <div class="row" style="gap:6px;flex-wrap:wrap">
       <button class="sm" id="ovAddFile" title="Load a voxelwise MNI-space statistical / activation map (.nii or .nii.gz) — e.g. a z/t-map or contrast. It is sampled onto the current atlas's regions and colored by the colorbar.">➕ Load .nii map</button>
@@ -441,7 +441,7 @@
     <div id="ovInfo" class="muted" style="font-size:11px;margin-top:6px"></div>
   </div></details>
 
-  <details class="acc"><summary><span class="chev">▸</span>🩻 Underlay</summary><div class="accb">
+  <details class="acc" id="accUnderlay"><summary><span class="chev">▸</span>🩻 Underlay</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:8px">
       The single anatomical <b>base</b> image under the slices/mosaic (and what <b>✂ Crop to background</b>
       masks overlays to). Default is the MNI152 template — load a subject T1 / your own template
@@ -456,7 +456,7 @@
     <div id="ulTabInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:4px"></div>
   </div></details>
 
-  <details class="acc"><summary><span class="chev">▸</span>🧊 Volume render</summary><div class="accb">
+  <details class="acc" id="accVolume"><summary><span class="chev">▸</span>🧊 Volume render</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
       Raymarch the <b>active overlay</b> (incl. 4D) as a true 3D volume — glowing voxels you can
       orbit/zoom. Fade the brain to a <b>glass shell</b> (Appearance ▸ Glass) to see the voxels inside it.
@@ -677,8 +677,8 @@
     </div></details>
   </div></details>
 
-  <div class="grouplbl">Tools</div>
-  <details class="acc"><summary><span class="chev">▸</span>🎬 Projector</summary><div class="accb">
+  <div class="grouplbl" id="grpTools">Tools</div>
+  <details class="acc" id="accProjector"><summary><span class="chev">▸</span>🎬 Projector</summary><div class="accb">
     <div class="row" style="justify-content:space-between"><label class="toggle" title="Project an image, video, or webcam onto the 3D brain surface"><input type="checkbox" id="projOn"> Projector on</label>
       <button class="sm" id="projClearAll" title="Remove all projector media, the wrap/projector layer, and every decal stamp">🗑 Clear all</button></div>
     <div class="row" style="gap:6px;flex-wrap:wrap"><label style="min-width:auto">Media</label>
@@ -816,7 +816,7 @@
     </div>
   </div></details>
 
-  <details class="acc"><summary><span class="chev">▸</span>🎬 Keyframe director</summary><div class="accb">
+  <details class="acc" id="accKeyframe"><summary><span class="chev">▸</span>🎬 Keyframe director</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
       Set up a view, add a keyframe, change the view, add another… then <b>Preview</b> or <b>Record MP4</b>.
       Keyframes capture camera, explode, overlay opacity, 4D frame &amp; a caption; the flythrough is
@@ -4366,6 +4366,14 @@ function resize(){
 document.getElementById('sidebarR').appendChild(document.getElementById('accAppearance'));
 // move the slice controls out of the 2x2 grid into the left sidebar (no overlap on the render)
 { const _slh=document.getElementById('sliceCtlHost'); _slh.insertBefore(document.getElementById('sliceCtl'), _slh.firstChild); }   // Render mode at the very top
+// panel order: Underlay above Overlays · Volume render under View&appearance · Tools after Output&motion
+(function reorderPanels(){
+  const ov=$('accOverlays'), ul=$('accUnderlay'), vol=$('accVolume'), sl=$('accSlices'),
+        grpT=$('grpTools'), proj=$('accProjector'), pot=$('accPotato'), kf=$('accKeyframe');
+  if(ul&&ov&&ov.parentNode) ov.parentNode.insertBefore(ul, ov);                 // Underlay first
+  if(vol&&sl&&sl.parentNode) sl.parentNode.insertBefore(vol, sl.nextSibling);    // Volume render → View & appearance
+  if(grpT&&proj&&pot&&kf){ kf.after(pot); kf.after(proj); kf.after(grpT); }       // Tools after Output & motion
+})();
 window.addEventListener('resize',resize); resize();
 setTimeout(resize, 200);
 
