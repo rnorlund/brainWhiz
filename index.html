@@ -290,7 +290,8 @@
         <span style="flex:1"></span><span id="slCoord" style="color:var(--muted)"></span></div>
       <div class="row seg" id="slKindRow"><label>Render</label>
         <button id="slKindVox" class="sm on">Voxel heatmap</button>
-        <button id="slKindMesh" class="sm">Mesh regions</button></div>
+        <button id="slKindMesh" class="sm">Mesh regions</button>
+        <button id="slKindMeshVox" class="sm" title="Mesh region cross-sections with the loaded stat map painted VOXELWISE inside them">Mesh + voxels</button></div>
       <div class="row" id="meshBorderRow" style="display:none"><label title="Outline between region cross-sections">Borders</label>
         <input type="color" id="meshBorderColor" value="#000000" title="border color">
         <input type="range" id="meshBorderW" min="0" max="4" step="0.25" value="1" style="flex:1" title="border thickness">
@@ -2596,8 +2597,7 @@ function installBuiltAtlas(finalRecs, SAMP, name){
   if(typeof updateColorbar==='function') updateColorbar();
   // a built atlas is a parcellation (meshes), not a volume — show it as region cross-sections in
   // Slices/Mosaic (the "Voxel heatmap" mode shows the underlay/overlay volumes, which this doesn't change)
-  sliceKind='mesh'; const vx=$('slKindVox'), mh=$('slKindMesh');
-  if(vx) vx.classList.remove('on'); if(mh) mh.classList.add('on');
+  sliceKind='mesh'; if(typeof syncKindButtons==='function') syncKindButtons();
   if($('meshBorderRow')) $('meshBorderRow').style.display=(sliceMode)?'flex':'none';
   refreshSliceViews(); clearEmptyState();
   view([-1,0,0], camDist); home.copy(camera.position); homeTarget.copy(controls.target);
@@ -4730,7 +4730,7 @@ function applyViewerCfg(cfg){
   if(cfg.vis) showOnly(cfg.vis);
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
   if(cfg.sliceMM) sliceMM=cfg.sliceMM.slice();
-  if(cfg.sliceKind){ sliceKind=cfg.sliceKind; const vx=$('slKindVox'),mh=$('slKindMesh'); if(vx)vx.classList.toggle('on',sliceKind==='voxel'); if(mh)mh.classList.toggle('on',sliceKind==='mesh'); }
+  if(cfg.sliceKind){ sliceKind=cfg.sliceKind; syncKindButtons(); }
   if(cfg.mosaic){ const M=cfg.mosaic; mosaicPlane=M.plane||'axi';
     const set=(id,v,vid)=>{ const e=$(id); if(e&&v!=null){ e.value=v; if(vid&&$(vid))$(vid).textContent=v; } };
     set('mosN',M.n,'mosNV'); set('mosCols',M.cols,'mosColsV'); set('mosCrop',M.crop,'mosCropV'); set('mosLabelSize',M.labelSize,'mosLabelSizeV');
@@ -4909,7 +4909,12 @@ $('panelBuilder').style.display='none';
 
 // ================= VOXEL SLICE VIEW (ortho heatmap + TFCE) =================
 let sliceStat='raw';   // 'raw' | 'tfce'
-let sliceKind='voxel'; // 'voxel' | 'mesh'
+let sliceKind='voxel'; // 'voxel' | 'mesh' (mesh + slMeshVox flag = "Mesh + voxels")
+// highlight the 3-way Render segmented control from sliceKind + the slMeshVox flag
+function syncKindButtons(){ const mv=$('slMeshVox')&&$('slMeshVox').checked;
+  if($('slKindVox')) $('slKindVox').classList.toggle('on', sliceKind==='voxel');
+  if($('slKindMesh')) $('slKindMesh').classList.toggle('on', sliceKind==='mesh'&&!mv);
+  if($('slKindMeshVox')) $('slKindMeshVox').classList.toggle('on', sliceKind==='mesh'&&mv); }
 let sliceOrtho=null;
 let viewTransparent=false;   // when true, slice/mosaic capture leaves bg (outside-brain) transparent
 const sliceVP={ sag:{z:1,px:0,py:0}, cor:{z:1,px:0,py:0}, axi:{z:1,px:0,py:0} };   // per-plane zoom + pan(mm)
@@ -5291,7 +5296,7 @@ function sliceRenderAll(){
   syncPosSliders();
   $('slCoord').textContent=`MNI ${sliceMM.map(v=>Math.round(v)).join(', ')} mm`;
   const nvis = sliceOverlays().length;
-  $('slMapName').textContent = sliceKind==='mesh' ? 'region cross-sections'
+  $('slMapName').textContent = sliceKind==='mesh' ? (($('slMeshVox')&&$('slMeshVox').checked)?'voxels in regions':'region cross-sections')
     : (nvis ? nvis+' overlay'+(nvis>1?'s':'') : '— add/show a .nii overlay —');
   try{ $('sl3d').src = window.brainAPI.renderTo(460,440,true,1.0); }catch(e){}
 }
@@ -5303,7 +5308,6 @@ function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   $('orthoCtl').style.display = sliceMode?'block':'none';
   $('slKindRow').style.display = sliceMode?'flex':'none';
   $('meshBorderRow').style.display = (sliceMode && sliceKind==='mesh')?'flex':'none';
-  if($('meshVoxRow')) $('meshVoxRow').style.display = (sliceMode && sliceKind==='mesh')?'flex':'none';
   $('mosaicCtl').style.display = mosaicMode?'block':'none';
   const hint=document.querySelector('.hint'), zw=$('zoomWidget'), off=(m!=='mesh');
   if(hint) hint.style.display=off?'none':''; if(zw) zw.style.display=off?'none':'';
@@ -5340,12 +5344,13 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('modeMesh').addEventListener('click', ()=>setViewMode('mesh'));
   $('modeSlice').addEventListener('click', ()=>setViewMode('slice'));
   $('modeMosaic').addEventListener('click', ()=>setViewMode('mosaic'));
-  const syncKindRows=()=>{ const on=(sliceMode && sliceKind==='mesh'); $('meshBorderRow').style.display=on?'flex':'none'; if($('meshVoxRow')) $('meshVoxRow').style.display=on?'flex':'none'; };
-  $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
-  $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
+  const syncKindRows=()=>{ const on=(sliceMode && sliceKind==='mesh'); $('meshBorderRow').style.display=on?'flex':'none'; syncKindButtons(); };
+  $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; syncKindRows(); sliceRenderAll(); });
+  $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; if($('slMeshVox')) $('slMeshVox').checked=false; syncKindRows(); sliceRenderAll(); });
+  $('slKindMeshVox').addEventListener('click', ()=>{ sliceKind='mesh'; if($('slMeshVox')) $('slMeshVox').checked=true; syncKindRows(); sliceRenderAll(); });
   $('meshBorderColor').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
-  if($('slMeshVox')) $('slMeshVox').addEventListener('change', ()=>{ if(sliceMode) sliceRenderAll(); });
+  if($('slMeshVox')) $('slMeshVox').addEventListener('change', ()=>{ syncKindButtons(); if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); if(n===2) updateTractClip(); }));
   const ulPick=async(f,info)=>{ if(!f) return; try{ if(info) $(info).textContent='reading '+f.name+' …';
@@ -5447,7 +5452,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     connOn:'Show structural/functional connectivity edges (atlases with data)', connType:'Connectivity modality (DTI / resting-state)', connTh:'Minimum edge strength to draw',
     connScale:'Edge thickness scale', connAll:'Also connect hidden regions', connColorMode:'Color edges by strength (colormap), by direction (DEC: R=L↔R, G=A↔P, B=S↔I), or one fixed color', connCmap:'Connectivity colormap', connColor:'Single edge color',
     connPulse:'Animate a pulse of light along each edge', connPulseSpeed:'Pulse speed', connPulseColor:'Pulse color',
-    slKindVox:'Slice view: voxel heatmap of the loaded stat map on the MNI template', slKindMesh:'Slice view: thin cross-section of the colored 3D regions',
+    slKindVox:'Slice view: voxel heatmap of the loaded stat map on the MNI template', slKindMesh:'Slice view: thin cross-section of the colored 3D regions', slKindMeshVox:'Slice view: region cross-sections with the stat map painted voxelwise inside them',
     slPosX:'Move the slice along left↔right (X)', slPosY:'Move the slice along front↔back (Y)', slPosZ:'Move the slice along bottom↔top (Z)',
     slRaw:'Threshold the raw stat values', slTfce:'Threshold-Free Cluster Enhancement — highlights spatially-supported clusters', slThresh:'Slice overlay threshold (drag to hide weaker values)',
     slCmap:'Slice heatmap colormap', slCross:'Show the crosshair on the slices',
