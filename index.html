@@ -295,9 +295,12 @@
         <span style="flex:1"></span><span id="slCoord" style="color:var(--muted)"></span></div>
       <div class="row" id="slKindHint" style="display:block;font-size:10px;line-height:1.4;color:var(--muted)"></div>
       <div class="row" id="meshBorderRow" style="display:none"><label title="Outline between region cross-sections">Borders</label>
-        <input type="color" id="meshBorderColor" value="#000000" title="border color">
-        <input type="range" id="meshBorderW" min="0" max="4" step="0.25" value="1" style="flex:1" title="border thickness">
+        <input type="color" id="meshBorderColor" value="#000000" title="border color — pick a light colour for contrast over the dim fills">
+        <input type="range" id="meshBorderW" min="0" max="8" step="0.25" value="1" style="flex:1" title="border thickness">
         <span id="meshBorderWV" style="min-width:24px;text-align:right">1.0</span></div>
+      <div class="row" id="meshVoxOpRow" style="display:none"><label title="How visible the region colours are in Mesh+vox (lower = the voxel heatmap dominates)">Region opacity</label>
+        <input type="range" id="meshVoxOp" min="0.05" max="1" step="0.01" value="0.22" style="flex:1" title="region fill opacity behind the voxelwise stat map">
+        <span id="meshVoxOpV" style="min-width:30px;text-align:right">0.22</span></div>
       <div class="row" id="meshVoxRow" style="display:none"><label class="toggle" title="(internal) voxels-in-regions flag, driven by the Render buttons"><input type="checkbox" id="slMeshVox"> voxels in regions</label></div>
       <div id="orthoCtl">
         <div class="row"><label>Slice</label>
@@ -3545,7 +3548,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','edgeOn','edgeW','edgeStr','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','shellMNI','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
-  'coloredOp','grayOp','satCut','glass','smooth','slMeshVox',
+  'coloredOp','grayOp','satCut','glass','smooth','slMeshVox','meshVoxOp',
   'volOn','volMode','volCmap','volThr','volOp','volSteps','volClip',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
@@ -4931,9 +4934,10 @@ function syncSliceCtx(){
   const mesh=(sliceKind==='mesh'), mv=mesh&&$('slMeshVox')&&$('slMeshVox').checked;
   if($('slKindRow')) $('slKindRow').style.display=sliceMode?'flex':'none';        // hidden in mosaic mode
   if($('meshBorderRow')) $('meshBorderRow').style.display=(sliceMode&&mesh)?'flex':'none';
+  if($('meshVoxOpRow')) $('meshVoxOpRow').style.display=(sliceMode&&mv)?'flex':'none';   // region-opacity slider only in Mesh+vox
   const hint=$('slKindHint'); if(hint){ hint.style.display=sliceMode?'block':'none';
     hint.textContent = !mesh ? 'Voxelwise stat map over the MNI template — anatomy shows through. Each overlay keeps its own colour / threshold (set per overlay above).'
-      : mv ? 'Stat map painted voxelwise inside faint region cross-sections; “Borders” outlines each region.'
+      : mv ? 'Stat map painted voxelwise inside the region cross-sections. Use “Region opacity” to set how visible the region colours are, and “Borders” (colour + thickness) to outline each region.'
            : 'Each region cross-section filled with its mean overlay value; “Borders” outlines regions. Pick “Mesh+vox” for voxel detail inside them.'; }
   syncKindButtons();
 }
@@ -5033,6 +5037,7 @@ function overlayVoxImage(plane, dw, dh, win){
 function renderMeshSlices(){
   if(!meshes.length) return;
   const meshVox = $('slMeshVox') && $('slMeshVox').checked && sliceOverlays().length>0;
+  const mvRegOp = $('meshVoxOp') ? +$('meshVoxOp').value : 0.22;   // region-fill opacity behind the voxel overlay
   const P=mniToTjs(sliceMM);   // crosshair in three.js mesh axes (geometry is canonical world coords)
   for(const [plane,cv] of [['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]]){
     const win=windowOf(plane);
@@ -5066,7 +5071,7 @@ function renderMeshSlices(){
       if(!loops.length) continue;
       const colored=isColored(rec); let rop=(colored?colOp:grOp)*allOp;
       const faint=glass&&(hasAct?!colored:true); if(faint) rop=Math.min(rop, hasAct?0.09:0.13);
-      if(meshVox) rop=Math.min(rop, 0.22);                           // faint context so the voxelwise overlay reads
+      if(meshVox) rop=Math.min(rop, mvRegOp);                        // user-set region opacity behind the voxelwise overlay
       if(rop<=0.004 && !meshVox) continue;                           // effectively hidden (but keep shape for the clip)
       const c=mesh.material.color; let cr=c.r*255, cg=c.g*255, cb=c.b*255;
       if(vivid!==1){ const L=0.299*cr+0.587*cg+0.114*cb; cr=L+(cr-L)*vivid; cg=L+(cg-L)*vivid; cb=L+(cb-L)*vivid;
@@ -5372,6 +5377,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('slKindMeshVox').addEventListener('click', ()=>{ sliceKind='mesh'; if($('slMeshVox')) $('slMeshVox').checked=true; syncKindRows(); sliceRenderAll(); });
   $('meshBorderColor').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
+  if($('meshVoxOp')) $('meshVoxOp').addEventListener('input', e=>{ $('meshVoxOpV').textContent=(+e.target.value).toFixed(2); if(sliceMode) sliceRenderAll(); });
   if($('slMeshVox')) $('slMeshVox').addEventListener('change', ()=>{ syncSliceCtx(); if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); if(n===2) updateTractClip(); }));
