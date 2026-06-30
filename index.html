@@ -4939,7 +4939,7 @@ function syncSliceCtx(){
 }
 let sliceOrtho=null;
 let viewTransparent=false;   // when true, slice/mosaic capture leaves bg (outside-brain) transparent
-const SLICE_DEF_ZOOM=1.3;   // default slice-cell zoom on load (brain fills the cell, matching the preferred framing)
+const SLICE_DEF_ZOOM=1.15;   // default slice-cell zoom on load (brain fills the cell, matching the preferred framing)
 const sliceVP={ sag:{z:SLICE_DEF_ZOOM,px:0,py:0}, cor:{z:SLICE_DEF_ZOOM,px:0,py:0}, axi:{z:SLICE_DEF_ZOOM,px:0,py:0} };   // per-plane zoom + pan(mm)
 const _clampI=(v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
 // MNI(x,y,z = R,A,S)  ->  three.js mesh axes (+X=R, +Y=Sup, -Z=Ant)
