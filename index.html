@@ -295,6 +295,7 @@
         <input type="color" id="meshBorderColor" value="#000000" title="border color">
         <input type="range" id="meshBorderW" min="0" max="4" step="0.25" value="1" style="flex:1" title="border thickness">
         <span id="meshBorderWV" style="min-width:24px;text-align:right">1.0</span></div>
+      <div class="row" id="meshVoxRow" style="display:none"><label class="toggle" title="Paint the loaded overlay VOXELWISE inside each region cross-section (region shapes kept, faint), instead of one flat mean-value color per region"><input type="checkbox" id="slMeshVox"> 🔥 Voxelwise overlay in regions</label></div>
       <div id="orthoCtl">
         <div class="row"><label>Slice</label>
           <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
@@ -3542,7 +3543,7 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','edgeOn','edgeW','edgeStr','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','shellMNI','scheme','singleColor',
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
-  'coloredOp','grayOp','satCut','glass','smooth',
+  'coloredOp','grayOp','satCut','glass','smooth','slMeshVox',
   'volOn','volMode','volCmap','volThr','volOp','volSteps','volClip',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
@@ -4976,8 +4977,34 @@ function assembleLoops(segs){
   return loops;
 }
 const _mgcv=document.createElement('canvas');   // temp buffer for the mesh-slice aura edge-glow
+// voxelwise overlay painted to an offscreen canvas (overlay-only, transparent elsewhere), in the
+// SAME in-plane frame/window as the mesh cross-sections — composited clipped to the region loops so
+// the loaded stat map shows VOXELWISE inside each region (not one flat mean color).
+function overlayVoxImage(plane, dw, dh, win){
+  const tmp=document.createElement('canvas'); tmp.width=Math.max(1,dw); tmp.height=Math.max(1,dh);
+  const ovs=sliceOverlays().map(ovSliceParams); if(!ovs.length) return tmp;
+  const tctx=tmp.getContext('2d'), img=tctx.createImageData(tmp.width,tmp.height), D=img.data;
+  const mni=ensureMNI(), hmin=win.hmin, hr=win.hr, vmax=win.vmax, vr=win.vr;
+  for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
+    for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
+      const tv=mni?(mni.sampleMM(w[0],w[1],w[2])||0):255;
+      let pr=0,pg=0,pb=0,pa=0;                                  // premultiplied over-composite
+      for(const p of ovs){ if(p.cropBg && !(tv>6)) continue;
+        const v=p.src.sampleMM(w[0],w[1],w[2]); if(v===null||!isFinite(v)) continue;
+        const val=p.abs?Math.abs(v):v; if(!(val>p.thr)) continue;
+        let n=(val-p.lo)/p.span; if(p.invert) n=1-n; n=n<0?0:n>1?1:n;
+        let cr,cg,cb; if(p.style==='cmap'){ const c=sampleCmap(p.cmap,n); cr=c[0]*255;cg=c[1]*255;cb=c[2]*255; } else { cr=p.color[0];cg=p.color[1];cb=p.color[2]; }
+        if(p.vivid!==1){ const L=0.3*cr+0.59*cg+0.11*cb; cr=L+(cr-L)*p.vivid; cg=L+(cg-L)*p.vivid; cb=L+(cb-L)*p.vivid; cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
+        let ramp=(val-p.thr)/((p.lo+p.span-p.thr)||1e-6); ramp=ramp<0?0:ramp>1?1:ramp;
+        const a=Math.min(1,p.opacity*(0.25+0.75*ramp));
+        pr=cr*a+pr*(1-a); pg=cg*a+pg*(1-a); pb=cb*a+pb*(1-a); pa=a+pa*(1-a); }
+      const o=(py*dw+px)*4; if(pa>0.003){ const inv=1/pa; D[o]=pr*inv;D[o+1]=pg*inv;D[o+2]=pb*inv;D[o+3]=Math.round(Math.min(1,pa)*255); } else D[o+3]=0;
+  }}
+  tctx.putImageData(img,0,0); return tmp;
+}
 function renderMeshSlices(){
   if(!meshes.length) return;
+  const meshVox = $('slMeshVox') && $('slMeshVox').checked && sliceOverlays().length>0;
   const P=mniToTjs(sliceMM);   // crosshair in three.js mesh axes (geometry is canonical world coords)
   for(const [plane,cv] of [['sag',$('slSag')],['cor',$('slCor')],['axi',$('slAxi')]]){
     const win=windowOf(plane);
@@ -5002,6 +5029,7 @@ function renderMeshSlices(){
     const auraOn=$('auraOn').checked;
     let G=ctx, mcv=null;
     if(auraOn){ mcv=_mgcv; mcv.width=W; mcv.height=H; G=mcv.getContext('2d'); G.clearRect(0,0,W,H); }
+    const unionPath = meshVox ? new Path2D() : null;                 // collect all region loops for the voxel clip
     for(const rec of meshes){ const mesh=rec.mesh; if(!mesh.visible) continue;
       const geo=mesh.geometry; if(!geo.boundingBox) geo.computeBoundingBox();
       const bb=geo.boundingBox, lo=axis===0?bb.min.x:axis===1?bb.min.y:bb.min.z, hi=axis===0?bb.max.x:axis===1?bb.max.y:bb.max.z;
@@ -5010,16 +5038,16 @@ function renderMeshSlices(){
       if(!loops.length) continue;
       const colored=isColored(rec); let rop=(colored?colOp:grOp)*allOp;
       const faint=glass&&(hasAct?!colored:true); if(faint) rop=Math.min(rop, hasAct?0.09:0.13);
-      if(rop<=0.004) continue;                                        // effectively hidden
+      if(meshVox) rop=Math.min(rop, 0.22);                           // faint context so the voxelwise overlay reads
+      if(rop<=0.004 && !meshVox) continue;                           // effectively hidden (but keep shape for the clip)
       const c=mesh.material.color; let cr=c.r*255, cg=c.g*255, cb=c.b*255;
       if(vivid!==1){ const L=0.299*cr+0.587*cg+0.114*cb; cr=L+(cr-L)*vivid; cg=L+(cg-L)*vivid; cb=L+(cb-L)*vivid;
         cr=cr<0?0:cr>255?255:cr; cg=cg<0?0:cg>255?255:cg; cb=cb<0?0:cb>255?255:cb; }
-      G.fillStyle=`rgb(${cr|0},${cg|0},${cb|0})`;
-      G.beginPath();
-      for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?G.lineTo(px,py):G.moveTo(px,py); } G.closePath(); }
-      G.globalAlpha=Math.min(1,rop); G.fill('evenodd');
-      if(bw>0){ G.lineWidth=bw; G.strokeStyle=bcol; G.lineJoin='round'; G.stroke(); }   // outline this region
-      G.globalAlpha=1;
+      const rp=new Path2D();
+      for(const loop of loops){ for(let k=0;k<loop.length;k++){ const px=toX(loop[k][0]), py=toY(loop[k][1]); k?rp.lineTo(px,py):rp.moveTo(px,py); } rp.closePath(); }
+      if(rop>0.004){ G.fillStyle=`rgb(${cr|0},${cg|0},${cb|0})`; G.globalAlpha=Math.min(1,rop); G.fill(rp,'evenodd'); G.globalAlpha=1; }
+      if(bw>0 && !meshVox){ G.lineWidth=bw; G.strokeStyle=bcol; G.lineJoin='round'; G.stroke(rp); }   // outline (drawn on top of the overlay in voxel mode)
+      if(meshVox) unionPath.addPath(rp);
     }
     if(auraOn){ const auraCol=auraSliceColor(), baseI=+$('auraIntensity').value, auraSz=+$('auraSize').value;
       ctx.save(); ctx.shadowColor=auraCol; ctx.shadowBlur=Math.max(2, auraSz*16*dpr);
@@ -5027,6 +5055,10 @@ function renderMeshSlices(){
       ctx.globalAlpha=Math.max(0,Math.min(1,_auraPulseMul));          // pulse modulates the glow smoothly (not quantized)
       for(let i=0;i<reps;i++) ctx.drawImage(mcv,0,0);                 // stacked shadow = outward glow
       ctx.globalAlpha=1; ctx.restore(); ctx.drawImage(mcv,0,0); }     // crisp brain on top
+    if(meshVox && unionPath){                                         // voxelwise overlay clipped to the region cross-sections
+      const ovImg=overlayVoxImage(plane, dw, dh, win);
+      ctx.save(); ctx.clip(unionPath,'evenodd'); ctx.drawImage(ovImg, ox, oy); ctx.restore();
+      if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(unionPath); } }   // region borders on top
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
     if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
@@ -5271,6 +5303,7 @@ function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   $('orthoCtl').style.display = sliceMode?'block':'none';
   $('slKindRow').style.display = sliceMode?'flex':'none';
   $('meshBorderRow').style.display = (sliceMode && sliceKind==='mesh')?'flex':'none';
+  if($('meshVoxRow')) $('meshVoxRow').style.display = (sliceMode && sliceKind==='mesh')?'flex':'none';
   $('mosaicCtl').style.display = mosaicMode?'block':'none';
   const hint=document.querySelector('.hint'), zw=$('zoomWidget'), off=(m!=='mesh');
   if(hint) hint.style.display=off?'none':''; if(zw) zw.style.display=off?'none':'';
@@ -5307,11 +5340,12 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   $('modeMesh').addEventListener('click', ()=>setViewMode('mesh'));
   $('modeSlice').addEventListener('click', ()=>setViewMode('slice'));
   $('modeMosaic').addEventListener('click', ()=>setViewMode('mosaic'));
-  const syncKindRows=()=>{ $('meshBorderRow').style.display = (sliceMode && sliceKind==='mesh') ? 'flex' : 'none'; };
+  const syncKindRows=()=>{ const on=(sliceMode && sliceKind==='mesh'); $('meshBorderRow').style.display=on?'flex':'none'; if($('meshVoxRow')) $('meshVoxRow').style.display=on?'flex':'none'; };
   $('slKindVox').addEventListener('click', ()=>{ sliceKind='voxel'; $('slKindVox').classList.add('on'); $('slKindMesh').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
   $('slKindMesh').addEventListener('click', ()=>{ sliceKind='mesh'; $('slKindMesh').classList.add('on'); $('slKindVox').classList.remove('on'); syncKindRows(); sliceRenderAll(); });
   $('meshBorderColor').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
   $('meshBorderW').addEventListener('input', e=>{ $('meshBorderWV').textContent=(+e.target.value).toFixed(1); if(sliceMode) sliceRenderAll(); });
+  if($('slMeshVox')) $('slMeshVox').addEventListener('change', ()=>{ if(sliceMode) sliceRenderAll(); });
   window.__syncKindRows=syncKindRows;
   ['slPosX','slPosY','slPosZ'].forEach((id,n)=>$(id).addEventListener('input', e=>{ sliceMM[n]=+e.target.value; sliceRenderAll(); if(n===2) updateTractClip(); }));
   const ulPick=async(f,info)=>{ if(!f) return; try{ if(info) $(info).textContent='reading '+f.name+' …';
