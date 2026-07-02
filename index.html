@@ -148,6 +148,7 @@
     border-radius:6px;padding:6px 10px;cursor:pointer}
   button:hover{border-color:var(--accent)}
   button.sm{padding:3px 7px;font-size:11px}
+  button.sm.active{background:#5db0ff;color:#06223a;border-color:#5db0ff;font-weight:600}
   #search{margin-bottom:6px}
   #roiCount{color:var(--muted);font-size:11px}
   #roiList{border-top:1px solid var(--line);margin-top:8px;max-height:340px;overflow-y:auto}
@@ -678,6 +679,53 @@
         <span style="flex:1"></span><span style="font-size:10px;opacity:.6">click an arc to label it</span></div>
       <div id="arcList" style="max-height:150px;overflow:auto;font-size:11px"></div>
     </div></details>
+  </div></details>
+
+  <div class="grouplbl">Timeseries &amp; longitudinal</div>
+  <!-- 📈 TIMECOURSE (4D): click regions to plot their mean signal across frames -->
+  <details class="acc" id="accTimecourse"><summary><span class="chev">▸</span>📈 Timecourse (4D)</summary><div class="accb">
+    <div class="muted" style="font-size:11px;line-height:1.45;margin-bottom:6px">Load a <b>4D</b> overlay (e.g. rs-fMRI), then <b>click regions</b> in the brain to plot each region's mean signal across time. The cursor tracks the ▶ player.</div>
+    <div id="tcStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-bottom:4px">No 4D overlay loaded.</div>
+    <div class="row" style="gap:5px"><button class="sm" id="tcPick" title="Click regions in the 3D brain / slices to add their timecourse">＋ Pick regions</button>
+      <button class="sm" id="tcAddSel" title="Add the currently selected region">＋ Selected</button>
+      <button class="sm" id="tcClear" title="Remove all traces">✕ Clear</button></div>
+    <div class="row"><label>Normalize</label>
+      <select id="tcNorm" style="flex:1"><option value="raw">Raw signal</option><option value="pct">% change vs mean</option><option value="z">Z-score</option></select></div>
+    <div class="row"><label class="toggle" title="Also mark the frames as dots"><input type="checkbox" id="tcDots"> dots</label>
+      <span style="flex:1"></span><label class="toggle" title="Show a mean±SD band across the picked regions"><input type="checkbox" id="tcMean"> mean±sd</label></div>
+    <svg id="tcChart" style="width:100%;height:150px;display:block;background:#0a0e16;border-radius:5px;margin-top:4px"></svg>
+    <div id="tcLegend" style="font-size:10.5px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div></details>
+
+  <!-- 🌱 SEED CONNECTIVITY (4D): correlate a seed region's timecourse with every region -->
+  <details class="acc" id="accSeed"><summary><span class="chev">▸</span>🌱 Seed connectivity (4D)</summary><div class="accb">
+    <div class="muted" style="font-size:11px;line-height:1.45;margin-bottom:6px">With a <b>4D</b> overlay loaded, <b>pick a seed region</b> — brainWhiz correlates its timecourse with every region and colours the brain by Pearson <i>r</i> (live seed-based functional connectivity).</div>
+    <div id="seedStatus" style="font-size:11px;opacity:.8;min-height:13px;margin-bottom:4px">No 4D overlay loaded.</div>
+    <div class="row" style="gap:5px"><button class="sm" id="seedPick" title="Click a region in the brain to use as the seed">🌱 Pick seed</button>
+      <button class="sm" id="seedClear" title="Clear the correlation map">✕ Clear</button></div>
+    <div class="row"><label>Colormap</label><select id="seedCmap" style="flex:1"></select></div>
+    <div class="ctl"><div class="lab"><span title="Hide |r| below this">|r| threshold</span><span id="seedThrV">0.30</span></div>
+      <input type="range" id="seedThr" min="0" max="0.95" step="0.01" value="0.3"></div>
+    <div class="row"><label class="toggle" title="Fisher z-transform r before display"><input type="checkbox" id="seedFisher"> Fisher z</label>
+      <span style="flex:1"></span><label class="toggle" title="Also draw connectivity edges from the seed"><input type="checkbox" id="seedEdges"> edges</label></div>
+  </div></details>
+
+  <!-- 🗓 SESSIONS (longitudinal): scrub across timepoints, plot per-region change + behavioral scores -->
+  <details class="acc" id="accSessions"><summary><span class="chev">▸</span>🗓 Sessions (longitudinal)</summary><div class="accb">
+    <div class="muted" style="font-size:11px;line-height:1.45;margin-bottom:6px">Add a map per <b>timepoint</b> (lesion, thickness, %-signal…), scrub across sessions to colour the brain, and plot a region's change over time — overlay a <b>behavioral CSV</b> (day,score) to relate imaging to recovery.</div>
+    <div class="row" style="gap:5px"><button class="sm" id="sessAdd" title="Add a .nii map as a timepoint">＋ Session .nii</button>
+      <button class="sm" id="sessBehav" title="Load a CSV: first column = day/time, other numeric columns = scores">＋ Behavioral CSV</button>
+      <button class="sm" id="sessClear" title="Remove all sessions">✕ Clear</button></div>
+    <input type="file" id="sessFile" accept=".nii,.nii.gz,.gz" style="display:none">
+    <input type="file" id="sessCsvFile" accept=".csv,.tsv,.txt" style="display:none">
+    <div id="sessList" style="font-size:10.5px;max-height:96px;overflow:auto;margin:4px 0"></div>
+    <div class="ctl" id="sessScrubRow" style="display:none"><div class="lab"><span>Timepoint</span><span id="sessScrubV">—</span></div>
+      <input type="range" id="sessScrub" min="0" max="0" step="1" value="0"></div>
+    <div class="row" style="gap:5px"><button class="sm" id="sessPickRegion" title="Click a region to plot its value across sessions">＋ Pick region</button>
+      <span id="sessRegionName" style="font-size:10.5px;opacity:.8;flex:1"></span></div>
+    <svg id="seChart" style="width:100%;height:150px;display:block;background:#0a0e16;border-radius:5px;margin-top:4px"></svg>
+    <div id="seLegend" style="font-size:10.5px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div id="sessStatus" style="font-size:11px;opacity:.75;min-height:13px;margin-top:3px"></div>
   </div></details>
 
   <div class="grouplbl" id="grpTools">Tools</div>
@@ -2911,6 +2959,7 @@ renderer.domElement.addEventListener('click',ev=>{
     const ah=ray.intersectObjects(arcGroup.children.filter(c=>c.userData&&c.userData.arcIdx!=null),false);
     if(ah.length){ editArcLabel(ah[0].object.userData.arcIdx); return; }
   }
+  if(typeof tsOnPick==='function' && tsPick && tsOnPick(hitRec)) return;   // timeseries region-pick modes
   if(phSel) phSelectRec(null);         // tapping the brain (not a feature) deselects the PotatoHead part
   toggleSelect(hitRec);
 });
@@ -4024,6 +4073,7 @@ function setOverlayFrame(o, k){ if(!o||!o.vol||!o.vol.setFrame||!(o.nt>1)) retur
   if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked && overlays[selOv]===o) updateVolume(true);   // glowing-voxel volume follows the timeseries
   refreshSliceViews(); requestRender();
   if($('ovFrame')) $('ovFrame').value=k; if($('ovFrameV')) $('ovFrameV').textContent=(k+1)+'/'+o.nt;
+  if(typeof tcOnFrame==='function') tcOnFrame();   // move the 📈 timecourse cursor with the player
 }
 let _ovPlayTimer=null;
 function ovStopPlay(){ if(_ovPlayTimer){ clearInterval(_ovPlayTimer); _ovPlayTimer=null; } if($('ovPlay')) $('ovPlay').textContent='▶'; }
@@ -4403,6 +4453,161 @@ $('netBadge').addEventListener('click', ()=>{ const served=window.__served, on=n
       ? 'This copy is SERVED, so the 3D/figure libraries are bundled locally — brainWhiz works fully even with no internet. You don’t need to do anything.'
       : 'This page was opened directly from a file (file://), so libraries load from the internet (CDN). To use it fully offline, serve the folder instead — e.g. run "python -m http.server" in it and open http://localhost:8000.')); });
 window.addEventListener('online',updateNet); window.addEventListener('offline',updateNet); updateNet();
+
+// ================= TIMESERIES & LONGITUDINAL (📈 timecourse · 🌱 seed FC · 🗓 sessions) =================
+// Shared: extract per-ROI mean signal across a 4D overlay's frames (from ATLAS_SAMPLES), cached on
+// the nii; a tiny inline-SVG line chart; and a shared "pick a region by clicking the brain" mode.
+let tsPick=null;                                   // null | 'tc' | 'seed' | 'sess'  (active region-pick mode)
+function tsSetPick(mode, btnId){ tsPick=(tsPick===mode)?null:mode;
+  ['tcPick','seedPick','sessPickRegion'].forEach(id=>{ const b=$(id); if(b) b.classList.toggle('active', tsPick && id===btnId); });
+  const hint=tsPick?'Click a region in the 3-D brain or a slice…':''; if(tsPick==='tc'&&$('tcStatus'))$('tcStatus').textContent=hint||$('tcStatus').textContent;
+}
+function tsOnPick(rec){ if(!tsPick||!rec||!rec.meta) return false;
+  if(tsPick==='tc'){ tcToggleRegion(rec.meta.id); }
+  else if(tsPick==='seed'){ seedRoi=rec.meta.id; seedCompute(); }
+  else if(tsPick==='sess'){ sessRegion=rec.meta.id; if($('sessRegionName'))$('sessRegionName').textContent=rec.meta.name||('#'+rec.meta.id); sessRedraw(); }
+  return true;
+}
+// ---- per-ROI timecourses across a 4D overlay ----
+function tcCompute(nii){ if(!nii||!(nii.nt>1)) return null; if(nii.__tc) return nii.__tc;
+  const nt=nii.nt, M=nii.Minv, T=nii.T, [nx,ny,nz]=nii.dim, roiVox={};
+  for(const id in SAMPLES){ const s=SAMPLES[id]; if(!s||!s.length) continue; const set=new Set();
+    for(let p=0;p<s.length;p+=3){ const dx=s[p]-T[0],dy=s[p+1]-T[1],dz=s[p+2]-T[2];
+      const i=Math.round(M[0]*dx+M[1]*dy+M[2]*dz), j=Math.round(M[3]*dx+M[4]*dy+M[5]*dz), k=Math.round(M[6]*dx+M[7]*dy+M[8]*dz);
+      if(i<0||j<0||k<0||i>=nx||j>=ny||k>=nz) continue; set.add(i+j*nx+k*nx*ny); }
+    if(set.size) roiVox[id]=Array.from(set); }
+  const ids=Object.keys(roiVox), mat={}; ids.forEach(id=>mat[id]=new Float32Array(nt));
+  const saved=nii.frame;
+  for(let k=0;k<nt;k++){ nii.setFrame(k); const d=nii.data;
+    for(const id of ids){ const vx=roiVox[id]; let s=0,n=0; for(let q=0;q<vx.length;q++){ const v=d[vx[q]]; if(isFinite(v)){s+=v;n++;} } mat[id][k]=n?s/n:0; } }
+  if(saved>=0) nii.setFrame(saved);
+  return (nii.__tc={mat,nt,ids});
+}
+function tcNormalize(y, mode){ const n=y.length; let m=0; for(let i=0;i<n;i++) m+=y[i]; m/=n||1;
+  if(mode==='raw') return {y:Array.from(y)};
+  if(mode==='pct'){ const o=new Array(n); for(let i=0;i<n;i++) o[i]=m?((y[i]-m)/m*100):0; return {y:o}; }
+  let sd=0; for(let i=0;i<n;i++) sd+=(y[i]-m)*(y[i]-m); sd=Math.sqrt(sd/(n||1))||1;
+  const o=new Array(n); for(let i=0;i<n;i++) o[i]=(y[i]-m)/sd; return {y:o};
+}
+function pearson(a,b){ const n=Math.min(a.length,b.length); if(n<3) return 0; let ma=0,mb=0;
+  for(let i=0;i<n;i++){ma+=a[i];mb+=b[i];} ma/=n;mb/=n; let sab=0,saa=0,sbb=0;
+  for(let i=0;i<n;i++){ const da=a[i]-ma,db=b[i]-mb; sab+=da*db; saa+=da*da; sbb+=db*db; }
+  const d=Math.sqrt(saa*sbb); return d?sab/d:0;
+}
+// ---- generic inline-SVG line chart. series=[{label,color,xs,ys,dash,dots}] ----
+function tsDrawChart(svgId, series, opts={}){ const el=$(svgId); if(!el) return;
+  const W=Math.max(120,el.clientWidth||300), H=Math.max(90,el.clientHeight||150);
+  if(!series.length){ el.innerHTML=`<text x="${W/2}" y="${H/2}" fill="#5a6072" font-size="11" text-anchor="middle" font-family="system-ui">${opts.empty||'—'}</text>`; return; }
+  const PADL=34,PADR=8,PADT=8,PADB=18;
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  for(const s of series){ for(let i=0;i<s.xs.length;i++){ const x=s.xs[i],y=s.ys[i]; if(!isFinite(y)) continue; if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y; } }
+  if(!isFinite(x0)){ el.innerHTML=''; return; } if(x1===x0)x1=x0+1; if(y1===y0){y1=y0+1;y0-=1;}
+  const yp=(y1-y0)*0.08; y0-=yp; y1+=yp;
+  const sx=x=>PADL+(x-x0)/(x1-x0)*(W-PADL-PADR), sy=y=>H-PADB-(y-y0)/(y1-y0)*(H-PADT-PADB);
+  const p=[]; const fmt=v=>Math.abs(v)>=100?v.toFixed(0):Math.abs(v)>=1?v.toFixed(1):v.toFixed(2);
+  // axes + gridlines
+  p.push(`<line x1="${PADL}" y1="${sy(y0)}" x2="${W-PADR}" y2="${sy(y0)}" stroke="#2a3142" stroke-width="1"/>`);
+  for(const yy of [y0,(y0+y1)/2,y1]) p.push(`<text x="${PADL-4}" y="${sy(yy)+3}" fill="#7a8090" font-size="9" text-anchor="end" font-family="system-ui">${fmt(yy)}</text>`);
+  if(opts.zeroLine && y0<0 && y1>0) p.push(`<line x1="${PADL}" y1="${sy(0)}" x2="${W-PADR}" y2="${sy(0)}" stroke="#3a4152" stroke-dasharray="2 2"/>`);
+  p.push(`<text x="${(PADL+W-PADR)/2}" y="${H-4}" fill="#7a8090" font-size="9" text-anchor="middle" font-family="system-ui">${opts.xlabel||''}</text>`);
+  if(opts.cursorX!=null && opts.cursorX>=x0 && opts.cursorX<=x1){ const cx=sx(opts.cursorX);
+    p.push(`<line x1="${cx}" y1="${PADT}" x2="${cx}" y2="${H-PADB}" stroke="#5db0ff" stroke-width="1.5" opacity="0.9"/>`); }
+  for(const s of series){ let d=''; for(let i=0;i<s.xs.length;i++){ if(!isFinite(s.ys[i])) continue; d+=(d?'L':'M')+sx(s.xs[i]).toFixed(1)+' '+sy(s.ys[i]).toFixed(1)+' '; }
+    p.push(`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.6}" stroke-linejoin="round"${s.dash?` stroke-dasharray="${s.dash}"`:''}/>`);
+    if(s.dots) for(let i=0;i<s.xs.length;i++){ if(isFinite(s.ys[i])) p.push(`<circle cx="${sx(s.xs[i]).toFixed(1)}" cy="${sy(s.ys[i]).toFixed(1)}" r="2.3" fill="${s.color}"/>`); } }
+  el.innerHTML=p.join('');
+}
+function tsLegend(elId, series){ const el=$(elId); if(!el) return;
+  el.innerHTML=series.map(s=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:9px;height:9px;border-radius:2px;background:${s.color};display:inline-block"></span>${s.label}</span>`).join(''); }
+// ---- 📈 TIMECOURSE ----
+let tcRegions=[];   // [{id,color}]
+function tcToggleRegion(id){ const i=tcRegions.findIndex(r=>r.id===id);
+  if(i>=0) tcRegions.splice(i,1);
+  else tcRegions.push({id, color:TRACT_PAL[tcRegions.length%TRACT_PAL.length]});
+  tcRedraw(); }
+function tcRedraw(){ const nii=activeVolNii(); const st=$('tcStatus');
+  if(!nii||!(nii.nt>1)){ if(st)st.textContent='No 4D overlay loaded — drag in a 4D .nii (rs-fMRI).'; tsDrawChart('tcChart',[],{empty:'load a 4D overlay'}); tsLegend('tcLegend',[]); return; }
+  const tc=tcCompute(nii); const mode=$('tcNorm')?$('tcNorm').value:'raw';
+  const xs=Array.from({length:tc.nt},(_,i)=>i);
+  const series=[];
+  for(const r of tcRegions){ const row=tc.mat[r.id]; if(!row) continue; const rec=byId.get(r.id);
+    series.push({label:(rec&&rec.meta.name)?rec.meta.name.slice(0,22):('#'+r.id), color:r.color, xs, ys:tcNormalize(row,mode).y, dots:$('tcDots')&&$('tcDots').checked}); }
+  if($('tcMean')&&$('tcMean').checked&&tcRegions.length>1){ const n=tc.nt, mean=new Array(n).fill(0); let c=0;
+    for(const r of tcRegions){ const row=tc.mat[r.id]; if(!row) continue; const y=tcNormalize(row,mode).y; for(let i=0;i<n;i++) mean[i]+=y[i]; c++; }
+    for(let i=0;i<n;i++) mean[i]/=(c||1); series.push({label:'mean', color:'#ffffff', xs, ys:mean, width:2.4}); }
+  const frame=(overlays[selOv]&&overlays[selOv].frame)||0;
+  tsDrawChart('tcChart', series, {cursorX:frame, xlabel:'frame / TR', zeroLine:mode!=='raw', empty:'click regions to plot'});
+  tsLegend('tcLegend', series);
+  if(st) st.textContent=`${nii.nt} frames · ${tcRegions.length} region(s) · frame ${frame+1}/${nii.nt}`;
+}
+function tcOnFrame(){ if($('accTimecourse')&&$('accTimecourse').open&&tcRegions.length) tcRedraw(); }
+// ---- 🌱 SEED CONNECTIVITY ----
+let seedRoi=null;
+function colorMeshByVals(vals, cmapName, lo, hi, thr){ ovStopPlay&&ovStopPlay();
+  for(const rec of meshes){ const v=vals[rec.meta.id];
+    if(v==null || (thr>0 && Math.abs(v)<thr)){ rec.mesh.material.color.setHex(0x3a3f4a); rec.mesh.material.opacity=Math.min(rec.mesh.material.opacity,0.5); }
+    else { let t=(v-lo)/((hi-lo)||1); t=t<0?0:t>1?1:t; const c=sampleCmap(cmapName,t); rec.mesh.material.color.setRGB(c[0],c[1],c[2]); } }
+  requestRender(); if(typeof refreshSliceViews==='function') refreshSliceViews();
+}
+function seedCompute(){ const nii=activeVolNii(); const st=$('seedStatus');
+  if(!nii||!(nii.nt>1)){ if(st)st.textContent='No 4D overlay loaded.'; return; }
+  if(seedRoi==null){ if(st)st.textContent='Pick a seed region.'; return; }
+  const tc=tcCompute(nii); const seed=tc.mat[seedRoi];
+  if(!seed){ if(st)st.textContent='Seed region has no samples in this atlas.'; return; }
+  const fisher=$('seedFisher')&&$('seedFisher').checked, thr=+($('seedThr')?$('seedThr').value:0.3);
+  const rMap={}; let mx=1e-6; for(const id of tc.ids){ let r=pearson(seed,tc.mat[id]); if(fisher) r=0.5*Math.log((1+Math.min(0.999,Math.max(-0.999,r)))/(1-Math.min(0.999,Math.max(-0.999,r)))); rMap[id]=r; if(Math.abs(r)>mx)mx=Math.abs(r); }
+  const cmap=$('seedCmap')?$('seedCmap').value:'coolwarm';
+  colorMeshByVals(rMap, cmap, -mx, mx, thr);
+  const rec=byId.get(seedRoi); if(st) st.textContent=`seed: ${(rec&&rec.meta.name)||('#'+seedRoi)} · r ∈ [-${mx.toFixed(2)}, ${mx.toFixed(2)}]${fisher?' (z)':''}`;
+}
+function seedClear(){ seedRoi=null; if(overlay.on) recolorOverlay(); else applyScheme(activeScheme); if($('seedStatus'))$('seedStatus').textContent='Cleared.'; }
+// ---- 🗓 SESSIONS (longitudinal) ----
+let sessions=[], sessBehav=null, sessRegion=null;
+async function sessAddFile(file){ if(!file) return; try{ let buf=await file.arrayBuffer(); if(/\.gz$/i.test(file.name)) buf=window.pako.ungzip(new Uint8Array(buf)).buffer; const nii=parseNifti(buf);
+    const vals=sampleNiiToVals(nii); const m=(file.name.match(/(?:day|d|ses|t)[-_]?(\d+)/i)); const day=m?+m[1]:sessions.length;
+    sessions.push({label:file.name.replace(/\.(nii|gz)+$/i,''), day, vals}); sessions.sort((a,b)=>a.day-b.day);
+    if($('sessStatus'))$('sessStatus').textContent=`${sessions.length} session(s) loaded.`; sessSyncScrub(); sessScrubTo(sessions.length-1); sessRedraw();
+  }catch(e){ if($('sessStatus'))$('sessStatus').textContent='Load failed: '+e.message; } }
+function sessSyncScrub(){ const sc=$('sessScrub'); if(!sc) return; sc.max=Math.max(0,sessions.length-1); $('sessScrubRow').style.display=sessions.length?'flex':'none';
+  const list=$('sessList'); if(list) list.innerHTML=sessions.map((s,i)=>`<div class="roi" style="padding:2px 4px;display:flex;gap:6px"><span style="flex:1">${i+1}. ${s.label}</span><span style="opacity:.7">day ${s.day}</span></div>`).join('')||'<span class="empty" style="opacity:.5">no sessions</span>'; }
+function sessScrubTo(i){ if(!sessions.length) return; i=Math.max(0,Math.min(sessions.length-1,i|0)); const sc=$('sessScrub'); if(sc)sc.value=i;
+  const s=sessions[i]; if($('sessScrubV'))$('sessScrubV').textContent=`${s.label} (day ${s.day})`;
+  let lo=Infinity,hi=-Infinity; for(const k in s.vals){ const v=s.vals[k]; if(v<lo)lo=v; if(v>hi)hi=v; } if(!isFinite(lo)){lo=0;hi=1;}
+  colorMeshByVals(s.vals, ($('seedCmap')?$('seedCmap').value:'viridis'), lo, hi, 0); sessRedraw(i);
+}
+function sessRedraw(curIdx){ if(curIdx==null){ const sc=$('sessScrub'); curIdx=sc?+sc.value:0; }
+  const series=[];
+  if(sessRegion!=null && sessions.length){ const xs=sessions.map(s=>s.day), ys=sessions.map(s=>s.vals[sessRegion]);
+    const rec=byId.get(sessRegion); series.push({label:((rec&&rec.meta.name)||('#'+sessRegion))+' (imaging)', color:'#5db0ff', xs, ys, dots:true, width:2.2}); }
+  if(sessBehav){ sessBehav.series.forEach((b,bi)=>{ // normalise behavioral to the imaging y-range for co-plot
+      series.push({label:b.name, color:TRACT_PAL[(bi+3)%TRACT_PAL.length], xs:b.xs, ys:b.ys, dots:true, dash:'4 3', width:1.6}); }); }
+  const cx=sessions[curIdx]?sessions[curIdx].day:null;
+  tsDrawChart('seChart', series, {cursorX:cx, xlabel:'day / timepoint', empty:'add sessions + pick a region'});
+  tsLegend('seLegend', series);
+}
+function sessLoadCSV(text){ const lines=text.split(/\r?\n/).filter(l=>l.trim()); if(lines.length<2){ if($('sessStatus'))$('sessStatus').textContent='CSV needs a header + rows.'; return; }
+  const delim=lines[0].indexOf('\t')>=0?'\t':(lines[0].indexOf(';')>=0&&lines[0].indexOf(',')<0?';':','); const hdr=lines[0].split(delim).map(h=>h.trim().replace(/^"|"$/g,''));
+  const rows=lines.slice(1).map(l=>l.split(delim).map(c=>c.trim())); const dayCol=0;
+  const series=[]; for(let c=1;c<hdr.length;c++){ const xs=[],ys=[]; for(const r of rows){ const d=+r[dayCol], v=+r[c]; if(isFinite(d)&&isFinite(v)){ xs.push(d); ys.push(v); } } if(xs.length) series.push({name:hdr[c], xs, ys}); }
+  sessBehav={series}; if($('sessStatus'))$('sessStatus').textContent=`behavioral: ${series.length} score(s) over ${rows.length} rows.`; sessRedraw();
+}
+function sessClearAll(){ sessions=[]; sessBehav=null; sessRegion=null; if($('sessRegionName'))$('sessRegionName').textContent=''; sessSyncScrub(); sessRedraw(); if(overlay.on) recolorOverlay(); else applyScheme(activeScheme); if($('sessStatus'))$('sessStatus').textContent='Cleared.'; }
+// ---- wiring ----
+(function initTimeseries(){
+  const cmSel=$('seedCmap'); if(cmSel){ const names=Object.keys(window.JHU_CMAPS||{}); (names.length?names:['coolwarm','viridis']).forEach(n=>{ const o=document.createElement('option'); o.value=n;o.textContent=n; cmSel.appendChild(o); }); cmSel.value=names.includes('coolwarm')?'coolwarm':(names.includes('bwr')?'bwr':cmSel.value); }
+  const on=(id,ev,fn)=>{ const e=$(id); if(e) e.addEventListener(ev,fn); };
+  on('tcPick','click',()=>tsSetPick('tc','tcPick')); on('tcClear','click',()=>{ tcRegions=[]; tcRedraw(); });
+  on('tcAddSel','click',()=>{ if(typeof selected!=='undefined'&&selected&&selected.meta) tcToggleRegion(selected.meta.id); });
+  on('tcNorm','change',tcRedraw); on('tcDots','change',tcRedraw); on('tcMean','change',tcRedraw);
+  on('seedPick','click',()=>tsSetPick('seed','seedPick')); on('seedClear','click',seedClear);
+  on('seedCmap','change',()=>{ if(seedRoi!=null) seedCompute(); }); on('seedFisher','change',()=>{ if(seedRoi!=null) seedCompute(); });
+  on('seedThr','input',e=>{ $('seedThrV').textContent=(+e.target.value).toFixed(2); if(seedRoi!=null) seedCompute(); });
+  on('sessAdd','click',()=>$('sessFile').click()); on('sessFile','change',e=>{ const f=e.target.files[0]; if(f) sessAddFile(f); e.target.value=''; });
+  on('sessBehav','click',()=>$('sessCsvFile').click()); on('sessCsvFile','change',e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>sessLoadCSV(rd.result); rd.readAsText(f); e.target.value=''; });
+  on('sessClear','click',sessClearAll); on('sessScrub','input',e=>sessScrubTo(+e.target.value)); on('sessPickRegion','click',()=>tsSetPick('sess','sessPickRegion'));
+  // refresh statuses when a tab opens
+  ['accTimecourse','accSeed','accSessions'].forEach(id=>{ const d=$(id); if(d) d.addEventListener('toggle',()=>{ if(d.open){ tcRedraw(); if(id==='accSeed'&&$('seedStatus')){ const n=activeVolNii(); $('seedStatus').textContent=(n&&n.nt>1)?'Pick a seed region.':'No 4D overlay loaded.'; } } }); });
+})();
 
 // ================= SCRIPTING API (for headless figure panels) =================
 const VIEWS = {left:[-1,0,0], right:[1,0,0], top:[0,1,0.0001], bottom:[0,-1,0.0001],
