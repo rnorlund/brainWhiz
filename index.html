@@ -149,6 +149,19 @@
   button:hover{border-color:var(--accent)}
   button.sm{padding:3px 7px;font-size:11px}
   button.sm.active{background:#5db0ff;color:#06223a;border-color:#5db0ff;font-weight:600}
+  /* pop-out timecourse graph: movable + resizable floating panel */
+  #tcFloat{position:fixed;right:360px;top:80px;width:520px;height:340px;min-width:260px;min-height:180px;z-index:8200;display:none;
+    flex-direction:column;background:rgba(12,16,24,0.97);border:1px solid #2a3550;border-radius:9px;box-shadow:0 10px 34px rgba(0,0,0,0.55);overflow:hidden}
+  #tcFloat.on{display:flex}
+  #tcFloat .tf-head{display:flex;align-items:center;gap:8px;padding:6px 9px;background:#141b2b;cursor:move;font-size:12px;font-weight:600;color:#eaf2ff;user-select:none}
+  #tcFloat .tf-head .sp{flex:1}
+  #tcFloat .tf-head button{background:none;border:0;color:#9fb3d0;cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px}
+  #tcFloat .tf-head button:hover{background:#26324a;color:#fff}
+  #tcFloat .tf-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:7px 8px}
+  #tcChartBig{flex:1;min-height:0;width:100%;background:#0a0e16;border-radius:6px}
+  #tcLegendBig{font-size:11px;margin-top:5px;display:flex;flex-wrap:wrap;gap:9px;max-height:54px;overflow:auto}
+  #tcFloat .tf-resize{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:2}
+  #tcFloat .tf-resize::after{content:'⇘';position:absolute;right:3px;bottom:0;color:#5db0ff;font-size:12px}
   #search{margin-bottom:6px}
   #roiCount{color:var(--muted);font-size:11px}
   #roiList{border-top:1px solid var(--line);margin-top:8px;max-height:340px;overflow-y:auto}
@@ -280,6 +293,11 @@
   <div class="dz-band" data-mode="ov"><div class="dz-ico">➕</div><div class="dz-msg">Add as OVERLAY</div><div class="dz-sub">stat map (.nii) or per-region values (.csv/.tsv) — stack several to build a figure</div></div>
   <div class="dz-band" data-mode="atlas"><div class="dz-ico">🧠</div><div class="dz-msg">BUILD ATLAS / SURFACE</div><div class="dz-sub">label parcellation (.nii) + labels (.txt) → regions · or a T1 / continuous .nii → one brain surface</div></div>
 </div><div class="dz-hint">Drop in the band you want · .bwz / .bwzproj open anywhere</div></div>
+<!-- pop-out timecourse graph (movable + resizable) -->
+<div id="tcFloat"><div class="tf-head" id="tcFloatHead"><span>📈 Region timecourses</span><span class="sp"></span>
+    <button id="tcFloatClear" title="Clear traces">✕ traces</button><button id="tcFloatClose" title="Close (dock back to the panel)">⤢ dock</button></div>
+  <div class="tf-body"><svg id="tcChartBig"></svg><div id="tcLegendBig"></div></div>
+  <div class="tf-resize" id="tcFloatResize" title="drag to resize"></div></div>
 <div id="mosaicView"><canvas id="mosaicCanvas"></canvas></div>
 <div id="sliceView">
   <div class="sl" data-plane="sag"><span class="tag">Sagittal</span><canvas id="slSag"></canvas></div>
@@ -690,9 +708,11 @@
       <button class="sm" id="tcAddSel" title="Add the currently selected region">＋ Selected</button>
       <button class="sm" id="tcClear" title="Remove all traces">✕ Clear</button></div>
     <div class="row"><label>Normalize</label>
-      <select id="tcNorm" style="flex:1"><option value="raw">Raw signal</option><option value="pct">% change vs mean</option><option value="z">Z-score</option></select></div>
+      <select id="tcNorm" style="flex:1"><option value="z" selected>Z-score (same scale)</option><option value="pct">% change vs mean</option><option value="raw">Raw signal</option></select></div>
     <div class="row"><label class="toggle" title="Also mark the frames as dots"><input type="checkbox" id="tcDots"> dots</label>
       <span style="flex:1"></span><label class="toggle" title="Show a mean±SD band across the picked regions"><input type="checkbox" id="tcMean"> mean±sd</label></div>
+    <div class="row"><label class="toggle" title="Keep the brain gray and colour ONLY the picked regions (matching their graph lines) — don't paint the rs-fMRI as a functional overlay"><input type="checkbox" id="tcGray" checked> 🩶 Gray brain · colour picks to match lines</label></div>
+    <div class="row" style="gap:5px"><button class="sm" id="tcPop" title="Pop the graph out into a movable, resizable floating window">⤢ Pop-out graph</button></div>
     <svg id="tcChart" style="width:100%;height:150px;display:block;background:#0a0e16;border-radius:5px;margin-top:4px"></svg>
     <div id="tcLegend" style="font-size:10.5px;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px"></div>
   </div></details>
@@ -4069,7 +4089,8 @@ function applyStatVals(r, name){   // a loaded .nii for the selected overlay
 function setOverlayFrame(o, k){ if(!o||!o.vol||!o.vol.setFrame||!(o.nt>1)) return;
   o.vol.setFrame(k); o.frame=k;
   o.vals=sampleNiiToVals(o.vol); o.volGrid=overlayVolGrid(o.vol); o.tfceCache=null;
-  if(overlays[selOv]===o){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid; recolorOverlay(); }
+  if(overlays[selOv]===o){ overlay.vals=o.vals; overlay.volA=o.vol; overlay.volA_grid=o.volGrid;
+    if(typeof tcGrayActive==='function' && tcGrayActive()) tcApplyHighlight(); else recolorOverlay(); }   // gray-brain timecourse mode: don't paint the mesh by mean
   if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked && overlays[selOv]===o) updateVolume(true);   // glowing-voxel volume follows the timeseries
   refreshSliceViews(); requestRender();
   if($('ovFrame')) $('ovFrame').value=k; if($('ovFrameV')) $('ovFrameV').textContent=(k+1)+'/'+o.nt;
@@ -4521,26 +4542,35 @@ function tsLegend(elId, series){ const el=$(elId); if(!el) return;
   el.innerHTML=series.map(s=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:9px;height:9px;border-radius:2px;background:${s.color};display:inline-block"></span>${s.label}</span>`).join(''); }
 // ---- 📈 TIMECOURSE ----
 let tcRegions=[];   // [{id,color}]
+function tcFloatOpen(){ return $('tcFloat')&&$('tcFloat').classList.contains('on'); }
 function tcToggleRegion(id){ const i=tcRegions.findIndex(r=>r.id===id);
   if(i>=0) tcRegions.splice(i,1);
   else tcRegions.push({id, color:TRACT_PAL[tcRegions.length%TRACT_PAL.length]});
   tcRedraw(); }
+// keep the brain gray and colour ONLY the picked regions to match their graph lines
+function tcGrayActive(){ const n=activeVolNii(); return !!($('tcGray')&&$('tcGray').checked && n&&n.nt>1 && (($('accTimecourse')&&$('accTimecourse').open)||tcFloatOpen())); }
+function tcApplyHighlight(){ if(!tcGrayActive()) return; const pick=new Map(tcRegions.map(r=>[r.id,r.color]));
+  for(const rec of meshes){ const c=pick.get(rec.meta.id); if(c) rec.mesh.material.color.set(c); else rec.mesh.material.color.setHex(0x41464f); }
+  requestRender(); if(typeof refreshSliceViews==='function') refreshSliceViews(); }
+function tcRestoreColors(){ if(overlay.on) recolorOverlay(); else applyScheme(activeScheme); }
 function tcRedraw(){ const nii=activeVolNii(); const st=$('tcStatus');
-  if(!nii||!(nii.nt>1)){ if(st)st.textContent='No 4D overlay loaded — drag in a 4D .nii (rs-fMRI).'; tsDrawChart('tcChart',[],{empty:'load a 4D overlay'}); tsLegend('tcLegend',[]); return; }
-  const tc=tcCompute(nii); const mode=$('tcNorm')?$('tcNorm').value:'raw';
-  const xs=Array.from({length:tc.nt},(_,i)=>i);
-  const series=[];
+  const draw=(sv,lg,series,opts)=>{ tsDrawChart(sv,series,opts); tsLegend(lg,series); };
+  if(!nii||!(nii.nt>1)){ if(st)st.textContent='No 4D overlay loaded — drag in a 4D .nii (rs-fMRI) on the ➕ Overlay band.';
+    draw('tcChart','tcLegend',[],{empty:'load a 4D overlay'}); if(tcFloatOpen()) draw('tcChartBig','tcLegendBig',[],{empty:'load a 4D overlay'}); return; }
+  const tc=tcCompute(nii); const mode=$('tcNorm')?$('tcNorm').value:'z';
+  const xs=Array.from({length:tc.nt},(_,i)=>i), dots=$('tcDots')&&$('tcDots').checked, series=[];
   for(const r of tcRegions){ const row=tc.mat[r.id]; if(!row) continue; const rec=byId.get(r.id);
-    series.push({label:(rec&&rec.meta.name)?rec.meta.name.slice(0,22):('#'+r.id), color:r.color, xs, ys:tcNormalize(row,mode).y, dots:$('tcDots')&&$('tcDots').checked}); }
+    series.push({label:(rec&&rec.meta.name)?rec.meta.name.slice(0,24):('#'+r.id), color:r.color, xs, ys:tcNormalize(row,mode).y, dots}); }
   if($('tcMean')&&$('tcMean').checked&&tcRegions.length>1){ const n=tc.nt, mean=new Array(n).fill(0); let c=0;
     for(const r of tcRegions){ const row=tc.mat[r.id]; if(!row) continue; const y=tcNormalize(row,mode).y; for(let i=0;i<n;i++) mean[i]+=y[i]; c++; }
     for(let i=0;i<n;i++) mean[i]/=(c||1); series.push({label:'mean', color:'#ffffff', xs, ys:mean, width:2.4}); }
   const frame=(overlays[selOv]&&overlays[selOv].frame)||0;
-  tsDrawChart('tcChart', series, {cursorX:frame, xlabel:'frame / TR', zeroLine:mode!=='raw', empty:'click regions to plot'});
-  tsLegend('tcLegend', series);
+  const opts={cursorX:frame, xlabel:'frame / TR', zeroLine:mode!=='raw', empty:'click regions to plot'};
+  draw('tcChart','tcLegend',series,opts); if(tcFloatOpen()) draw('tcChartBig','tcLegendBig',series,opts);
   if(st) st.textContent=`${nii.nt} frames · ${tcRegions.length} region(s) · frame ${frame+1}/${nii.nt}`;
+  tcApplyHighlight();
 }
-function tcOnFrame(){ if($('accTimecourse')&&$('accTimecourse').open&&tcRegions.length) tcRedraw(); }
+function tcOnFrame(){ if(tcRegions.length && (($('accTimecourse')&&$('accTimecourse').open)||tcFloatOpen())) tcRedraw(); }
 // ---- 🌱 SEED CONNECTIVITY ----
 let seedRoi=null;
 function colorMeshByVals(vals, cmapName, lo, hi, thr){ ovStopPlay&&ovStopPlay();
@@ -4596,9 +4626,24 @@ function sessClearAll(){ sessions=[]; sessBehav=null; sessRegion=null; if($('ses
 (function initTimeseries(){
   const cmSel=$('seedCmap'); if(cmSel){ const names=Object.keys(window.JHU_CMAPS||{}); (names.length?names:['coolwarm','viridis']).forEach(n=>{ const o=document.createElement('option'); o.value=n;o.textContent=n; cmSel.appendChild(o); }); cmSel.value=names.includes('coolwarm')?'coolwarm':(names.includes('bwr')?'bwr':cmSel.value); }
   const on=(id,ev,fn)=>{ const e=$(id); if(e) e.addEventListener(ev,fn); };
-  on('tcPick','click',()=>tsSetPick('tc','tcPick')); on('tcClear','click',()=>{ tcRegions=[]; tcRedraw(); });
+  on('tcPick','click',()=>tsSetPick('tc','tcPick')); on('tcClear','click',()=>{ tcRegions=[]; if(!tcGrayActive()) tcRestoreColors(); tcRedraw(); });
   on('tcAddSel','click',()=>{ if(typeof selected!=='undefined'&&selected&&selected.meta) tcToggleRegion(selected.meta.id); });
   on('tcNorm','change',tcRedraw); on('tcDots','change',tcRedraw); on('tcMean','change',tcRedraw);
+  on('tcGray','change',()=>{ if(tcGrayActive()) tcApplyHighlight(); else tcRestoreColors(); tcRedraw(); });
+  // pop-out floating graph: show/hide, drag by header, resize by corner
+  on('tcPop','click',()=>{ const f=$('tcFloat'); if(!f) return; f.classList.toggle('on'); if(f.classList.contains('on')) tcRedraw(); else if(!($('accTimecourse')&&$('accTimecourse').open)&&$('tcGray')&&$('tcGray').checked) tcRestoreColors(); });
+  on('tcFloatClose','click',()=>{ $('tcFloat').classList.remove('on'); if(!($('accTimecourse')&&$('accTimecourse').open)&&$('tcGray')&&$('tcGray').checked) tcRestoreColors(); });
+  on('tcFloatClear','click',()=>{ tcRegions=[]; if(!tcGrayActive()) tcRestoreColors(); tcRedraw(); });
+  (function floatDrag(){ const f=$('tcFloat'), head=$('tcFloatHead'), rz=$('tcFloatResize'); if(!f||!head) return;
+    let mode=null, sx=0, sy=0, x0=0, y0=0, w0=0, h0=0;
+    const down=(m,e)=>{ mode=m; sx=e.clientX; sy=e.clientY; const r=f.getBoundingClientRect(); x0=r.left; y0=r.top; w0=r.width; h0=r.height;
+      f.style.left=x0+'px'; f.style.top=y0+'px'; f.style.right='auto'; window.addEventListener('pointermove',move); window.addEventListener('pointerup',up,{once:true}); e.preventDefault(); };
+    const move=e=>{ const dx=e.clientX-sx, dy=e.clientY-sy;
+      if(mode==='move'){ f.style.left=Math.max(0,Math.min(window.innerWidth-60,x0+dx))+'px'; f.style.top=Math.max(0,Math.min(window.innerHeight-40,y0+dy))+'px'; }
+      else { f.style.width=Math.max(260,w0+dx)+'px'; f.style.height=Math.max(180,h0+dy)+'px'; if(tcFloatOpen()) tcRedraw(); } };
+    const up=()=>{ mode=null; window.removeEventListener('pointermove',move); if(tcFloatOpen()) tcRedraw(); };
+    head.addEventListener('pointerdown',e=>{ if(e.target.tagName==='BUTTON') return; down('move',e); });
+    if(rz) rz.addEventListener('pointerdown',e=>down('resize',e)); })();
   on('seedPick','click',()=>tsSetPick('seed','seedPick')); on('seedClear','click',seedClear);
   on('seedCmap','change',()=>{ if(seedRoi!=null) seedCompute(); }); on('seedFisher','change',()=>{ if(seedRoi!=null) seedCompute(); });
   on('seedThr','input',e=>{ $('seedThrV').textContent=(+e.target.value).toFixed(2); if(seedRoi!=null) seedCompute(); });
@@ -4606,7 +4651,10 @@ function sessClearAll(){ sessions=[]; sessBehav=null; sessRegion=null; if($('ses
   on('sessBehav','click',()=>$('sessCsvFile').click()); on('sessCsvFile','change',e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>sessLoadCSV(rd.result); rd.readAsText(f); e.target.value=''; });
   on('sessClear','click',sessClearAll); on('sessScrub','input',e=>sessScrubTo(+e.target.value)); on('sessPickRegion','click',()=>tsSetPick('sess','sessPickRegion'));
   // refresh statuses when a tab opens
-  ['accTimecourse','accSeed','accSessions'].forEach(id=>{ const d=$(id); if(d) d.addEventListener('toggle',()=>{ if(d.open){ tcRedraw(); if(id==='accSeed'&&$('seedStatus')){ const n=activeVolNii(); $('seedStatus').textContent=(n&&n.nt>1)?'Pick a seed region.':'No 4D overlay loaded.'; } } }); });
+  ['accTimecourse','accSeed','accSessions'].forEach(id=>{ const d=$(id); if(d) d.addEventListener('toggle',()=>{
+    if(d.open){ tcRedraw(); if(id==='accSeed'&&$('seedStatus')){ const n=activeVolNii(); $('seedStatus').textContent=(n&&n.nt>1)?'Pick a seed region.':'No 4D overlay loaded.'; } }
+    else if(id==='accTimecourse' && !tcFloatOpen() && $('tcGray')&&$('tcGray').checked) tcRestoreColors();   // closing the tab -> un-gray the brain
+  }); });
 })();
 
 // ================= SCRIPTING API (for headless figure panels) =================
