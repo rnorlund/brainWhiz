@@ -507,7 +507,7 @@
     <input type="file" id="ulFile" accept=".nii,.nii.gz,.gz" style="display:none">
   </div></details>
 
-  <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance</summary><div class="accb">
+  <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance<button class="sm" id="resetAppear" title="Reset appearance / all settings to defaults (also clears the saved look)" style="float:right;margin:-2px 0 0 0;padding:1px 7px">↺ Reset</button></summary><div class="accb">
     <div class="row"><label>Color scheme</label>
       <select id="scheme">
         <option value="lobe">By lobe / structure</option>
@@ -1599,6 +1599,7 @@ function finishInit(box, sphere){
   document.getElementById('loader').style.display='none';
   if(NO_DATA) showEmptyState();
   requestRender();   // meshes loaded async — render the initial scene
+  setTimeout(()=>{ try{ restoreLook(); }catch(e){} }, 0);   // re-apply the saved look after this atlas is ready (survives atlas switches)
   if(window.__brainReady) window.__brainReady();   // signal scripting API
   if(params.get('embed')){ document.body.classList.add('embed');   // iframe-friendly: hide all chrome
     if(!document.getElementById('embedBadge')){ const a=document.createElement('a'); a.id='embedBadge'; a.href='https://rnorlund.github.io/brainWhiz/'; a.target='_blank'; a.rel='noopener'; a.textContent='brainWhiz ↗'; document.body.appendChild(a); }
@@ -3636,6 +3637,23 @@ function applyPreset(p){
   }
   if(p._camP){ camera.position.fromArray(p._camP); controls.target.fromArray(p._camT||[0,0,0]); controls.update(); requestRender(); }
 }
+// ---- persist the current "look" (all appearance/settings controls) across atlas switches ----
+// Switching atlas reloads the page, so we save the look on unload and re-apply it once the new
+// atlas is ready. Camera is NOT persisted (each atlas gets its own default framing).
+const LOOK_KEY='bwzLook';
+function captureLook(){ const p=capturePreset(); delete p._camP; delete p._camT; return p; }
+function saveLook(){ try{ if(meshes.length) localStorage.setItem(LOOK_KEY, JSON.stringify(captureLook())); }catch(e){} }
+function restoreLook(){ if(!meshes.length) return; let s; try{ s=localStorage.getItem(LOOK_KEY); }catch(e){} if(!s) return;
+  try{ const look=JSON.parse(s); delete look._camP; delete look._camT; applyPreset(look); }catch(e){} }
+function resetAppearance(){ try{ localStorage.removeItem(LOOK_KEY); }catch(e){}
+  for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
+    if(el.type==='checkbox'){ el.checked=el.defaultChecked; el.dispatchEvent(new Event('change')); }
+    else if(el.tagName==='SELECT'){ const d=Array.from(el.options).find(o=>o.defaultSelected); el.value=d?d.value:(el.options[0]&&el.options[0].value); el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }
+    else { el.value=el.defaultValue; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); } }
+  requestRender();
+}
+window.addEventListener('beforeunload', saveLook);
+if($('resetAppear')) $('resetAppear').addEventListener('click', e=>{ e.preventDefault(); e.stopPropagation(); resetAppearance(); });
 function loadPresets(){ try{ return JSON.parse(localStorage.getItem('brainPresets')||'{}'); }catch(e){ return {}; } }
 function savePresets(s){ localStorage.setItem('brainPresets', JSON.stringify(s)); }
 function refreshPresets(){
