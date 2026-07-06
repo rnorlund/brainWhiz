@@ -257,7 +257,16 @@ def main():
     ap.add_argument("--conn-mats")
     ap.add_argument("--dti-field"); ap.add_argument("--rs-field")
     ap.add_argument("--conn-field")   # back-compat alias for --dti-field
+    ap.add_argument("--smooth-sig", type=float)   # gaussian pre-smooth of each region mask (smoother surface)
+    ap.add_argument("--laplacian", type=int)      # Taubin smoothing iterations
+    ap.add_argument("--step", type=int)           # marching-cubes step (1=finest)
+    ap.add_argument("--target-face", type=int)    # simplify target face count per region
     a = ap.parse_args()
+    global STEP, SMOOTH_SIG, TARGET_FACE, LAPLACIAN
+    if a.smooth_sig is not None: SMOOTH_SIG=a.smooth_sig
+    if a.laplacian   is not None: LAPLACIAN=a.laplacian
+    if a.step        is not None: STEP=a.step
+    if a.target_face is not None: TARGET_FACE=a.target_face
 
     out = os.path.join(BUNDLES, a.id); os.makedirs(out, exist_ok=True)
     print(f"[{a.id}] loading {a.atlas}")

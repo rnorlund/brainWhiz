@@ -3,12 +3,13 @@
 make_synth_atlas.py — generate a 100% ORIGINAL, license-free synthetic atlas + template so the
 Engine Edition ships with something usable (and presentable) out of the box.
 
-Design goals (so it doesn't look junky):
-  * brain-LIKE shape: two hemispheres with a dorsal interhemispheric fissure, gyral folding on
-    the surface, a flatter inferior base, tapered frontal/occipital poles.
-  * structured parcellation: Voronoi parcels per hemisphere, each NAMED by a pseudo-lobe from its
-    location (Frontal/Parietal/Temporal/Occipital/Limbic/SubcorticalGM) so the viewer's lobe
-    color scheme gives a clean, atlas-like look (not random rainbow tiles).
+Design goals:
+  * brain-LIKE + L/R SYMMETRICAL: the shape field is even in x and the parcellation is generated on
+    the LEFT then MIRRORED to the right, so left/right regions match exactly.
+  * smooth gyral folding (gentle, low-frequency) + strong mesh smoothing so it doesn't look chunky.
+  * a CEREBELLUM (posterior-inferior, two lobes + midline vermis, transverse foliation).
+  * pseudo-lobe names (Frontal/Parietal/Temporal/Occipital/Limbic/Subcortical/Cerebellum) so the
+    viewer's lobe color scheme gives a clean, atlas-like look.
   * a matching synthetic grayscale template for slice backgrounds.
 
 NOT anatomy — an abstract, clearly-labelled "Synthetic" demo. Re-run to regenerate.
@@ -22,85 +23,107 @@ import nibabel as nib
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIM  = (99, 117, 95)
 AFF  = np.array([[2.,0,0,-98.],[0,2.,0,-134.],[0,0,2.,-72.],[0,0,0,1.]])
-K_PER_HEMI = 36
+KL   = 30           # cerebrum parcels PER hemisphere (mirrored L<->R)
 SEED = 11
-CX,CY,CZ = 0.0,-16.0,16.0           # brain center (world mm)
-AX,AY,AZ = 62.0,86.0,52.0           # semi-axes (L-R, A-P, S-I)
+CX,CY,CZ = 0.0,-16.0,18.0           # cerebrum center (world mm)
+AX,AY,AZ = 62.0,86.0,52.0           # cerebrum semi-axes (L-R, A-P, S-I)
+# cerebellum (posterior-inferior)
+BX,BY,BZ = 0.0,-74.0,-30.0
+BAX,BAY,BAZ = 46.0,30.0,26.0
 
 def world_grid():
     i,j,k = np.meshgrid(np.arange(DIM[0]), np.arange(DIM[1]), np.arange(DIM[2]), indexing='ij')
     return (AFF[0,0]*i+AFF[0,3]).astype(np.float32), (AFF[1,1]*j+AFF[1,3]).astype(np.float32), (AFF[2,2]*k+AFF[2,3]).astype(np.float32)
 
-def brain_field(x,y,z):
-    """Signed field <=0 inside a folded, tapered, hemisphere-split brain-like volume."""
-    dx,dy,dz = x-CX, y-CY, z-CZ
-    # taper poles (narrower frontal/occipital) and flatten the base
-    ax = AX*(1.0 - 0.18*np.clip(dy/AY,0,1) - 0.10*np.clip(-dy/AY,0,1))     # frontal/occipital taper in L-R
-    az = np.where(dz>=0, AZ, AZ*0.82)                                       # flatter inferior
-    rn = np.sqrt((dx/ax)**2 + (dy/AY)**2 + (dz/az)**2)
-    # gyral folding on the boundary (bold enough to survive mesh smoothing)
-    fold = ( np.sin(0.42*x)*np.sin(0.40*y)
-           + np.sin(0.40*y)*np.sin(0.52*z)
-           + np.sin(0.52*x+0.33*z) ) / 3.0
-    fold += 0.5*np.sin(0.95*x)*np.sin(0.85*y)*np.sin(0.8*z)
-    surf = 1.0 + 0.11*fold
+def cerebrum_field(x,y,z):
+    """Signed field <=0 inside a folded, tapered, hemisphere brain-like volume. EVEN in x (symmetric)."""
+    ax_abs = np.abs(x)
+    dx,dy,dz = ax_abs-0.0, y-CY, z-CZ
+    ax = AX*(1.0 - 0.16*np.clip(dy/AY,0,1) - 0.10*np.clip(-dy/AY,0,1))   # frontal/occipital taper
+    az = np.where(dz>=0, AZ, AZ*0.84)                                     # flatter inferior
+    rn = np.sqrt((ax_abs/ax)**2 + (dy/AY)**2 + (dz/az)**2)
+    # gentle low-frequency gyral folding, EVEN in x -> symmetric + smooth
+    fold = ( np.sin(0.32*ax_abs)*np.sin(0.30*y)
+           + np.sin(0.30*y)*np.sin(0.38*z)
+           + np.sin(0.38*ax_abs+0.24*z) ) / 3.0
+    surf = 1.0 + 0.075*fold
     return rn - surf
+
+def cerebellum_mask(x,y,z):
+    dx,dy,dz = np.abs(x), y-BY, z-BZ
+    rn = np.sqrt((dx/BAX)**2 + (dy/BAY)**2 + (dz/BAZ)**2)
+    foliation = 0.05*np.sin(1.1*z)               # fine transverse folds, symmetric
+    return rn <= (1.0 + foliation)
 
 def lobe_name(cx,cy,cz):
     dx,dy,dz = cx-CX, cy-CY, cz-CZ
-    if abs(dx)<24 and abs(dy)<26 and abs(dz)<18: return "SubcorticalGM","Subcortical"
-    if abs(dx)<14 and dz>4:                       return "Limbic","Cingulate"
-    if dy >  26: return "Frontal","Frontal"
-    if dy < -34: return "Occipital","Occipital"
-    if dz >  10: return "Parietal","Parietal"
-    return "Temporal","Temporal"
+    if abs(dx)<24 and abs(dy)<26 and abs(dz)<18: return "Subcortical"
+    if abs(dx)<14 and dz>4:                       return "Cingulate"
+    if dy >  26: return "Frontal"
+    if dy < -34: return "Occipital"
+    if dz >  10: return "Parietal"
+    return "Temporal"
 
 def main():
     x,y,z = world_grid()
-    f = brain_field(x,y,z)
-    brain = f <= 0
-    # dorsal interhemispheric fissure: wide gap on top, narrow at base
-    gap = 2.0 + 5.0*np.clip((z-CZ)/AZ,0,1)
-    brain &= (np.abs(x) >= gap)
+    cb = cerebellum_mask(x,y,z)
+    cereb = (cerebrum_field(x,y,z) <= 0) & (~cb)
+    gap = 2.0 + 5.0*np.clip((z-CZ)/AZ,0,1)        # interhemispheric fissure (wide dorsal)
+    cereb &= (np.abs(x) >= gap)
+    brain = cereb | cb
 
     rng = np.random.default_rng(SEED)
     labels = np.zeros(DIM, dtype=np.int16)
-    seeds = []; nid = 0
-    for hemi, xs in (("L", x < 0), ("R", x > 0)):
-        region = brain & xs
-        vox = np.argwhere(region)
-        pick = vox[rng.choice(len(vox), size=K_PER_HEMI, replace=False)]
-        sw = np.stack([AFF[0,0]*pick[:,0]+AFF[0,3], AFF[1,1]*pick[:,1]+AFF[1,3], AFF[2,2]*pick[:,2]+AFF[2,3]],1)
-        pts = np.stack([x[region],y[region],z[region]],1)
-        nearest = (((pts[:,None,:]-sw[None,:,:])**2).sum(2)).argmin(1)
-        ids = np.arange(nid+1, nid+1+K_PER_HEMI, dtype=np.int16)
-        labels[region] = ids[nearest]
-        for m in range(K_PER_HEMI): seeds.append((sw[m], nid+1+m, hemi))
-        nid += K_PER_HEMI
-    K = nid
+    mirror = (DIM[0]-1) - np.arange(DIM[0])       # x-axis index reflection (i -> 98-i)
 
-    tmp = tempfile.mkdtemp()
-    nii_path = os.path.join(tmp,"synth.nii.gz"); nib.save(nib.Nifti1Image(labels, AFF), nii_path)
-    lab_path = os.path.join(tmp,"synth_labels.txt")
-    with open(lab_path,"w") as fh:
-        per = {}
-        for (w,sid,hemi) in seeds:
-            lobe,short = lobe_name(*w); per[lobe]=per.get(lobe,0)+1; n=per[lobe]
-            side = "Left" if hemi=="L" else "Right"
-            fh.write(f"{sid}|{short[:3]}{n}{hemi}|{short} {n} {side}\n")   # name keywords drive lobe coloring
+    # --- LEFT cerebrum: Voronoi parcels, then MIRROR to the right ---
+    leftmask = cereb & (x < 0)
+    vox = np.argwhere(leftmask)
+    pick = vox[rng.choice(len(vox), size=KL, replace=False)]
+    sw = np.stack([AFF[0,0]*pick[:,0]+AFF[0,3], AFF[1,1]*pick[:,1]+AFF[1,3], AFF[2,2]*pick[:,2]+AFF[2,3]],1)
+    pts = np.stack([x[leftmask],y[leftmask],z[leftmask]],1)
+    nearest = (((pts[:,None,:]-sw[None,:,:])**2).sum(2)).argmin(1)
+    lab_l = np.zeros(DIM, dtype=np.int16); lab_l[leftmask] = (nearest+1).astype(np.int16)
+    labels[leftmask] = lab_l[leftmask]
+    lab_ref = lab_l[mirror,:,:]                    # reflected left labels
+    rightmask = cereb & (x > 0)
+    labels[rightmask] = np.where(lab_ref[rightmask]>0, lab_ref[rightmask]+KL, 0).astype(np.int16)
 
-    print(f"[synth] building {K}-parcel brain-like bundle …")
+    # --- cerebellum: vermis + L/R lobes (symmetric by construction) ---
+    VER, LCB, RCB = 2*KL+1, 2*KL+2, 2*KL+3
+    labels[cb & (np.abs(x)<8)]  = VER
+    labels[cb & (x<=-8)]        = LCB
+    labels[cb & (x>= 8)]        = RCB
+    K = 2*KL+3
+
+    # --- label file: mirrored cerebrum names + cerebellum ---
+    lab_path = os.path.join(tempfile.mkdtemp(),"synth_labels.txt")
+    per={}
+    lines=[]
+    for m in range(KL):
+        lobe = lobe_name(*sw[m]); per[lobe]=per.get(lobe,0)+1; n=per[lobe]
+        lines.append(f"{m+1}|{lobe[:3]}{n}L|{lobe} {n} Left")
+        lines.append(f"{m+1+KL}|{lobe[:3]}{n}R|{lobe} {n} Right")
+    lines.append(f"{VER}|VermisC|Cerebellum Vermis")
+    lines.append(f"{LCB}|CbL|Cerebellum Left")
+    lines.append(f"{RCB}|CbR|Cerebellum Right")
+    with open(lab_path,"w") as fh: fh.write("\n".join(sorted(lines, key=lambda s:int(s.split('|')[0])))+"\n")
+
+    tmp2 = tempfile.mkdtemp()
+    nii_path = os.path.join(tmp2,"synth.nii.gz"); nib.save(nib.Nifti1Image(labels, AFF), nii_path)
+    print(f"[synth] building {K}-parcel symmetric brain (+cerebellum) …")
     subprocess.run([sys.executable, os.path.join(HERE,"build_bundle.py"),
         "--atlas", nii_path, "--labels", lab_path,
-        "--id","synth","--name",f"Synthetic ({K})","--no-neuro"], check=True, cwd=HERE)
+        "--id","synth","--name",f"Synthetic ({K})","--no-neuro",
+        "--smooth-sig","1.0","--laplacian","18"], check=True, cwd=HERE)   # extra smoothing -> smooth, brain-like
 
-    # synthetic grayscale template (same folded shape) for slice backgrounds
-    dx,dy,dz = x-CX, y-CY, z-CZ
-    rn = np.sqrt((dx/AX)**2+(dy/AY)**2+(dz/AZ)**2)
+    # synthetic grayscale template (symmetric) for slice backgrounds
+    ax_abs=np.abs(x); dy,dz=y-CY,z-CZ
+    rn = np.sqrt((ax_abs/AX)**2+(dy/AY)**2+(dz/AZ)**2)
     inten = np.zeros(DIM, np.float32)
-    core = np.clip(255*(0.40+0.60*(1.0-rn)),0,255)
-    gyral = 14*np.sin(x*0.5)*np.sin(y*0.5)*np.sin(z*0.5)
-    inten[brain] = np.clip(core[brain]+gyral[brain],14,255)
+    core = np.clip(255*(0.42+0.58*(1.0-rn)),0,255)
+    gyral = 12*np.sin(ax_abs*0.42)*np.sin(y*0.42)*np.sin(z*0.42)         # symmetric gyral texture
+    inten[brain] = np.clip(core[brain]+gyral[brain],16,255)
     vol = inten.astype(np.uint8)
     b64 = base64.b64encode(gzip.compress(vol.ravel(order="F").tobytes())).decode("ascii")
     aff_list=[[float(AFF[r,c]) for c in range(4)] for r in range(4)]
@@ -108,7 +131,7 @@ def main():
         fh.write("// SYNTHETIC slice-background template (original, license-free) — Engine Edition.\n")
         fh.write("// NOT a real MNI152/anatomical template; an abstract grayscale field for demo backgrounds.\n")
         fh.write(f'window.MNI152={{dim:{list(DIM)},affine:{aff_list},order:"F",data:"{b64}"}};\n')
-    print(f"[synth] done: bundles/synth/ + bundles/_mni152_synth.js  ({K} parcels)")
+    print(f"[synth] done: bundles/synth/ + bundles/_mni152_synth.js  ({K} parcels, symmetric, +cerebellum)")
 
 if __name__ == "__main__":
     main()
