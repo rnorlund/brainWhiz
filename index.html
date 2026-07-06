@@ -1747,17 +1747,9 @@ renderer.domElement.addEventListener('wheel', (e)=>{
   const factor = Math.exp(e.deltaY * 0.001 * sens);   // >1 zoom out, <1 zoom in
   const near = modelRadius*0.03, hi = modelRadius*30;
   const want = camDistance()*factor;
-  if(factor<1){                                       // zooming IN
+  if(factor<1){                                       // zooming IN — fly straight through (into/through/past the brain; no surface standoff)
     _flyFwd.subVectors(controls.target, camera.position).normalize();
-    const vis = meshes.filter(o=>o.mesh.visible).map(o=>o.mesh);
-    _zray.set(camera.position, _flyFwd);
-    const hit = vis.length ? _zray.intersectObjects(vis, false) : [];
-    if(hit.length){                                   // a solid surface is directly ahead -> stop JUST outside it (never fly inside)
-      const minD = (camDistance() - hit[0].distance) + modelRadius*0.12;  // keep a standoff so you never press into / through the surface
-      setCamDistance(Math.min(camDistance(), Math.max(minD, want)));
-      return;
-    }
-    if(want < near){                                  // empty space ahead (e.g. between exploded regions) -> fly through
+    if(want < near){                                  // got very close -> advance the target forward so you keep flying through past the origin
       controls.target.addScaledVector(_flyFwd, (near-want)); setCamDistance(near); return;
     }
   }
@@ -3641,10 +3633,10 @@ function applyPreset(p){
 // Switching atlas reloads the page, so we save the look on unload and re-apply it once the new
 // atlas is ready. Camera is NOT persisted (each atlas gets its own default framing).
 const LOOK_KEY='bwzLook';
-function captureLook(){ const p=capturePreset(); delete p._camP; delete p._camT; return p; }
+function captureLook(){ return capturePreset(); }   // includes camera (_camP/_camT) so rotation + zoom carry over too
 function saveLook(){ try{ if(meshes.length) localStorage.setItem(LOOK_KEY, JSON.stringify(captureLook())); }catch(e){} }
 function restoreLook(){ if(!meshes.length) return; let s; try{ s=localStorage.getItem(LOOK_KEY); }catch(e){} if(!s) return;
-  try{ const look=JSON.parse(s); delete look._camP; delete look._camT; applyPreset(look); }catch(e){} }
+  try{ applyPreset(JSON.parse(s)); }catch(e){} }
 function resetAppearance(){ try{ localStorage.removeItem(LOOK_KEY); }catch(e){}
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
     if(el.type==='checkbox'){ el.checked=el.defaultChecked; el.dispatchEvent(new Event('change')); }
