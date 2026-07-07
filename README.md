@@ -1,5 +1,7 @@
 # 🧠 brainWhiz
 
+[![DOI](https://zenodo.org/badge/1271826135.svg)](https://doi.org/10.5281/zenodo.21246441)
+
 **Interactive, multi-atlas "exploding-brain" viewer for neuroimaging figures.**
 Render any brain parcellation in 3D, color regions by functional/statistical data,
 draw DTI connectivity, and compose publication-ready figure panels — all in the browser.
@@ -345,10 +347,13 @@ context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or h
 - Please cite the original atlas/NeuroQuery sources in any publication. To cite the tool, see
   [`CITATION.cff`](CITATION.cff).
 
-**DOI / archiving (Zenodo).** Tagged releases (e.g. [`v1.0`](https://github.com/rnorlund/brainWhiz/releases/tag/v1.0))
-are citable archives. To mint a permanent DOI, enable the repo in [Zenodo](https://zenodo.org/account/settings/github/)
-(GitHub login → flip the switch for `brainWhiz`), then publish/re-publish a release — Zenodo archives it and
-issues a DOI. Add that DOI to `CITATION.cff` (`doi:` field) and the badge here once issued.
+**DOI / archiving (Zenodo).** Releases are archived on Zenodo with a permanent DOI.
+Cite the **concept DOI** [`10.5281/zenodo.21246441`](https://doi.org/10.5281/zenodo.21246441) — it always
+resolves to the latest version. APA:
+
+> Newman-Norlund, R. (2026). *brainWhiz: Interactive multi-atlas exploding-brain viewer and figure tooling* (Version 1.2.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21246441
+
+Please also cite the original atlas / NeuroQuery / connectivity sources used in your figure.
 
 ## Editions — Research vs. Engine
 

@@ -7,6 +7,11 @@ authors:
     given-names: Roger
 repository-code: "https://github.com/rnorlund/brainWhiz"
 url: "https://rnorlund.github.io/brainWhiz/"
+doi: 10.5281/zenodo.21246441
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21246441
+    description: "Concept DOI — always resolves to the latest version (cite this)"
 license: CC-BY-NC-4.0
 version: "1.2"
 date-released: "2026-07-07"
