@@ -66,6 +66,16 @@ await page.evaluate(() => window.__mol.setZoom(90)); const d1 = await page.evalu
 await page.evaluate(() => window.__mol.setZoom(10)); const d2 = await page.evaluate(() => window.__mol.camDist());
 ok(`zoom slider changes distance (${d1.toFixed(1)} < ${d2.toFixed(1)})`, d1 < d2);
 
+console.log('== surface patterns ==');
+await load('caffeine'); await settle(150);
+const pats = await page.$$eval('#pattern option', os => os.map(o=>o.textContent));
+ok(`pattern list has 10+ patterns (${pats.length})`, pats.length >= 11);
+await page.evaluate(() => { const s=document.getElementById('pattern'); s.value='Stripes'; s.dispatchEvent(new Event('change')); });
+ok('pattern uniform set live', await page.evaluate(() => window.__mol.patU.uPattern.value === 2));
+await page.evaluate(() => { const c=document.getElementById('patCut'); c.checked=true; c.dispatchEvent(new Event('change')); });
+ok('cut-holes mode + no errors', await page.evaluate(() => window.__mol.patU.uPatMode.value === 1) && errs.length === 0);
+await page.evaluate(() => { const s=document.getElementById('pattern'); s.value='None'; s.dispatchEvent(new Event('change')); const c=document.getElementById('patCut'); c.checked=false; c.dispatchEvent(new Event('change')); });
+
 console.log('== Voronoi cells ==');
 await load('caffeine'); await settle(150);
 await rep('voronoi'); await settle(700);

@@ -204,6 +204,12 @@
       <optgroup label="Matcap (baked studio)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="row"><label class="tog"><input type="checkbox" id="rim"> rim glow</label></div>
     <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
+    <div class="row"><label>Pattern</label>
+      <select id="pattern"><option>None</option><option>Checkerboard</option><option>Stripes</option><option>Grid lines</option><option>Dots</option><option>Hatch</option><option>Cross-hatch</option><option>Bricks</option><option>Waves</option><option>Concentric</option><option>Lattice</option></select></div>
+    <div class="row"><label>Pat scale</label><input type="range" id="patScale" min="0.15" max="2.5" step="0.05" value="0.6"><span class="num" id="patScaleV">0.60</span></div>
+    <div class="row"><label>Pat strength</label><input type="range" id="patStr" min="0" max="1" step="0.05" value="0.5"><span class="num" id="patStrV">0.50</span></div>
+    <div class="row"><label>Pat tilt</label><input type="range" id="patTilt" min="0" max="90" step="5" value="0"><span class="num" id="patTiltV">0</span></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="patCut"> cut holes (perforate)</label></div>
   </div>
   <div class="grp"><div class="lbl">✨ Glow / aura</div>
     <div class="row"><label class="tog"><input type="checkbox" id="auraOn"> aura glow</label>
@@ -315,7 +321,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.5'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.6'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -454,6 +460,25 @@ const MATCAP_PRESETS={ Clay:{type:'matte',base:'#c0876a',amb:0.5,sExp:6,sInt:0.0
   Ruby:{type:'gem',base:'#a01030',refl:0.55}, Emerald:{type:'gem',base:'#0f7a48',refl:0.55}, Sapphire:{type:'gem',base:'#173a9a',refl:0.6}, Porcelain:{type:'matte',base:'#f0eee8',amb:0.62,sExp:60,sInt:0.5,refl:0.5} };
 const MATCAPS={}; for(const k of Object.keys(MATCAP_PRESETS)) MATCAPS[k]=makeMatcapTex(MATCAP_PRESETS[k]);
 
+// ---------- procedural surface patterns (ported from brainWhiz; live via shared uniforms) ----------
+const PAT_ID={None:0,Checkerboard:1,Stripes:2,'Grid lines':3,Dots:4,Hatch:5,'Cross-hatch':6,Bricks:7,Waves:8,Concentric:9,Lattice:10};
+const patU={ uPattern:{value:0}, uScale:{value:0.6}, uContrast:{value:0.5}, uPatAngle:{value:0}, uPatMode:{value:0} };
+const PAT_GLSL=`
+  if(uPattern>0){ vec3 q=vPatPos*uScale; { float ca=cos(uPatAngle),sa=sin(uPatAngle); q.xy=mat2(ca,-sa,sa,ca)*q.xy; } float on=1.0;
+    if(uPattern==1){ on=1.0-mod(floor(q.x)+floor(q.y)+floor(q.z),2.0); }
+    else if(uPattern==2){ on=1.0-step(0.5,fract(q.x)); }
+    else if(uPattern==3){ vec3 g=abs(fract(q)-0.5); on=smoothstep(0.0,0.06,min(min(g.x,g.y),g.z)); }
+    else if(uPattern==4){ vec3 f=fract(q)-0.5; on=smoothstep(0.18,0.27,length(f.xy)); }
+    else if(uPattern==5){ on=1.0-step(0.5,fract(q.x+q.y)); }
+    else if(uPattern==6){ vec2 d=abs(fract(vec2(q.x+q.y,q.x-q.y))-0.5); on=smoothstep(0.0,0.07,min(d.x,d.y)); }
+    else if(uPattern==7){ float ox=mod(floor(q.y),2.0)*0.5; vec2 d=abs(fract(vec2(q.x+ox,q.y))-0.5); on=smoothstep(0.0,0.06,min(d.x,d.y)); }
+    else if(uPattern==8){ on=1.0-step(0.5,fract(q.y+0.32*sin(q.x*6.2831853))); }
+    else if(uPattern==9){ on=smoothstep(0.0,0.08,abs(fract(length(q.xy))-0.5)); }
+    else if(uPattern==10){ vec3 g=abs(fract(q)-0.5); on=1.0-smoothstep(0.0,0.05,min(min(g.x,g.y),g.z)); }
+    if(uPatMode==0){ diffuseColor.rgb*=mix(uContrast,1.0,on); } else { if(on<(1.0-uContrast)) discard; } }`;
+function attachPattern(m){ m.onBeforeCompile=(sh)=>{ for(const k in patU) sh.uniforms[k]=patU[k];
+  sh.vertexShader='varying vec3 vPatPos;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n#ifdef USE_INSTANCING\n vPatPos=(instanceMatrix*vec4(position,1.0)).xyz;\n#else\n vPatPos=position;\n#endif');
+  sh.fragmentShader='varying vec3 vPatPos;\nuniform int uPattern;\nuniform float uScale;\nuniform float uContrast;\nuniform int uPatMode;\nuniform float uPatAngle;\n'+sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n'+PAT_GLSL); }; }
 // ---------- materials ----------
 const clipPlanes=[]; let clipEnabled=false;   // world-space section cuts (see updateClip)
 function makeMat(){ const st=$('material').value; const rim=$('rim').checked;
@@ -470,6 +495,7 @@ function makeMat(){ const st=$('material').value; const rim=$('rim').checked;
   if(rim && st.indexOf('matcap:')!==0){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
   if(wire) m.wireframe=true;
   if(clipEnabled && clipPlanes.length){ m.clippingPlanes=clipPlanes; m.clipShadows=true; }
+  attachPattern(m);   // procedural pattern (live via shared patU uniforms)
   return m; }
 
 // ---------- section cut (world-space clipping plane) ----------
@@ -1106,6 +1132,11 @@ $('material').addEventListener('change',rebuild); $('rim').addEventListener('cha
 $('wireframe').addEventListener('change',rebuild); $('flatShade').addEventListener('change',rebuild);
 $('outlineOn').addEventListener('change',rebuild); $('depthCue').addEventListener('change',()=>{}); bindRange('outlineW',()=>{ if($('outlineOn').checked) rebuild(); });
 $('fxOn').addEventListener('change',()=>{}); bindRange('fxBloom',()=>{});
+$('pattern').addEventListener('change',e=>{ patU.uPattern.value=PAT_ID[e.target.value]||0; });
+bindRange('patScale',()=>{ patU.uScale.value=+$('patScale').value; });
+bindRange('patStr',()=>{ patU.uContrast.value=1-(+$('patStr').value); });
+bindRange('patTilt',()=>{ patU.uPatAngle.value=(+$('patTilt').value)*Math.PI/180; });
+$('patCut').addEventListener('change',()=>{ patU.uPatMode.value=$('patCut').checked?1:0; rebuild(); });
 // aura glow
 ['auraColor'].forEach(id=>$(id).addEventListener('input',()=>{ if($('auraOn').checked) rebuild(); }));
 $('auraOn').addEventListener('change',rebuild); $('auraRainbow').addEventListener('change',()=>{});
@@ -1320,7 +1351,7 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
   shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps,
   builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
-  undo, builderDeleteMol, undoDepth:()=>undoStack.length,
+  undo, builderDeleteMol, undoDepth:()=>undoStack.length, patU, setPattern:n=>{patU.uPattern.value=n;},
   fetchPdb, fetchAlphaFold, parseCIF, parseMol2, parseGro, parseByName, molToXYZ, molToPDB, molToMol2, exportHTML, snapCfg, applyCfg, loadPreset, loadProject, currentScene, computeSS,
   captureViewPanel, renderFigureCanvas, exportFigSVG, figCount:()=>figPanels.length,
   setZoom, camDist:()=>camera.position.distanceTo(controls.target), colorCtx:()=>_ccx, atomRad, setCol:c=>{curCol=c;[...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===c));rebuild();},
