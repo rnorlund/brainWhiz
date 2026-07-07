@@ -31,7 +31,7 @@
   .num{min-width:30px;text-align:right;color:var(--muted);font-size:11px}
   button{background:#1b2436;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font:inherit;cursor:pointer}
   button:hover{border-color:var(--acc)} button.acc{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
-  .seg{display:flex;gap:4px} .seg button{flex:1;padding:5px 4px;font-size:11px} .seg button.on{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
+  .seg{display:flex;flex-wrap:wrap;gap:4px} .seg button{flex:1 1 auto;min-width:56px;padding:5px 4px;font-size:11px} .seg button.on{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
   .cgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
   .cgrid .c{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--muted)}
   #hud{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;background:rgba(10,14,22,.9);border:1px solid var(--line);border-radius:8px;padding:8px 14px;z-index:9;opacity:0;transition:opacity .15s;pointer-events:none;text-align:center}
@@ -262,7 +262,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v1.5'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.6'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -455,6 +455,10 @@ function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.rem
   if(voronoiGroup){ molGroup.remove(voronoiGroup); voronoiGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); voronoiGroup=null; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
+const isNuc=rn=>/^(D?[ATGCUI]|R[ATGCU])$/i.test((rn||'').trim());
+const NUC_ANCHOR={P:4,"C4'":3,"C1'":2,BB:2,"C3'":1};   // backbone-trace atom priority
+const BASE_COL={A:'#ff5b6e',DA:'#ff5b6e',G:'#4dff88',DG:'#4dff88',C:'#ffd23f',DC:'#ffd23f',T:'#5db0ff',DT:'#5db0ff',U:'#c07bff',RU:'#c07bff'};
+function structHasNucleic(){ if(MOL._dna) return true; return MOL.atoms.some(a=>isNuc(a.resName)&&NUC_ANCHOR[a.name]); }
 // geometric secondary-structure guess (for AlphaFold/mmCIF with no HELIX/SHEET records): CA-CA spacing
 function computeSS(atoms){ const helix=new Set(), sheet=new Set(), byChain={};
   atoms.forEach(a=>{ if(!a.het && a.name==='CA'){ (byChain[a.chain]||(byChain[a.chain]=[])).push(a); } });
@@ -486,6 +490,22 @@ function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
     let run=[cas[0]], curSS=ssOf(cas[0]);
     for(let i=1;i<cas.length;i++){ const s=ssOf(cas[i]); if(s!==curSS){ flush(run.concat([cas[i]]), curSS); run=[cas[i]]; curSS=s; } else run.push(cas[i]); }
     flush(run, curSS); }
+  // ---- nucleic (DNA/RNA): smooth backbone tube per strand + coloured base rungs ----
+  if(structHasNucleic()){ const nucCh=new Map(), baseAt=new Map();
+    for(const a of MOL.atoms){ if(!(MOL._dna||isNuc(a.resName))) continue; const p=NUC_ANCHOR[a.name];
+      if(p){ if(!nucCh.has(a.chain)) nucCh.set(a.chain,new Map()); const rm=nucCh.get(a.chain), cur=rm.get(a.resSeq); if(!cur||p>cur.p) rm.set(a.resSeq,{a,p}); }
+      if((a.el||'').startsWith('BASE_')||a.name==='N1'||a.name==='N9'){ const k=a.chain+'|'+a.resSeq; if(!baseAt.has(k)) baseAt.set(k,a); } }
+    const _up2=new THREE.Vector3(0,1,0);
+    const rung=(p0,p1,col)=>{ const dir=p1.clone().sub(p0), len=dir.length(); if(len<0.1)return; dir.normalize();
+      const q=new THREE.Quaternion().setFromUnitVectors(_up2,dir), g=new THREE.CylinderGeometry(0.28,0.28,len,8), m=new THREE.Mesh(g,makeMat());
+      m.material.color.set(col); m.position.copy(p0).add(p1).multiplyScalar(0.5); m.quaternion.copy(q); grp.add(m); };
+    for(const [ch,rm] of nucCh){ const arr=[...rm.values()].map(v=>v.a).sort((x,y)=>(+x.resSeq)-(+y.resSeq)); if(arr.length<2) continue;
+      const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z)), curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(12,arr.length*8);
+      const col=(curCol==='chain')?chainCol(ch):(curCol==='rainbow'||curCol==='bfactor')?atomColor(arr[Math.floor(arr.length/2)]):'#c8a05a';
+      const tube=new THREE.TubeGeometry(curve,seg,0.85,12,false), tm=new THREE.Mesh(tube,makeMat()); tm.material.color.set(col); grp.add(tm);
+      for(const a of arr){ const bk=baseAt.get(a.chain+'|'+a.resSeq); if(bk){ const bc=(curCol==='chain'||curCol==='rainbow'||curCol==='bfactor')?col:(BASE_COL[a.resName]||'#c8a05a');
+        rung(new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(bk.x,bk.y,bk.z), bc); } } }
+  }
   return grp; }
 let _ccx=null;   // colour context (b-factor range, per-chain residue range) — recomputed each rebuild
 function computeColorCtx(){ const A=MOL.atoms; let bmin=1e9,bmax=-1e9; const cs={};
@@ -687,10 +707,10 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
     if($('surfLig').checked) buildLigands();
     buildAura(); $('status').textContent=`${A.length} atoms · surface`; return; }
   const showH=$('showH').checked, br=+$('bondR').value;
-  const hasCA=MOL.atoms.some(a=>!a.het && a.name==='CA');
-  const cartoon=(curRep==='cartoon') && hasCA;                     // no protein backbone → fall back to ball&stick (don't blank the screen)
+  const hasBB=MOL.atoms.some(a=>!a.het && a.name==='CA') || structHasNucleic();
+  const cartoon=(curRep==='cartoon') && hasBB;                     // no protein/nucleic backbone → fall back to ball&stick (don't blank)
   const rep = (curRep==='cartoon') ? 'bas' : curRep;               // cartoon: ribbon + HETATM ligands as ball&stick
-  if(curRep==='cartoon' && !hasCA) $('status').textContent='no protein backbone — showing ball & stick';
+  if(curRep==='cartoon' && !hasBB) $('status').textContent='no backbone to ribbon — showing ball & stick';
   if(cartoon){ cartoonGroup=buildCartoon(); molGroup.add(cartoonGroup); }
   const hideSolv=$('hideSolvent').checked;
   const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(hideSolv && isSolvent(a)) continue; if(cartoon && !a.het) continue; idx.push(i); }
