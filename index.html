@@ -1599,7 +1599,9 @@ function finishInit(box, sphere){
   document.getElementById('loader').style.display='none';
   if(NO_DATA) showEmptyState();
   requestRender();   // meshes loaded async — render the initial scene
-  setTimeout(()=>{ try{ restoreLook(); }catch(e){} }, 0);   // re-apply the saved look after this atlas is ready (survives atlas switches)
+  setTimeout(()=>{ try{ restoreLook(); }catch(e){}
+    try{ const pend=sessionStorage.getItem('mwPendingCSV'); if(pend){ sessionStorage.removeItem('mwPendingCSV'); const o=JSON.parse(pend); if(o&&o.text){ if(typeof clearEmptyState==='function')clearEmptyState(); loadRegionCSV(o.text,o.name); openSection('Overlays'); } } }catch(e){}   // auto-applied CSV after an atlas auto-switch
+  }, 0);   // re-apply the saved look after this atlas is ready (survives atlas switches)
   if(window.__brainReady) window.__brainReady();   // signal scripting API
   if(params.get('embed')){ document.body.classList.add('embed');   // iframe-friendly: hide all chrome
     if(!document.getElementById('embedBadge')){ const a=document.createElement('a'); a.id='embedBadge'; a.href='https://rnorlund.github.io/brainWhiz/'; a.target='_blank'; a.rel='noopener'; a.textContent='brainWhiz ↗'; document.body.appendChild(a); }
@@ -2689,14 +2691,14 @@ async function buildAtlasFromDrop(files){
         const labelsText = labF ? await labF.text() : null;
         const n=buildAtlasFromNifti(nii, labelsText, nm);
         openSection('Regions'); showBuilding(false);
-        alert('Built atlas: '+n+' regions from '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
+        alert('Built atlas: '+n+' regions · '+niiF.name+(labF?(' + '+labF.name):' (auto-named — drop a labels .txt with it for names)'));
       } else {
         buildSurfaceFromNifti(nii, nm);
         openSection('Regions'); showBuilding(false);
-        alert('Built a brain surface from '+niiF.name+' (continuous volume → one mesh, not regions). The ROI atlas is still in the atlas dropdown.');
+        alert('Built a brain surface · '+niiF.name+' (continuous volume → one mesh, not regions). The ROI atlas is still in the atlas dropdown.');
       }
     } finally { showBuilding(false); }
-  }catch(err){ showBuilding(false); alert('Could not build from '+niiF.name+': '+err.message); }
+  }catch(err){ showBuilding(false); alert('Could not build · '+niiF.name+': '+err.message); }
 }
 
 // =================================================================================
@@ -3884,15 +3886,29 @@ function loadRegionCSV(text, fileName){
   if(idCol<0 && numCols.length>1){ for(const c of numCols){ if(c===valCol) continue;
       let allInt=true; for(const r of body){ if(r[c]!==''&&r[c]!=null&&!Number.isInteger(+r[c])){ allInt=false; break; } } if(allInt){ idCol=c; break; } } }
   const N=byId.size, atlasIds=[...byId.keys()].sort((a,b)=>a-b);
-  if(body.length!==N){ const cand=(window.ATLAS_REGISTRY||[]).find(a=>a.nroi===body.length && a.id!==ATLAS_ID);
-    if(cand && confirm(`This CSV has ${body.length} rows — that matches atlas "${cand.name}", but the current atlas "${ATLAS_ID}" has ${N} regions.\n\nSwitch to ${cand.id} and reload? (then load the CSV again)`)){
-      location.href=location.pathname+'?atlas='+encodeURIComponent(cand.id); return; } }
-  const norm=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]/g,''), vals={}; let matched=0, how;
-  if(nameCol>=0){ const nameMap=new Map(); for(const m of meshes){ for(const f of [m.meta.name,m.meta.abbr,m.meta.node]) if(f) nameMap.set(norm(f),m.meta.id); }
-    for(const r of body){ const id=nameMap.get(norm(r[nameCol])); if(id!=null&&isNum(r[valCol])){ vals[id]=+r[valCol]; matched++; } } how='by region name'; }
-  else if(idCol>=0){ for(const r of body){ const id=+r[idCol]; if(byId.has(id)&&isNum(r[valCol])){ vals[id]=+r[valCol]; matched++; } } how='by id column'; }
-  else { const k=Math.min(body.length, atlasIds.length); for(let i=0;i<k;i++){ if(isNum(body[i][valCol])){ vals[atlasIds[i]]=+body[i][valCol]; matched++; } } how='in region-id order'; }
-  if(!matched){ alert('Could not match any CSV rows to atlas regions.\nExpected one value per region (currently '+N+' regions), or a region name/id column.'); return; }
+  const norm=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]/g,'');
+  // ---- AUTO-DETECT the atlas this CSV is for (by region count) and switch to it, seamlessly ----
+  // long format: rows that carry a value; wide (subjects×regions) matrix: number of data columns
+  const dataCols=numCols.filter(c=>c!==idCol);
+  const rowN=body.filter(r=>isNum(r[valCol]) && (nameCol<0||String(r[nameCol]||'').trim()!=='')).length;
+  const wideN=dataCols.length>=8?dataCols.length:0;
+  if(rowN!==N && wideN!==N){ const reg=window.ATLAS_REGISTRY||[];
+    let cand=reg.filter(a=>a.nroi===rowN); if(cand.length!==1 && wideN) cand=reg.filter(a=>a.nroi===wideN);
+    const target=cand.length===1?cand[0]:null;
+    if(target && target.id!==ATLAS_ID){ try{ sessionStorage.setItem('mwPendingCSV', JSON.stringify({text, name:fileName||'data.csv'})); }catch(e){}
+      if($('ovInfo')) $('ovInfo').textContent=`Switching to ${target.name} to match this CSV…`;
+      location.href=location.pathname+'?atlas='+encodeURIComponent(target.id); return; } }
+  const vals={}; let matched=0, how;
+  // WIDE subjects×regions matrix on the right atlas → show the column means (group average)
+  if(dataCols.length===N && body.length!==N && dataCols.length>=8){
+    for(let i=0;i<atlasIds.length;i++){ const c=dataCols[i]; let s=0,cnt=0; for(const r of body){ if(isNum(r[c])){s+=+r[c];cnt++;} } if(cnt){ vals[atlasIds[i]]=s/cnt; matched++; } }
+    how=`column means over ${body.length} rows`; }
+  else {   // long format: match by region name, then id column, then region-id order
+    const tryName=()=>{ if(nameCol<0)return 0; const nm=new Map(); for(const m of meshes){ for(const f of [m.meta.name,m.meta.abbr,m.meta.node]) if(f) nm.set(norm(f),m.meta.id); } let t=0; for(const r of body){ const id=nm.get(norm(r[nameCol])); if(id!=null&&isNum(r[valCol])){ vals[id]=+r[valCol]; t++; } } return t; };
+    const tryId=()=>{ if(idCol<0)return 0; let t=0; for(const r of body){ const id=+r[idCol]; if(byId.has(id)&&isNum(r[valCol])){ vals[id]=+r[valCol]; t++; } } return t; };
+    const tryOrder=()=>{ if(body.length!==N)return 0; let t=0; for(let i=0;i<atlasIds.length;i++){ if(isNum(body[i][valCol])){ vals[atlasIds[i]]=+body[i][valCol]; t++; } } return t; };
+    matched=tryName(); how='by region name'; if(!matched){ for(const k in vals)delete vals[k]; matched=tryId(); how='by id column'; } if(!matched){ for(const k in vals)delete vals[k]; matched=tryOrder(); how='in region-id order'; } }
+  if(!matched){ alert(`Couldn't match this CSV to the current atlas "${ATLAS_ID}" (${N} regions).\n\nThe CSV describes ${rowN||wideN||'?'} regions. Pick the matching atlas from the dropdown, or check that it has one value per region (a name/id column, or one row per region).`); return; }
   applyCsvVals(vals, fileName||'data.csv');
   if($('ovInfo')) $('ovInfo').textContent = `CSV: matched ${matched}/${N} regions ${how}`;
 }
