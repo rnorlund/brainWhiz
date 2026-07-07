@@ -114,6 +114,22 @@ const props = await page.evaluate(() => { window.__mol.showAtomProps(0); const p
 ok('atom props panel opens with facts', props.on && props.hasEN);
 console.log('   props header:', props.hd);
 
+console.log('== fragment builder ==');
+await page.evaluate(() => window.__mol.builderNew());
+await page.evaluate(() => window.__mol.builderAdd('C'));          // first carbon
+await page.evaluate(() => { window.__mol.setBuildSel(0); window.__mol.builderAdd('C'); }); // ethane C-C
+let nC = await page.evaluate(() => window.__mol.MOL.atoms.filter(a=>a.el==='C').length);
+ok(`build C–C (${nC} carbons)`, nC === 2);
+await page.evaluate(() => window.__mol.builderFillH());
+let nAt = await page.evaluate(() => window.__mol.MOL.atoms.length);
+ok(`fill H → ethane C2H6 (${nAt} atoms)`, nAt === 8);
+await page.evaluate(() => { window.__mol.builderNew(); window.__mol.setBuildSel(-1); window.__mol.builderFragment('phenyl'); });
+let ring = await page.evaluate(() => window.__mol.MOL.atoms.filter(a=>a.el==='C').length);
+ok(`phenyl fragment (${ring} carbons ≥6)`, ring >= 6);
+await page.evaluate(() => window.__mol.builderFragment('water'));
+ok('snap +H2O no errors', errs.length === 0);
+await shot('pw_builder.png');
+
 console.log('\n== page errors ==');
 ok('no uncaught page errors', errs.length === 0);
 if (errs.length) errs.slice(0,5).forEach(e => console.log('   !', e.slice(0,120)));
