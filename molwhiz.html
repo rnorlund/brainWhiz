@@ -118,6 +118,14 @@
     <div class="row"><label class="tog"><input type="checkbox" id="rim"> rim glow</label></div>
     <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
   </div>
+  <div class="grp"><div class="lbl">✨ Glow / aura</div>
+    <div class="row"><label class="tog"><input type="checkbox" id="auraOn"> aura glow</label>
+      <input type="color" id="auraColor" value="#5db0ff" style="width:34px;margin-left:6px" title="aura colour">
+      <label class="tog" style="margin-left:6px" title="cycle the aura colour"><input type="checkbox" id="auraRainbow"> 🌈</label></div>
+    <div class="row"><label>Reach</label><input type="range" id="auraSize" min="1.1" max="3" step="0.05" value="1.6"><span class="num" id="auraSizeV">1.60</span></div>
+    <div class="row"><label>Intensity</label><input type="range" id="auraIntensity" min="0" max="2" step="0.05" value="0.9"><span class="num" id="auraIntensityV">0.90</span></div>
+    <div class="row"><label>Pulse</label><input type="range" id="auraPulse" min="0" max="4" step="0.1" value="0"><span class="num" id="auraPulseV">0.0</span></div>
+  </div>
   <div class="grp"><div class="lbl">⚛ Atomic view (Bohr model)</div>
     <div class="row"><label>Spread</label><input type="range" id="atSpread" min="1.5" max="8" step="0.5" value="4"><span class="num" id="atSpreadV">4.0</span></div>
     <div class="row"><label>Nucleus size</label><input type="range" id="atNuc" min="0.4" max="2" step="0.1" value="1"><span class="num" id="atNucV">1.0</span></div>
@@ -200,7 +208,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v0.6'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v0.7'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -210,7 +218,7 @@ const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-
 const molGroup=new THREE.Group(); scene.add(molGroup);
 function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize',resize); resize();
-const spinAx={x:false,y:false,z:false}; let rockPhase=0, electronT=0;
+const spinAx={x:false,y:false,z:false}; let rockPhase=0, electronT=0, auraHue=0.58;
 function loop(){ requestAnimationFrame(loop); controls.update();
   const s=+$('spinSpeed').value*0.01;
   if($('rockMode').checked){ rockPhase+=s; const off=Math.sin(rockPhase)*0.6;   // gentle oscillation on active axes
@@ -219,10 +227,14 @@ function loop(){ requestAnimationFrame(loop); controls.update();
   if(electronOrbits.length){ electronT+=0.016; for(const o of electronOrbits){ const c=o.c,u=o.u,v=o.v,r=o.r;
     for(const e of o.es){ const ca=Math.cos(e.ph+electronT*e.sp)*r, sa=Math.sin(e.ph+electronT*e.sp)*r;
       e.mesh.position.set(c.x+u.x*ca+v.x*sa, c.y+u.y*ca+v.y*sa, c.z+u.z*ca+v.z*sa); } } }
+  if(auraGroup){ const pul=+$('auraPulse').value, base=+$('auraIntensity').value;
+    const mul = pul>0 ? (0.55+0.45*Math.sin(performance.now()*0.001*pul)) : 1;
+    if($('auraRainbow').checked){ auraHue=(auraHue+0.004)%1; const c=new THREE.Color().setHSL(auraHue,0.8,0.6); auraGroup.children.forEach(m=>m.material.color.copy(c)); }
+    auraGroup.children.forEach((m,L)=>{ m.material.opacity=base*0.14/(L+1)*mul; }); }
   renderer.render(scene,camera); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
-let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], pickList=[], isDNA=false, molR=30;
+let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], auraGroup=null, pickList=[], isDNA=false, molR=30;
 let curRep='bas', curCol='element', curClipAxis='x';
 
 // ---------- parsers ----------
@@ -348,7 +360,8 @@ const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_v=new THREE.Vector3(),_u
 function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[];
   if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; }
   if(surfMesh){ molGroup.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); surfMesh=null; }
-  if(atomicGroup){ molGroup.remove(atomicGroup); atomicGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); atomicGroup=null; electronOrbits=[]; } }
+  if(atomicGroup){ molGroup.remove(atomicGroup); atomicGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); atomicGroup=null; electronOrbits=[]; }
+  if(auraGroup){ molGroup.remove(auraGroup); auraGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); auraGroup=null; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
 function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
@@ -493,11 +506,23 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
     addOrbit(atomicGroup, mid, axis, 0.42*NS+0.1, 2, ESP*1.4, eMat); }
   molGroup.add(atomicGroup);
   $('status').textContent=`${idx.length} atoms · atomic (Bohr) view · ${electronOrbits.reduce((s,o)=>s+o.es.length,0)} e⁻`; }
+// ---------- aura glow: additive BackSide shells around each atom (Unity-style bloom; ported from brainWhiz) ----------
+const AURA_LAYERS=3;
+function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; idx.push(i); } if(!idx.length) return;
+  auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; const col=new THREE.Color($('auraColor').value), reach=+$('auraSize').value, I=+$('auraIntensity').value;
+  const geo=new THREE.SphereGeometry(1,16,12);
+  for(let L=0;L<AURA_LAYERS;L++){ const scale=reach*(1+L*0.28), op=I*0.14/(L+1);
+    const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op});
+    const im=new THREE.InstancedMesh(geo,mat,idx.length); let n=0;
+    for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
+    im.instanceMatrix.needsUpdate=true; im.frustumCulled=false; auraGroup.add(im); }
+  molGroup.add(auraGroup); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
-  if(curRep==='atomic'){ buildAtomic(); return; }
+  if(curRep==='atomic'){ buildAtomic(); buildAura(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
     if($('surfLig').checked) buildLigands();
-    $('status').textContent=`${A.length} atoms · surface`; return; }
+    buildAura(); $('status').textContent=`${A.length} atoms · surface`; return; }
   const showH=$('showH').checked, br=+$('bondR').value, cartoon=(curRep==='cartoon');
   const rep = cartoon ? 'bas' : curRep;                            // cartoon: ribbon + HETATM ligands as ball&stick
   if(cartoon){ cartoonGroup=buildCartoon(); molGroup.add(cartoonGroup); }
@@ -515,7 +540,7 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
       _m.compose(ax.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
       _m.compose(mid.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++; }
     bondMesh.instanceMatrix.needsUpdate=true; if(bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate=true; molGroup.add(bondMesh); }
-  $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
+  buildAura(); $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
 }
 function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms parsed'; return; }
   if(!m.bonds.length || (m._hasConect && m.bonds.length<m.atoms.length/2)) m.bonds=m.bonds.concat(inferBonds(m.atoms));
@@ -608,6 +633,10 @@ $('showH').addEventListener('change',rebuild); $('hideSolvent').addEventListener
 $('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListener('change',rebuild);
 $('material').addEventListener('change',rebuild); $('rim').addEventListener('change',rebuild);
 $('wireframe').addEventListener('change',rebuild); $('flatShade').addEventListener('change',rebuild);
+// aura glow
+['auraColor'].forEach(id=>$(id).addEventListener('input',()=>{ if($('auraOn').checked) rebuild(); }));
+$('auraOn').addEventListener('change',rebuild); $('auraRainbow').addEventListener('change',()=>{});
+bindRange('auraSize',()=>{ if($('auraOn').checked) rebuild(); }); bindRange('auraIntensity',()=>{}); bindRange('auraPulse',()=>{});
 // section cut
 $('clipOn').addEventListener('change',()=>{ updateClip(); if(!$('clipOn').checked) rebuild(); });
 $('clipFlip').addEventListener('change',updateClip);
