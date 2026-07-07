@@ -224,6 +224,18 @@ try {
   await page.evaluate(() => { window.__mol.setSel('',''); window.__mol.selAct('reset'); });
 } catch(e){ console.log('  (skipped selection — network:', String(e).slice(0,50), ')'); }
 
+console.log('== empty-kind isolate guard + AlphaFold autocomplete ==');
+await load('caffeine'); await rep('bas'); await settle(150);
+const allC = await page.evaluate(() => window.__mol.shownAtoms());
+await page.evaluate(() => { window.__mol.setSel('', 'water'); window.__mol.selAct('isolate'); }); await settle(200);
+ok('isolating an empty kind does NOT blank the view', await page.evaluate(() => window.__mol.shownAtoms()) === allC);
+await page.evaluate(() => { window.__mol.setSel('',''); window.__mol.selAct('reset'); });
+try {
+  await page.fill('#afid', 'lysozyme'); await page.waitForFunction(() => document.querySelectorAll('#afSuggest .afitem').length > 0, { timeout: 8000 });
+  ok('AlphaFold autocomplete shows suggestions', (await page.$$eval('#afSuggest .afitem', e => e.length)) > 0);
+  await page.evaluate(() => { document.getElementById('afid').value=''; document.getElementById('afSuggest').innerHTML=''; });
+} catch(e){ console.log('  (autocomplete skipped — UniProt network)'); }
+
 console.log('== fragment builder ==');
 await page.evaluate(() => window.__mol.builderNew());
 await page.evaluate(() => window.__mol.builderAdd('C'));          // first carbon

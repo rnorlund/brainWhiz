@@ -49,6 +49,10 @@
   .seqch{font-weight:700;color:var(--acc);margin-right:6px;font-size:11px;min-width:16px}
   .seqc{font:600 11px ui-monospace,monospace;width:15px;height:18px;display:flex;align-items:center;justify-content:center;background:#1a2130;color:#cfe0f5;border-radius:2px;cursor:pointer;user-select:none}
   .seqc:hover{background:#2a3852} .seqc.sel{background:#ffe066;color:#1a1a1a}
+  .suggest{margin-top:4px} .suggest .afitem{padding:5px 7px;font-size:11px;background:#141a24;border:1px solid var(--line);border-radius:4px;margin-bottom:3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .suggest .afitem:hover{background:#243248} .suggest .afitem b{color:var(--acc)}
+  @keyframes blipred{0%,100%{background:#141a24}50%{background:#5a1620;border-color:#ff5b6e}}
+  .blip{animation:blipred .4s ease 2}
   #atomProps{position:fixed;right:14px;bottom:14px;width:260px;background:rgba(10,14,22,.95);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:11;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
   #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px}
   #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
@@ -120,7 +124,8 @@
     <div class="row"><button id="openBtn" style="flex:1">📂 Open .pdb / .cif / .sdf / .xyz…</button>
       <input type="file" id="file" accept=".pdb,.ent,.pdbqt,.cif,.mmcif,.sdf,.mol,.mol2,.xyz,.gro,.mwz,.mwzproj,.json" style="display:none"></div>
     <div class="row"><span style="font-size:11px;color:var(--muted)">…or drag a file anywhere · or Fetch a PDB ID above</span></div>
-    <div class="row" style="margin-top:5px"><input type="text" id="afid" placeholder="UniProt (P69905)" maxlength="10" style="text-transform:uppercase"><button id="afBtn" title="fetch predicted structure from AlphaFold">🔮 AlphaFold</button></div>
+    <div class="row" style="margin-top:5px"><input type="text" id="afid" placeholder="UniProt or protein name…" autocomplete="off"><button id="afBtn" title="fetch predicted structure from AlphaFold">🔮 AlphaFold</button></div>
+    <div id="afSuggest" class="suggest"></div>
     <div id="status">caffeine</div>
   </div>
   <div class="grp"><div class="lbl">🧬 Build B-DNA from sequence</div>
@@ -135,6 +140,10 @@
   </div>
   <div class="grp"><div class="lbl">🔗 Contacts</div>
     <div class="row"><label class="tog"><input type="checkbox" id="hbondOn"> show H-bonds / polar contacts</label></div>
+    <div class="row"><label>Colour</label><input type="color" id="hbColor" value="#66e0ff"><label class="tog" style="margin-left:8px"><input type="checkbox" id="hbDashed" checked> dashed</label></div>
+    <div class="row"><label>Thickness</label><input type="range" id="hbThick" min="0.02" max="0.3" step="0.01" value="0.06"><span class="num" id="hbThickV">0.06</span></div>
+    <div class="row"><label>Dash len</label><input type="range" id="hbDash" min="0.15" max="1.2" step="0.05" value="0.4"><span class="num" id="hbDashV">0.40</span></div>
+    <div class="row"><label>Gap</label><input type="range" id="hbGap" min="0" max="1" step="0.05" value="0.25"><span class="num" id="hbGapV">0.25</span></div>
     <div id="hbondOut" style="font-size:11px;color:var(--muted);min-height:14px"></div>
   </div>
   <div class="grp"><div class="lbl">🎯 Selection</div>
@@ -285,6 +294,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -321,7 +331,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.6'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.7'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -331,6 +341,13 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
 const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
 const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
 const molGroup=new THREE.Group(); scene.add(molGroup);
+// ---------- Unity-style move gizmo (X/Y/Z arrows) for the selected atom in build mode ----------
+const gizmo=new TransformControls(camera, renderer.domElement); gizmo.setSize(0.8); gizmo.visible=false; scene.add(gizmo);
+const gizmoProxy=new THREE.Object3D(); scene.add(gizmoProxy);
+gizmo.addEventListener('dragging-changed',e=>{ controls.enableRotate=!e.value; });
+gizmo.addEventListener('mouseDown',()=>{ if(typeof builderSel!=='undefined'&&builderSel>=0) pushUndo(); });
+gizmo.addEventListener('objectChange',()=>{ if(builderSel<0||!MOL.atoms[builderSel])return; const l=molGroup.worldToLocal(gizmoProxy.position.clone()); const a=MOL.atoms[builderSel]; a.x=l.x;a.y=l.y;a.z=l.z; delete a.r; rebuild(); if(buildMarker)buildMarker.position.set(a.x,a.y,a.z); });
+function updateGizmo(){ if(builderOn && builderSel>=0 && MOL.atoms[builderSel]){ const a=MOL.atoms[builderSel]; molGroup.updateMatrixWorld(); gizmoProxy.position.copy(molGroup.localToWorld(new THREE.Vector3(a.x,a.y,a.z))); gizmo.attach(gizmoProxy); gizmo.visible=true; } else { gizmo.detach(); gizmo.visible=false; } }
 // ---------- optional cinematic post-processing (SSAO + bloom + SMAA), built lazily on first enable ----------
 let composer=null, ssaoPass=null, bloomPass=null;
 function buildComposer(){ if(composer) return; composer=new EffectComposer(renderer);
@@ -566,6 +583,8 @@ function selPred(){ return a=> (!selChain||a.chain===selChain) && (!selKind||kin
 function populateChains(){ const s=$('selChain'); if(!s)return; const set=[...new Set(MOL.atoms.map(a=>a.chain))].sort();
   s.innerHTML='<option value="">(all chains)</option>'+set.map(c=>`<option value="${c}">chain ${c}</option>`).join(''); selChain=''; }
 function selAct(action){ const p=selPred(); let n=0;
+  if((action==='isolate'||action==='hide') && !MOL.atoms.some(a=>p(a))){   // nothing matches → would blank the view; refuse + flash red
+    const seg=$('selKind'); if(seg){ seg.classList.remove('blip'); void seg.offsetWidth; seg.classList.add('blip'); } if($('selOut'))$('selOut').textContent='empty selection — nothing to '+action; return; }
   if(action==='isolate') MOL.atoms.forEach(a=>{ a.hidden=!p(a); if(p(a))n++; });
   else if(action==='hide') MOL.atoms.forEach(a=>{ if(p(a)){a.hidden=true;n++;} });
   else if(action==='colour'){ const c=$('selColor').value; MOL.atoms.forEach(a=>{ if(p(a)){a.ovcol=c;n++;} }); }
@@ -880,8 +899,16 @@ function buildHBonds(){ if(!$('hbondOn')||!$('hbondOn').checked) return; const A
       for(const j of arr){ if(j<=i||bonded.has(i+'_'+j))continue; const b=A[j]; if(a.chain===b.chain&&a.resSeq===b.resSeq)continue;
         const dd=(a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2; if(dd>=lo&&dd<=hi) pts.push(a.x,a.y,a.z,b.x,b.y,b.z); } } }
   if(!pts.length){ if($('hbondOut'))$('hbondOut').textContent='no H-bonds found'; return; }
-  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
-  hbondGroup=new THREE.LineSegments(g,new THREE.LineDashedMaterial({color:0x66e0ff,dashSize:0.35,gapSize:0.22,transparent:true,opacity:0.95,depthTest:true})); hbondGroup.computeLineDistances(); molGroup.add(hbondGroup);
+  // render as thin cylinders (real thickness + colour), optionally chopped into dashes
+  const col=$('hbColor').value, rad=+$('hbThick').value, dashed=$('hbDashed').checked, dash=+$('hbDash').value, gap=+$('hbGap').value, seg=Math.max(0.05,dash+(dashed?gap:0));
+  const segs=[]; const P0=new THREE.Vector3(), P1=new THREE.Vector3(), D=new THREE.Vector3();
+  for(let k=0;k<pts.length;k+=6){ P0.set(pts[k],pts[k+1],pts[k+2]); P1.set(pts[k+3],pts[k+4],pts[k+5]); D.subVectors(P1,P0); const L=D.length(); D.normalize();
+    if(!dashed){ segs.push([P0.clone().addScaledVector(D,L/2), L, D.clone()]); continue; }
+    for(let t=0;t<L;t+=seg){ const dl=Math.min(dash,L-t); if(dl<0.02)break; segs.push([P0.clone().addScaledVector(D,t+dl/2), dl, D.clone()]); } }
+  const geo=new THREE.CylinderGeometry(1,1,1,7), mat=new THREE.MeshBasicMaterial({color:col}); hbondGroup=new THREE.InstancedMesh(geo,mat,segs.length);
+  const _m2=new THREE.Matrix4(), _q2=new THREE.Quaternion(), _up2=new THREE.Vector3(0,1,0), _s2=new THREE.Vector3();
+  segs.forEach((s,i)=>{ _q2.setFromUnitVectors(_up2,s[2]); _m2.compose(s[0],_q2,_s2.set(rad,s[1],rad)); hbondGroup.setMatrixAt(i,_m2); });
+  hbondGroup.instanceMatrix.needsUpdate=true; molGroup.add(hbondGroup);
   if($('hbondOut'))$('hbondOut').textContent=(pts.length/6)+' H-bonds / polar contacts'; }
 // ink outline (inverted hull): a slightly-enlarged BackSide black shell behind the meshes
 function inflateGeo(geo,d){ const g=geo.clone(); if(!g.attributes.normal)g.computeVertexNormals(); const p=g.attributes.position,n=g.attributes.normal;
@@ -1029,6 +1056,7 @@ function builderDelete(){ if(builderSel<0)return; pushUndo(); const gi=builderSe
   MOL.bonds=MOL.bonds.filter(b=>b[0]!==gi&&b[1]!==gi).map(b=>{ const r=[b[0]>gi?b[0]-1:b[0], b[1]>gi?b[1]-1:b[1]]; if(b[2]!=null)r.push(b[2]); return r; });
   builderSel=-1; refreshBuild(); }
 function updateBuildMarker(){ if(buildMarker){ molGroup.remove(buildMarker); buildMarker.geometry.dispose(); buildMarker.material.dispose(); buildMarker=null; }
+  updateGizmo();
   if(!builderOn||builderSel<0||!MOL.atoms[builderSel])return; const a=MOL.atoms[builderSel];
   buildMarker=new THREE.Mesh(new THREE.SphereGeometry(elVdw(a.el)*0.42+0.15,16,12), new THREE.MeshBasicMaterial({color:0x00e5ff,wireframe:true,transparent:true,opacity:0.9}));
   buildMarker.position.set(a.x,a.y,a.z); buildMarker.renderOrder=5; molGroup.add(buildMarker); }
@@ -1078,9 +1106,9 @@ const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let downXY=null;
 renderer.domElement.addEventListener('pointerdown',e=>downXY=[e.clientX,e.clientY]);
 // ---------- build-mode: drag an atom to move it (capture phase so it beats OrbitControls) ----------
 let dragAtom=-1, dragMoved=false; const _dplane=new THREE.Plane(), _dpt=new THREE.Vector3();
-renderer.domElement.addEventListener('pointerdown',e=>{ if(!builderOn||e.button!==0||!sphereMesh)return;
+renderer.domElement.addEventListener('pointerdown',e=>{ if(!builderOn||e.button!==0||!sphereMesh||!e.shiftKey)return;   // SHIFT+drag moves an atom; plain drag always rotates the camera
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera); const hit=ray.intersectObject(sphereMesh,false);
-  if(hit.length){ dragAtom=pickList[hit[0].instanceId]; dragMoved=false; controls.enableRotate=false;   // drag on an atom → move it; drag on empty → orbit
+  if(hit.length){ dragAtom=pickList[hit[0].instanceId]; dragMoved=false; controls.enableRotate=false;   // shift-drag on an atom → move it
     const a=MOL.atoms[dragAtom]; _dplane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(a.x,a.y,a.z)); } }, true);
 renderer.domElement.addEventListener('pointermove',e=>{ if(dragAtom<0)return; ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
   if(ray.ray.intersectPlane(_dplane,_dpt)){ if(!dragMoved){ pushUndo(); dragMoved=true; } const a=MOL.atoms[dragAtom]; a.x=_dpt.x;a.y=_dpt.y;a.z=_dpt.z; a.r!=null&&delete a.r; rebuild(); updateBuildMarker(); } });
@@ -1115,6 +1143,8 @@ bindRange('atSpread',rebuildIfAtomic); bindRange('atNuc',rebuildIfAtomic); bindR
 ['colA','colT','colG','colC','colBB'].forEach(id=>$(id).addEventListener('input', rebuildDNAIfActive));
 $('showH').addEventListener('change',rebuild); $('hideSolvent').addEventListener('change',rebuild);
 $('hbondOn').addEventListener('change',rebuild);
+['hbColor','hbDashed'].forEach(id=>$(id).addEventListener('change',()=>{ if($('hbondOn').checked) rebuild(); }));
+['hbThick','hbDash','hbGap'].forEach(id=>bindRange(id,()=>{ if($('hbondOn').checked) rebuild(); }));
 $('legendOn').addEventListener('change',updateLegend);
 $('sideChains').addEventListener('change',rebuild);
 $('resLabels').addEventListener('change',rebuild);
@@ -1124,7 +1154,9 @@ $('seqClose').addEventListener('click',()=>$('seqPanel').classList.remove('on'))
 $('seqClear').addEventListener('click',()=>{ resSel.clear(); buildSeqPanel(); rebuild(); });
 $('seqBody').addEventListener('click',e=>{ const c=e.target.closest('.seqc'); if(!c)return; const k=c.dataset.k; if(resSel.has(k))resSel.delete(k); else resSel.add(k); c.classList.toggle('sel'); rebuild(); });
 $('selChain').addEventListener('change',e=>{ selChain=e.target.value; });
-$('selKind').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; selKind=(selKind===b.dataset.k)?'':b.dataset.k; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x.dataset.k===selKind)); });
+$('selKind').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; const k=b.dataset.k;
+  if(selKind!==k && !MOL.atoms.some(a=>kindOf(a)===k)){ b.classList.remove('blip'); void b.offsetWidth; b.classList.add('blip'); if($('selOut'))$('selOut').textContent=`no ${k} in this structure`; return; }   // empty kind → refuse + flash red
+  selKind=(selKind===k)?'':k; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x.dataset.k===selKind)); });
 $('selIsolate').addEventListener('click',()=>selAct('isolate')); $('selHide').addEventListener('click',()=>selAct('hide'));
 $('selColorBtn').addEventListener('click',()=>selAct('colour')); $('selReset').addEventListener('click',()=>selAct('reset'));
 $('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListener('change',rebuild);
@@ -1198,7 +1230,9 @@ function readFile(f){ const n=f.name.toLowerCase(), r=new FileReader();
     loadMol(parseByName(r.result,f.name),f.name);
   }catch(err){ $('status').textContent='load error: '+err.message; } }; r.readAsText(f); }
 $('fetchBtn').addEventListener('click',fetchPdb); $('pdbid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchPdb(); });
-$('afBtn').addEventListener('click',fetchAlphaFold); $('afid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchAlphaFold(); });
+$('afBtn').addEventListener('click',()=>{ $('afSuggest').innerHTML=''; fetchAlphaFold(); }); $('afid').addEventListener('keydown',e=>{ if(e.key==='Enter'){ $('afSuggest').innerHTML=''; fetchAlphaFold(); } });
+$('afid').addEventListener('input',()=>{ clearTimeout(_afTimer); const q=$('afid').value.trim(); if(q.length<2){ $('afSuggest').innerHTML=''; return; } _afTimer=setTimeout(()=>afSuggest(q),280); });
+document.addEventListener('click',e=>{ if(!e.target.closest('#afSuggest')&&e.target!==$('afid')) $('afSuggest').innerHTML=''; });
 $('expXYZ').addEventListener('click',()=>dl('molecule.xyz',molToXYZ()));
 $('expPDB').addEventListener('click',()=>dl('molecule.pdb',molToPDB()));
 $('expMOL2').addEventListener('click',()=>dl('molecule.mol2',molToMol2()));
@@ -1234,6 +1268,14 @@ async function fetchAlphaFold(accArg){ const acc=(typeof accArg==='string'?accAr
     if(url){ const r=await fetch(url); if(r.ok){ const t=await r.text(); loadMol(url.endsWith('.cif')?parseCIF(t):parsePDB(t),'AF-'+acc); return; } } } }catch(e){}
   for(const v of ['v6','v5','v4','v3','v2']){ try{ const r=await fetch(`https://alphafold.ebi.ac.uk/files/AF-${acc}-F1-model_${v}.pdb`); if(!r.ok) continue; loadMol(parsePDB(await r.text()),'AF-'+acc); return; }catch(e){} }
   $('status').textContent='AlphaFold: no model for '+acc; }
+// AlphaFold box autocomplete via UniProt search (type a gene/protein name → pick the accession)
+let _afTimer=null;
+async function afSuggest(q){ const el=$('afSuggest'); if(!el)return;
+  try{ const r=await fetch(`https://rest.uniprot.org/uniprotkb/search?query=${encodeURIComponent(q)}+AND+reviewed:true&fields=accession,protein_name,organism_name,gene_names&size=8&format=json`); if(!r.ok){el.innerHTML='';return;} const j=await r.json(); el.innerHTML='';
+    (j.results||[]).forEach(u=>{ const acc=u.primaryAccession, nm=(u.proteinDescription&&u.proteinDescription.recommendedName&&u.proteinDescription.recommendedName.fullName&&u.proteinDescription.recommendedName.fullName.value)||'',
+      gene=(u.genes&&u.genes[0]&&u.genes[0].geneName&&u.genes[0].geneName.value)||'', org=(u.organism&&u.organism.scientificName)||'';
+      const d=document.createElement('div'); d.className='afitem'; d.innerHTML=`<b>${acc}</b> ${gene?gene+' · ':''}${nm} — <span style="color:var(--muted)">${org}</span>`; d.title=`${acc} · ${gene} ${nm} (${org})`;
+      d.addEventListener('click',()=>{ $('afid').value=acc; el.innerHTML=''; fetchAlphaFold(acc); }); el.appendChild(d); }); }catch(e){ el.innerHTML=''; } }
 // ---------- export / presets ----------
 const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB'];
 function snapCfg(){ const c={rep:curRep,col:curCol,clipAxis:curClipAxis,cam:{p:camera.position.toArray(),t:controls.target.toArray()}};
