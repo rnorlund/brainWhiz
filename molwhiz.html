@@ -332,7 +332,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.8'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.9'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -577,6 +577,8 @@ const isNuc=rn=>/^(D?[ATGCUI]|R[ATGCU])$/i.test((rn||'').trim());
 const NUC_ANCHOR={P:4,"C4'":3,"C1'":2,BB:2,"C3'":1};   // backbone-trace atom priority
 const BASE_COL={A:'#ff5b6e',DA:'#ff5b6e',G:'#4dff88',DG:'#4dff88',C:'#ffd23f',DC:'#ffd23f',T:'#5db0ff',DT:'#5db0ff',U:'#c07bff',RU:'#c07bff'};
 function structHasNucleic(){ if(MOL._dna) return true; return MOL.atoms.some(a=>isNuc(a.resName)&&NUC_ANCHOR[a.name]); }
+function isMacro(){ return structHasNucleic() || MOL.atoms.some(a=>!a.het&&a.name==='CA'); }   // has a protein or nucleic backbone
+const MACRO_WARN=' ⚠ best for proteins/DNA — use Ball & stick for small molecules';
 // ---------- selection & isolation ----------
 let selChain='', selKind='';
 function kindOf(a){ if(isSolvent(a))return'water'; if(a.het)return'ligand'; if(isNuc(a.resName)||NUC_ANCHOR[a.name])return'nucleic'; return'protein'; }
@@ -883,7 +885,7 @@ function buildVoronoi(){ voronoiGroup=new THREE.Group(); const A=MOL.atoms, show
   const mesh=new THREE.Mesh(g,mat); voronoiGroup.add(mesh);
   // cell edges (wireframe overlay) for a crisp tessellation look
   const eg=new THREE.WireframeGeometry(g); voronoiGroup.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x0a0e16,transparent:true,opacity:0.35})));
-  molGroup.add(voronoiGroup); $('status').textContent=`${idx.length} atoms · Voronoi cells`;
+  molGroup.add(voronoiGroup); $('status').textContent=`${idx.length} atoms · Voronoi cells`+(isMacro()?'':MACRO_WARN); if(!isMacro())$('status').style.color='#ffb570';
   // reframe camera to the cells (they extend up to H beyond the atoms) keeping current view angle
   let Rc=5; for(let k=0;k<pos.length;k+=3) Rc=Math.max(Rc,Math.hypot(pos[k],pos[k+1],pos[k+2]));
   const dir=camera.position.clone().sub(controls.target); if(dir.lengthSq()<1e-6)dir.set(0,0,1); dir.normalize();
@@ -923,12 +925,12 @@ function addOutline(){ if(!$('outlineOn')||!$('outlineOn').checked) return; cons
   for(const grp of [cartoonGroup,atomicGroup,voronoiGroup]) if(grp) grp.traverse(shell);
   molGroup.add(outlineGroup); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
-  computeColorCtx(); updateLegend();
+  computeColorCtx(); updateLegend(); $('status').style.color='';
   if(curRep==='atomic'){ buildAtomic(); decorations(); return; }
   if(curRep==='voronoi'){ buildVoronoi(); decorations(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
     if($('surfLig').checked) buildLigands();
-    decorations(); $('status').textContent=`${A.length} atoms · surface`; return; }
+    decorations(); $('status').textContent=`${A.length} atoms · surface`+(isMacro()?'':MACRO_WARN); if(!isMacro())$('status').style.color='#ffb570'; return; }
   const showH=$('showH').checked, br=+$('bondR').value;
   const hasBB=MOL.atoms.some(a=>!a.het && a.name==='CA') || structHasNucleic();
   const cartoon=(curRep==='cartoon') && hasBB;                     // no protein/nucleic backbone → fall back to ball&stick (don't blank)
