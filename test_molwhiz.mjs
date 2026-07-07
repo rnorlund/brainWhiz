@@ -144,6 +144,28 @@ try {
   await rep('cartoon'); await settle(800); await shot('pw_alphafold.png');
 } catch (e) { console.log('  (skipped mmCIF/AlphaFold — network:', String(e).slice(0,60), ')'); }
 
+console.log('== export / presets ==');
+await load('caffeine'); await settle(200);
+const xyz = await page.evaluate(() => window.__mol.molToXYZ());
+ok(`molToXYZ (${xyz.split('\n')[0]} atoms header)`, +xyz.split('\n')[0] === 24);
+const pdb = await page.evaluate(() => window.__mol.molToPDB());
+ok('molToPDB has ATOM+CONECT records', /^ATOM  /m.test(pdb) && /CONECT/.test(pdb));
+// preset round-trip
+await page.evaluate(() => { window.__mol.setBuildEl; const c=window.__mol.snapCfg(); window.__presetSaved=c; });
+await setVal('material','matcap:Gold'); await rep('surface'); await settle(300);
+await page.evaluate(() => window.__mol.applyCfg(window.__presetSaved));
+const restored = await page.evaluate(() => document.getElementById('material').value);
+ok(`preset applyCfg restores material (${restored})`, restored === 'standard');
+// exported interactive HTML actually renders
+const html = await page.evaluate(() => window.__mol.exportHTML());
+ok('exportHTML produced a full document', /<!doctype html>/i.test(html) && /THREE|three/.test(html) && html.length > 1500);
+const fs2 = await import('fs'); const tmpHtml = path.join(SHOTS, 'exported_view.html'); fs2.writeFileSync(tmpHtml, html);
+const p2 = await browser.newPage({ viewport:{width:600,height:500} }); const e2=[]; p2.on('pageerror',e=>e2.push(String(e)));
+await p2.goto('file://'+tmpHtml, { waitUntil:'load' }); await p2.waitForTimeout(2500);
+ok('exported .html renders with no page errors', e2.length === 0);
+await p2.screenshot({ path: path.join(SHOTS,'pw_exported.png') }); await p2.close();
+if (e2.length) e2.slice(0,3).forEach(e=>console.log('   exported!', e.slice(0,100)));
+
 console.log('\n== page errors ==');
 ok('no uncaught page errors', errs.length === 0);
 if (errs.length) errs.slice(0,5).forEach(e => console.log('   !', e.slice(0,120)));

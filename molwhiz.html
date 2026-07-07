@@ -108,6 +108,12 @@
     <div class="row"><label class="tog"><input type="checkbox" id="rockMode"> rock (oscillate)</label></div>
     <div class="row"><button class="tbtn" id="spinStop" style="width:100%">■ stop all motion</button></div>
   </div>
+  <div class="grp"><div class="lbl">💾 Export / presets</div>
+    <div class="row"><button id="expXYZ" style="flex:1">Save .xyz</button><button id="expPDB" style="flex:1">Save .pdb</button></div>
+    <div class="row"><button id="savePreset" style="flex:1" title="molecule + all appearance + camera">Save preset (.json)</button></div>
+    <div class="row"><button id="loadPresetBtn" style="flex:1">Load preset…</button><input type="file" id="presetFile" accept=".json" style="display:none"></div>
+    <div class="row"><button id="expHTML" style="flex:1" title="self-contained interactive viewer of the current molecule">Export interactive .html</button></div>
+  </div>
   <div class="grp"><div class="lbl">About</div>
     <div style="font-size:11px;color:var(--muted);line-height:1.5">Original molecular viewer. Reads PDB / SDF·MOL / XYZ. Bonds inferred by covalent radii. Click any atom to identify it.<br><a href="https://rnorlund.github.io/brainWhiz/" target="_blank" style="color:var(--muted)">← brainWhiz</a> · © 2026</div>
   </div>
@@ -223,7 +229,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v0.9'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.0'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -759,6 +765,12 @@ function parseByName(t,n){ n=n.toLowerCase(); if(n.endsWith('.xyz'))return parse
 function readFile(f){ const r=new FileReader(); r.onload=()=>{ try{ loadMol(parseByName(r.result,f.name),f.name); }catch(err){ $('status').textContent='parse error: '+err.message; } }; r.readAsText(f); }
 $('fetchBtn').addEventListener('click',fetchPdb); $('pdbid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchPdb(); });
 $('afBtn').addEventListener('click',fetchAlphaFold); $('afid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchAlphaFold(); });
+$('expXYZ').addEventListener('click',()=>dl('molecule.xyz',molToXYZ()));
+$('expPDB').addEventListener('click',()=>dl('molecule.pdb',molToPDB()));
+$('savePreset').addEventListener('click',savePreset);
+$('loadPresetBtn').addEventListener('click',()=>$('presetFile').click());
+$('presetFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ loadPreset(JSON.parse(r.result)); }catch(err){ $('status').textContent='preset error: '+err.message; } }; r.readAsText(f); e.target.value=''; });
+$('expHTML').addEventListener('click',exportHTML);
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
   try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); return; }
@@ -773,6 +785,56 @@ async function fetchAlphaFold(accArg){ const acc=(typeof accArg==='string'?accAr
     if(url){ const r=await fetch(url); if(r.ok){ const t=await r.text(); loadMol(url.endsWith('.cif')?parseCIF(t):parsePDB(t),'AF-'+acc); return; } } } }catch(e){}
   for(const v of ['v6','v5','v4','v3','v2']){ try{ const r=await fetch(`https://alphafold.ebi.ac.uk/files/AF-${acc}-F1-model_${v}.pdb`); if(!r.ok) continue; loadMol(parsePDB(await r.text()),'AF-'+acc); return; }catch(e){} }
   $('status').textContent='AlphaFold: no model for '+acc; }
+// ---------- export / presets ----------
+const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB'];
+function snapCfg(){ const c={rep:curRep,col:curCol,clipAxis:curClipAxis,cam:{p:camera.position.toArray(),t:controls.target.toArray()}};
+  for(const id of CFG_IDS){ const e=$(id); if(!e)continue; c[id]=e.type==='checkbox'?e.checked:e.value; } return c; }
+function applyCfg(c){ if(!c)return; for(const id of CFG_IDS){ const e=$(id); if(!e||c[id]==null)continue; if(e.type==='checkbox')e.checked=c[id]; else e.value=c[id];
+    const lv=$(id+'V'); if(lv&&e.type==='range')lv.textContent=(+e.value).toFixed(e.step&&+e.step<0.1?2:1); }
+  if(c.rep){ curRep=c.rep; [...$('repSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.rep===curRep)); }
+  if(c.col){ curCol=c.col; [...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===curCol)); }
+  if(c.clipAxis){ curClipAxis=c.clipAxis; [...$('clipAxis').children].forEach(b=>b.classList.toggle('on',b.dataset.cax===curClipAxis)); }
+  if($('bg')) scene.background=new THREE.Color($('bg').value); }
+function dl(name,text,mime){ const a=document.createElement('a'); a.download=name; a.href='data:'+(mime||'text/plain')+';charset=utf-8,'+encodeURIComponent(text); a.click(); }
+function molToXYZ(){ const A=MOL.atoms; let s=A.length+'\nmolWhiz export\n'; for(const a of A) s+=`${(a.el||'C').replace('BASE_','')} ${a.x.toFixed(3)} ${a.y.toFixed(3)} ${a.z.toFixed(3)}\n`; return s; }
+function molToPDB(){ const A=MOL.atoms, f=(v,w)=>String(v).padStart(w); let s='';
+  A.forEach((a,i)=>{ const el=(a.el||'C').replace('BASE_','').slice(0,2), name=(a.name||el).slice(0,4);
+    s+='ATOM  '+f(i+1,5)+' '+name.padEnd(4)+' '+(a.resName||'MOL').slice(0,3).padStart(3)+' '+((a.chain||'A')[0])+f(a.resSeq||1,4)+'    '+f((+a.x).toFixed(3),8)+f((+a.y).toFixed(3),8)+f((+a.z).toFixed(3),8)+'  1.00  0.00'+' '.repeat(10)+el.toUpperCase().padStart(2)+'\n'; });
+  MOL.bonds.forEach(b=>{ s+='CONECT'+f(b[0]+1,5)+f(b[1]+1,5)+'\n'; }); return s+'END\n'; }
+function savePreset(){ const ss=MOL.ss?{helix:[...MOL.ss.helix],sheet:[...MOL.ss.sheet]}:null;
+  dl('molwhiz_preset.json', JSON.stringify({v:1,mol:{atoms:MOL.atoms,bonds:MOL.bonds,_dna:!!MOL._dna,ss},cfg:snapCfg()}), 'application/json'); }
+function loadPreset(obj){ const m=obj&&obj.mol; if(m&&m.atoms){ const ss=m.ss?{helix:new Set(m.ss.helix),sheet:new Set(m.ss.sheet)}:null; MOL={atoms:m.atoms,bonds:m.bonds||[],_dna:m._dna,ss}; isDNA=!!m._dna;
+    molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z))); }
+  if(obj.cfg) applyCfg(obj.cfg); rebuild(); if($('clipOn').checked) updateClip();
+  if(obj.cfg&&obj.cfg.cam){ camera.position.fromArray(obj.cfg.cam.p); controls.target.fromArray(obj.cfg.cam.t); controls.update(); } }
+// self-contained interactive viewer (three from CDN import-map; molecule + colours embedded)
+function exportHTML(){ const A=MOL.atoms.map(a=>({e:(a.el||'C').replace('BASE_',''),x:+a.x.toFixed(3),y:+a.y.toFixed(3),z:+a.z.toFixed(3),c:atomColor(a)}));
+  const B=MOL.bonds.map(b=>[b[0],b[1]]); const bg=$('bg').value, title=(document.title||'molWhiz').replace('molWhiz — ','');
+  const H=`<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>molWhiz · ${title}</title>
+<style>html,body{margin:0;height:100%;background:${bg};overflow:hidden;font-family:system-ui}#c{width:100vw;height:100vh;display:block}#t{position:fixed;left:10px;bottom:8px;color:#9fb3c8;font-size:12px}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}<\/script></head>
+<body><canvas id=c></canvas><div id=t>${title} · made with molWhiz · drag to rotate</div>
+<script type="module">
+import*as T from'three';import{OrbitControls}from'three/addons/controls/OrbitControls.js';
+const AT=${JSON.stringify(A)},BO=${JSON.stringify(B)};
+const rn=new T.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});rn.setPixelRatio(Math.min(devicePixelRatio,2));rn.setSize(innerWidth,innerHeight);
+const sc=new T.Scene();sc.background=new T.Color('${bg}');const cam=new T.PerspectiveCamera(45,innerWidth/innerHeight,0.1,5000);
+sc.add(new T.HemisphereLight(0xffffff,0x33404f,1));const k=new T.DirectionalLight(0xffffff,1.6);k.position.set(1,1,1);sc.add(k);
+const g=new T.Group();sc.add(g);const VD={H:1.1,C:1.7,N:1.55,O:1.52,S:1.8,P:1.8,F:1.47,CL:1.75};const vd=e=>VD[e.toUpperCase()]||1.6;
+const sg=new T.SphereGeometry(1,20,16),sm=new T.InstancedMesh(sg,new T.MeshStandardMaterial({roughness:.35}),AT.length);
+const m=new T.Matrix4(),q=new T.Quaternion(),v=new T.Vector3(),s=new T.Vector3(),cc=new T.Color();
+AT.forEach((a,i)=>{const r=vd(a.e)*0.28;m.compose(v.set(a.x,a.y,a.z),q,s.set(r,r,r));sm.setMatrixAt(i,m);sm.setColorAt(i,cc.set(a.c));});sm.instanceColor.needsUpdate=true;g.add(sm);
+const up=new T.Vector3(0,1,0),bm=new T.InstancedMesh(new T.CylinderGeometry(1,1,1,14,1,true),new T.MeshStandardMaterial({roughness:.35}),BO.length*2);let bi=0;
+BO.forEach(bd=>{const a=AT[bd[0]],c=AT[bd[1]];const ax=new T.Vector3(a.x,a.y,a.z),cx=new T.Vector3(c.x,c.y,c.z),d=cx.clone().sub(ax),L=d.length()/2;d.normalize();q.setFromUnitVectors(up,d);const mid=ax.clone().add(cx).multiplyScalar(.5);
+ m.compose(ax.clone().add(d.clone().multiplyScalar(L/2)),q,s.set(.15,L,.15));bm.setMatrixAt(bi,m);bm.setColorAt(bi,cc.set(a.c));bi++;
+ m.compose(mid.clone().add(d.clone().multiplyScalar(L/2)),q,s.set(.15,L,.15));bm.setMatrixAt(bi,m);bm.setColorAt(bi,cc.set(c.c));bi++;});
+if(BO.length){bm.instanceColor.needsUpdate=true;g.add(bm);}
+let R=5;AT.forEach(a=>R=Math.max(R,Math.hypot(a.x,a.y,a.z)));cam.position.set(0,0,R/Math.sin(45*Math.PI/360)*1.3);
+const ct=new OrbitControls(cam,rn.domElement);ct.enableDamping=true;
+addEventListener('resize',()=>{rn.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();});
+(function loop(){requestAnimationFrame(loop);ct.update();rn.render(sc,cam);})();
+<\/script></body></html>`;
+  dl((title.replace(/[^\w]+/g,'_')||'molecule')+'_molwhiz.html', H, 'text/html'); return H; }
 const dz=$('drop'); let dc=0;
 addEventListener('dragenter',e=>{e.preventDefault();dc++;dz.classList.add('on');});
 addEventListener('dragover',e=>e.preventDefault());
@@ -784,5 +846,5 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
   shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps,
   builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
-  fetchPdb, fetchAlphaFold, parseCIF};
+  fetchPdb, fetchAlphaFold, parseCIF, molToXYZ, molToPDB, exportHTML, snapCfg, applyCfg, loadPreset, computeSS};
 </script>
