@@ -83,7 +83,7 @@
 <!-- RIGHT: appearance -->
 <div id="sidebarR" class="side hidden">
   <div class="grp"><div class="lbl">Representation</div>
-    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button></div>
+    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button></div>
     <div class="row" style="margin-top:7px"><label>Atom shape</label>
       <select id="atomShape"><option value="sphere">Sphere</option><option value="cube">Cube</option><option value="ico">Icosahedron</option><option value="octa">Octahedron</option><option value="tetra">Tetrahedron</option><option value="dodeca">Dodecahedron</option><option value="cone">Cone</option><option value="torus">Torus</option><option value="cyl">Cylinder</option><option value="diamond">Diamond</option></select></div>
     <div class="row"><label>Connector</label>
@@ -168,20 +168,23 @@ const spinAx={x:false,y:false,z:false};
   const s=+$('spinSpeed').value*0.01; if(spinAx.x)molGroup.rotation.x+=s; if(spinAx.y)molGroup.rotation.y+=s; if(spinAx.z)molGroup.rotation.z+=s;
   renderer.render(scene,camera); })();
 
-let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, pickList=[], isDNA=false;
+let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, pickList=[], isDNA=false;
 let curRep='bas', curCol='element';
 
 // ---------- parsers ----------
-function parsePDB(text){ const atoms=[], sMap=new Map(), conect=[];
+function parsePDB(text){ const atoms=[], sMap=new Map(), conect=[], helix=new Set(), sheet=new Set();
+  const range=(ch,a,b,set)=>{ if(!isFinite(a)||!isFinite(b)) return; for(let s=a;s<=b;s++) set.add(ch+':'+s); };
   for(const line of text.split(/\r?\n/)){ const rec=line.slice(0,6);
     if(rec==='ATOM  '||rec==='HETATM'){ let el=line.slice(76,78).trim().toUpperCase(); const name=line.slice(12,16).trim();
       if(!el){ el=name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase(); if(!COV[el]) el=el[0]; }
       const x=+line.slice(30,38),y=+line.slice(38,46),z=+line.slice(46,54); if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
       const serial=+line.slice(6,11); sMap.set(serial,atoms.length);
-      atoms.push({el,x,y,z,name,resName:line.slice(17,20).trim(),resSeq:line.slice(22,26).trim(),chain:line.slice(21,22).trim()||'A',serial});
-    } else if(rec==='CONECT'){ const a=+line.slice(6,11); for(let c=11;c<31;c+=5){ const b=+line.slice(c,c+5); if(b) conect.push([a,b]); } } }
+      atoms.push({el,x,y,z,name,resName:line.slice(17,20).trim(),resSeq:line.slice(22,26).trim(),chain:line.slice(21,22).trim()||'A',serial,het:rec==='HETATM'});
+    } else if(rec==='CONECT'){ const a=+line.slice(6,11); for(let c=11;c<31;c+=5){ const b=+line.slice(c,c+5); if(b) conect.push([a,b]); } }
+    else if(rec.slice(0,5)==='HELIX'){ range(line.slice(19,20).trim()||'A', +line.slice(21,25), +line.slice(33,37), helix); }
+    else if(rec.slice(0,5)==='SHEET'){ range(line.slice(21,22).trim()||'A', +line.slice(22,26), +line.slice(33,37), sheet); } }
   const set=new Set(), bonds=[]; for(const [a,b] of conect){ const i=sMap.get(a),j=sMap.get(b); if(i==null||j==null) continue; const k=i<j?i+'_'+j:j+'_'+i; if(!set.has(k)){set.add(k);bonds.push([i,j]);} }
-  return {atoms,bonds,_hasConect:conect.length>0}; }
+  return {atoms,bonds,_hasConect:conect.length>0, ss:{helix,sheet}}; }
 function parseXYZ(text){ const L=text.split(/\r?\n/), n=+L[0], atoms=[];
   for(let i=0;i<n;i++){ const p=(L[2+i]||'').trim().split(/\s+/); if(p.length<4) continue; atoms.push({el:p[0].toUpperCase(),x:+p[1],y:+p[2],z:+p[3],name:p[0],resName:'MOL',resSeq:'1',chain:'A',serial:i+1}); } return {atoms,bonds:[]}; }
 function parseSDF(text){ const L=text.split(/\r?\n/), c=L[3]||'', na=+c.slice(0,3), nb=+c.slice(3,6), atoms=[],bonds=[];
@@ -226,19 +229,37 @@ function bondGeom(){ switch($('bondShape').value){
 }}
 // ---------- build instanced geometry ----------
 const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_v=new THREE.Vector3(),_up=new THREE.Vector3(0,1,0),_s=new THREE.Vector3(),_c=new THREE.Color();
-function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[]; }
+function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[];
+  if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; } }
+// backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
+function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
+function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
+  for(const a of MOL.atoms){ if(!a.het && a.name==='CA'){ (chains.get(a.chain)||chains.set(a.chain,[]).get(a.chain)).push(a); } }
+  const chainCol=ch=>{ let h=0; for(const c of ch)h+=c.charCodeAt(0); return PAL[h%PAL.length]; };
+  for(const [ch,cas] of chains){ if(cas.length<2) continue; cas.sort((p,q)=>(+p.resSeq)-(+q.resSeq));
+    const flush=(arr,ss)=>{ if(arr.length<2) return; const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z));
+      const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5);
+      const rad=ss==='H'?1.05:ss==='E'?0.9:0.34, col=(curCol==='chain')?chainCol(ch):(ss==='H'?'#ff5b6e':ss==='E'?'#ffd23f':'#9fd0ff');
+      const tube=new THREE.TubeGeometry(curve, Math.max(6,arr.length*6), rad, 12, false);
+      const mesh=new THREE.Mesh(tube, makeMat()); mesh.material.color.set(col); grp.add(mesh); };
+    let run=[cas[0]], curSS=ssOf(cas[0]);
+    for(let i=1;i<cas.length;i++){ const s=ssOf(cas[i]); if(s!==curSS){ flush(run.concat([cas[i]]), curSS); run=[cas[i]]; curSS=s; } else run.push(cas[i]); }
+    flush(run, curSS); }
+  return grp; }
 function atomColor(a){ if(curCol==='chain'){ let h=0; for(const ch of a.chain) h+=ch.charCodeAt(0); return PAL[h%PAL.length]; }
   if(curCol==='residue') return RESCOL[a.resName]||RESCOL.default; return elCol(a.el); }
-function atomRad(a){ const asc=+$('atomScale').value, br=+$('bondR').value;
-  if(a.r!=null) return a.r*(curRep==='space'?1.5:1.0);            // custom (DNA) radius
-  if(curRep==='space') return elVdw(a.el);
-  if(curRep==='stick') return br; return elVdw(a.el)*asc; }
+function atomRad(a,rep){ const asc=+$('atomScale').value, br=+$('bondR').value;
+  if(a.r!=null) return a.r*(rep==='space'?1.5:1.0);            // custom (DNA) radius
+  if(rep==='space') return elVdw(a.el);
+  if(rep==='stick') return br; return elVdw(a.el)*asc; }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
-  const showH=$('showH').checked, rep=curRep, br=+$('bondR').value;
-  const idx=[]; for(let i=0;i<A.length;i++){ if(!showH && A[i].el==='H') continue; idx.push(i); }
+  const showH=$('showH').checked, br=+$('bondR').value, cartoon=(curRep==='cartoon');
+  const rep = cartoon ? 'bas' : curRep;                            // cartoon: ribbon + HETATM ligands as ball&stick
+  if(cartoon){ cartoonGroup=buildCartoon(); molGroup.add(cartoonGroup); }
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(cartoon && !a.het) continue; idx.push(i); }
   const sg=atomGeom();
   sphereMesh=new THREE.InstancedMesh(sg, makeMat(), idx.length); let n=0;
-  for(const i of idx){ const a=A[i], r=atomRad(a); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
+  for(const i of idx){ const a=A[i], r=atomRad(a,rep); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
   sphereMesh.instanceMatrix.needsUpdate=true; if(sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate=true; molGroup.add(sphereMesh);
   if(rep!=='space' && $('bondShape').value!=='none'){ const shown=new Set(idx), bs=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1]));
     const cg=bondGeom(), lineThin=$('bondShape').value==='line'; bondMesh=new THREE.InstancedMesh(cg, makeMat(), bs.length*2); let b=0;
