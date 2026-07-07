@@ -332,7 +332,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.9'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.0'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -950,9 +950,9 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
     const cg=bondGeom(), lineThin=$('bondShape').value==='line'; bondMesh=new THREE.InstancedMesh(cg, makeMat(), bs.length*2); let b=0;
     for(const bd of bs){ const a=A[bd[0]], c=A[bd[1]], rr=(bd[2]!=null?bd[2]:br)*(lineThin?0.4:1);
       const ax=new THREE.Vector3(a.x,a.y,a.z), cx=new THREE.Vector3(c.x,c.y,c.z), dir=cx.clone().sub(ax), len=dir.length()/2; dir.normalize(); _q.setFromUnitVectors(_up,dir);
-      const mid=ax.clone().add(cx).multiplyScalar(0.5);
-      _m.compose(ax.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
-      _m.compose(mid.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++; }
+      const ra=Math.min(len*0.9, atomRad(a,rep)*0.85), rc=Math.min(len*0.9, atomRad(c,rep)*0.85), hA=len-ra, hC=len-rc;   // start bonds at the atom SURFACE, not centre (so they don't poke through glass/transparent atoms)
+      _m.compose(ax.clone().add(dir.clone().multiplyScalar(ra+hA/2)),_q,_s.set(rr,hA,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
+      _m.compose(cx.clone().add(dir.clone().multiplyScalar(-(rc+hC/2))),_q,_s.set(rr,hC,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++; }
     bondMesh.instanceMatrix.needsUpdate=true; if(bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate=true; molGroup.add(bondMesh); }
   decorations(); $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
 }
