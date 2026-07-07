@@ -14,6 +14,7 @@
   /* top bar */
   #topbar{position:fixed;top:0;left:0;right:0;height:46px;display:flex;align-items:center;gap:8px;padding:0 10px;background:rgba(14,19,28,.92);border-bottom:1px solid var(--line);z-index:20}
   #topbar h1{font-size:16px;margin:0;letter-spacing:.5px} #topbar h1 b{color:var(--acc)}
+  #verPill{font-size:10px;font-weight:700;color:var(--acc);background:rgba(93,176,255,.14);border:1px solid var(--line);border-radius:20px;padding:2px 8px;margin-left:-2px;letter-spacing:.3px}
   #topbar .sp{flex:1}
   .tbtn{background:#1b2436;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;cursor:pointer}
   .tbtn:hover{border-color:var(--acc)} .tbtn.on{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
@@ -35,6 +36,11 @@
   .cgrid .c{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--muted)}
   #hud{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;background:rgba(10,14,22,.9);border:1px solid var(--line);border-radius:8px;padding:8px 14px;z-index:9;opacity:0;transition:opacity .15s;pointer-events:none;text-align:center}
   #hud.on{opacity:1} #hud .t{font-weight:700} #hud .s{color:var(--muted);font-size:11px}
+  #atomProps{position:fixed;right:14px;bottom:14px;width:260px;background:rgba(10,14,22,.95);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:11;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
+  #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px}
+  #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
+  #atomProps .x{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
+  #atomProps .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
   #status{font-size:11px;color:var(--muted);min-height:14px}
   #drop{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(10,20,40,.75);border:3px dashed var(--acc);font-size:22px;font-weight:700;color:#dff0ff}
   #drop.on{display:flex}
@@ -43,15 +49,16 @@
 <div id="app"></div>
 <div id="drop">Drop a .pdb / .sdf / .mol / .xyz</div>
 <div id="hud"><div class="t"></div><div class="s"></div></div>
+<div id="atomProps"><button class="x" id="apX" title="close">✕</button><div class="hd"></div><div class="bd"></div></div>
 
 <div id="topbar">
   <button class="tbtn" id="tglL" title="show / hide functions">☰</button>
-  <h1>mol<b>Whiz</b></h1>
+  <h1>mol<b>Whiz</b></h1><span id="verPill" title="build version"></span>
   <select id="example" style="max-width:200px"><option value="">Gallery…</option>
     <optgroup label="Small molecules (offline)"><option value="ex:caffeine">Caffeine</option><option value="ex:benzene">Benzene</option><option value="ex:ethanol">Ethanol</option><option value="ex:water">Water</option><option value="ex:methane">Methane</option></optgroup>
     <optgroup label="Proteins"><option value="pdb:1CRN">Crambin (1CRN)</option><option value="pdb:1UBQ">Ubiquitin (1UBQ)</option><option value="pdb:3I40">Insulin (3I40)</option><option value="pdb:1HHO">Hemoglobin (1HHO)</option><option value="pdb:1IGT">Antibody IgG (1IGT)</option></optgroup>
     <optgroup label="Bound complexes (+ ligand)"><option value="pdb:1HSG">HIV protease + drug (1HSG)</option><option value="pdb:6LU7">SARS-CoV-2 Mpro + inhibitor (6LU7)</option><option value="pdb:1STP">Streptavidin + biotin (1STP)</option><option value="pdb:2HHB">Hemoglobin + heme (2HHB)</option></optgroup>
-    <optgroup label="DNA / DNA–protein"><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option></optgroup>
+    <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option></optgroup>
   </select>
   <input type="text" id="pdbid" placeholder="PDB ID (1CRN)" maxlength="8" style="max-width:130px;text-transform:uppercase">
   <button class="tbtn" id="fetchBtn">Fetch</button>
@@ -79,6 +86,13 @@
     <div class="row"><button id="measBtn" style="flex:1">Distance / angle</button><button id="measClear" title="clear">✕</button></div>
     <div id="measOut" style="font-size:11px;color:var(--muted);min-height:14px"></div>
   </div>
+  <div class="grp"><div class="lbl">🎞 Motion &amp; animation</div>
+    <div class="row"><label>Spin axis</label>
+      <div class="seg" id="spinSeg"><button data-ax="x">X</button><button data-ax="y">Y</button><button data-ax="z">Z</button></div></div>
+    <div class="row" style="margin-top:7px"><label>Speed</label><input type="range" id="spinSpeed" min="0.1" max="4" step="0.1" value="1"><span class="num" id="spinSpeedV">1.0</span></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="rockMode"> rock (oscillate)</label></div>
+    <div class="row"><button class="tbtn" id="spinStop" style="width:100%">■ stop all motion</button></div>
+  </div>
   <div class="grp"><div class="lbl">About</div>
     <div style="font-size:11px;color:var(--muted);line-height:1.5">Original molecular viewer. Reads PDB / SDF·MOL / XYZ. Bonds inferred by covalent radii. Click any atom to identify it.<br><a href="https://rnorlund.github.io/brainWhiz/" target="_blank" style="color:var(--muted)">← brainWhiz</a> · © 2026</div>
   </div>
@@ -87,7 +101,7 @@
 <!-- RIGHT: appearance -->
 <div id="sidebarR" class="side hidden">
   <div class="grp"><div class="lbl">Representation</div>
-    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button></div>
+    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button><button data-rep="surface">Surface</button></div>
     <div class="row" style="margin-top:7px"><label>Atom shape</label>
       <select id="atomShape"><option value="sphere">Sphere</option><option value="cube">Cube</option><option value="ico">Icosahedron</option><option value="octa">Octahedron</option><option value="tetra">Tetrahedron</option><option value="dodeca">Dodecahedron</option><option value="cone">Cone</option><option value="torus">Torus</option><option value="cyl">Cylinder</option><option value="diamond">Diamond</option></select></div>
     <div class="row"><label>Connector</label>
@@ -95,14 +109,29 @@
     <div class="row"><label>Atom size</label><input type="range" id="atomScale" min="0.08" max="1" step="0.02" value="0.28"><span class="num" id="atomScaleV">0.28</span></div>
     <div class="row"><label>Bond size</label><input type="range" id="bondR" min="0.04" max="0.4" step="0.01" value="0.15"><span class="num" id="bondRV">0.15</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="showH" checked> show hydrogens</label></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="hideSolvent" checked> hide waters / ions</label></div>
   </div>
   <div class="grp"><div class="lbl">Material / texture</div>
     <div class="row"><label>Style</label>
-      <select id="material"><option value="standard">Standard</option><option value="matte">Matte</option><option value="glossy">Glossy</option><option value="metal">Metallic</option><option value="toon">Toon (cel)</option><option value="glass">Glass</option></select></div>
+      <select id="material"><optgroup label="Shaded"><option value="standard">Standard</option><option value="matte">Matte</option><option value="glossy">Glossy</option><option value="metal">Metallic</option><option value="toon">Toon (cel)</option><option value="glass">Glass</option></optgroup>
+      <optgroup label="Matcap (baked studio)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="row"><label class="tog"><input type="checkbox" id="rim"> rim glow</label></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
+  </div>
+  <div class="grp"><div class="lbl">✂ Clip / section cut</div>
+    <div class="row"><label class="tog"><input type="checkbox" id="clipOn"> enable cut</label></div>
+    <div class="seg" id="clipAxis" style="margin-top:5px"><button data-cax="x" class="on">X</button><button data-cax="y">Y</button><button data-cax="z">Z</button></div>
+    <div class="row" style="margin-top:7px"><label>Position</label><input type="range" id="clipPos" min="-1" max="1" step="0.02" value="0"><span class="num" id="clipPosV">0.00</span></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="clipFlip"> flip side</label></div>
   </div>
   <div class="grp"><div class="lbl">Colour by</div>
     <div class="seg" id="colSeg"><button data-col="element" class="on">Element</button><button data-col="chain">Chain</button><button data-col="residue">Residue</button></div>
+  </div>
+  <div class="grp"><div class="lbl">Surface</div>
+    <div class="row"><label>Detail</label><input type="range" id="surfQual" min="0.35" max="1.6" step="0.05" value="0.75"><span class="num" id="surfQualV">0.75</span></div>
+    <div class="row"><label>Inflate</label><input type="range" id="surfProbe" min="0" max="1.6" step="0.1" value="0.4"><span class="num" id="surfProbeV">0.4</span></div>
+    <div class="row"><label>Opacity</label><input type="range" id="surfOpac" min="0.15" max="1" step="0.05" value="1"><span class="num" id="surfOpacV">1.0</span></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="surfLig" checked> show ligands</label></div>
   </div>
   <div class="grp"><div class="lbl">🧬 DNA appearance</div>
     <div class="row"><label>Helix R</label><input type="range" id="dnaRadius" min="5" max="16" step="0.5" value="9.5"><span class="num" id="dnaRadiusV">9.5</span></div>
@@ -118,10 +147,6 @@
       <div class="c">C<input type="color" id="colC" value="#ffd24d"></div>
       <div class="c">back<input type="color" id="colBB" value="#c8a05a"></div>
     </div>
-  </div>
-  <div class="grp"><div class="lbl">Spin</div>
-    <div class="seg" id="spinSeg"><button data-ax="x">X</button><button data-ax="y">Y</button><button data-ax="z">Z</button></div>
-    <div class="row" style="margin-top:7px"><label>Speed</label><input type="range" id="spinSpeed" min="0.1" max="4" step="0.1" value="1"><span class="num" id="spinSpeedV">1.0</span></div>
   </div>
   <div class="grp"><div class="lbl">Scene</div>
     <div class="row"><label>Background</label><input type="color" id="bg" value="#0a0e16"></div>
@@ -153,11 +178,22 @@ const VDW = { H:1.10,C:1.70,N:1.55,O:1.52,S:1.80,P:1.80,F:1.47,CL:1.75,BR:1.85,I
 const elCol=e=>CPK[e]||CPK.default, elCov=e=>COV[e]||COV.default, elVdw=e=>VDW[e]||VDW.default;
 const PAL=['#ff3b30','#ffcc00','#34c759','#00c7be','#5db0ff','#bf5af2','#ff77d0','#ff9f0a','#a2d729','#64d2ff','#ff6482','#c0a3ff'];
 const RESCOL={ALA:'#8cff8c',GLY:'#dddddd',SER:'#ffb570',THR:'#ffb570',CYS:'#ffe000',VAL:'#8cff8c',LEU:'#8cff8c',ILE:'#8cff8c',MET:'#ffe000',PRO:'#8cff8c',PHE:'#7ca0ff',TYR:'#7ca0ff',TRP:'#7ca0ff',ASP:'#ff5050',GLU:'#ff5050',ASN:'#00d0d0',GLN:'#00d0d0',HIS:'#7cc0ff',LYS:'#3050ff',ARG:'#3050ff',default:'#c0c0c0'};
+// element facts (public reference data): [name, Z, atomic mass u, Pauling electronegativity, typical valence]
+const ELEM={ H:['Hydrogen',1,1.008,2.20,1], C:['Carbon',6,12.011,2.55,4], N:['Nitrogen',7,14.007,3.04,3], O:['Oxygen',8,15.999,3.44,2],
+  S:['Sulfur',16,32.06,2.58,2], P:['Phosphorus',15,30.974,2.19,5], F:['Fluorine',9,18.998,3.98,1], CL:['Chlorine',17,35.45,3.16,1],
+  BR:['Bromine',35,79.904,2.96,1], I:['Iodine',53,126.90,2.66,1], B:['Boron',5,10.81,2.04,3], SI:['Silicon',14,28.085,1.90,4],
+  FE:['Iron',26,55.845,1.83,3], ZN:['Zinc',30,65.38,1.65,2], NA:['Sodium',11,22.990,0.93,1], K:['Potassium',19,39.098,0.82,1],
+  CA:['Calcium',20,40.078,1.00,2], MG:['Magnesium',12,24.305,1.31,2], MN:['Manganese',25,54.938,1.55,2], CU:['Copper',29,63.546,1.90,2],
+  SE:['Selenium',34,78.971,2.55,2] };
+// solvent / buffer / ion residues to hide by default (crystallographic waters + cryoprotectants + loose ions)
+const SOLVENT=new Set(['HOH','WAT','DOD','H2O','NA','CL','K','MG','CA','ZN','MN','FE','CU','NI','CO','CD','SO4','PO4','GOL','EDO','ACT','BME','DMS','FMT','IOD','BR','CS','RB','SR','BA','LI','PEG','MPD','TRS','EPE']);
+const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 
 // ---------- three.js ----------
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2)); app.appendChild(renderer.domElement);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
+const VERSION='v0.6'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -167,13 +203,16 @@ const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-
 const molGroup=new THREE.Group(); scene.add(molGroup);
 function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize',resize); resize();
-const spinAx={x:false,y:false,z:false};
+const spinAx={x:false,y:false,z:false}; let rockPhase=0;
 (function loop(){ requestAnimationFrame(loop); controls.update();
-  const s=+$('spinSpeed').value*0.01; if(spinAx.x)molGroup.rotation.x+=s; if(spinAx.y)molGroup.rotation.y+=s; if(spinAx.z)molGroup.rotation.z+=s;
+  const s=+$('spinSpeed').value*0.01;
+  if($('rockMode').checked){ rockPhase+=s; const off=Math.sin(rockPhase)*0.6;   // gentle oscillation on active axes
+    if(spinAx.x)molGroup.rotation.x=off; if(spinAx.y)molGroup.rotation.y=off; if(spinAx.z)molGroup.rotation.z=off; }
+  else { if(spinAx.x)molGroup.rotation.x+=s; if(spinAx.y)molGroup.rotation.y+=s; if(spinAx.z)molGroup.rotation.z+=s; }
   renderer.render(scene,camera); })();
 
-let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, pickList=[], isDNA=false;
-let curRep='bas', curCol='element';
+let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, pickList=[], isDNA=false, molR=30;
+let curRep='bas', curCol='element', curClipAxis='x';
 
 // ---------- parsers ----------
 function parsePDB(text){ const atoms=[], sMap=new Map(), conect=[], helix=new Set(), sheet=new Set();
@@ -201,17 +240,79 @@ function inferBonds(atoms){ const bonds=[], n=atoms.length, cell=3.2, grid=new M
       for(const j of arr){ if(j<=i) continue; const b=atoms[j], dd=(a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2, max=(elCov(a.el)+elCov(b.el))*1.3; if(dd>0.16 && dd<max*max){ if(a.el==='H'&&b.el==='H') continue; bonds.push([i,j]); } } } }
   return bonds; }
 
+// ---------- procedural matcap library (clean-room: our own baked studio environment, no external assets) ----------
+const _hex2rgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16)/255,parseInt(h.slice(2,4),16)/255,parseInt(h.slice(4,6),16)/255]; };
+const _sm=t=>{ t=t<0?0:t>1?1:t; return t*t*(3-2*t); };
+function _env(dx,dy,dz){ const t=_sm(dy*0.5+0.5); let r=0.16+0.82*t,g=0.18+0.84*t,b=0.22+0.86*t;
+  const hb=Math.exp(-((dy)/0.10)*((dy)/0.10))*0.85; r+=hb;g+=hb;b+=hb;
+  const kx=-0.45,ky=0.66,kz=0.6,kl=Math.hypot(kx,ky,kz),kd=Math.max(0,(dx*kx+dy*ky+dz*kz)/kl); const key=Math.pow(kd,120)*3.2; r+=key;g+=key;b+=key;
+  const fx=0.72,fy=0.08,fz=0.45,fl=Math.hypot(fx,fy,fz),fd=Math.max(0,(dx*fx+dy*fy+dz*fz)/fl); const fill=Math.pow(fd,26)*1.1; r+=fill*0.8;g+=fill*0.88;b+=fill*1.05;
+  const sx=0.1,sy=0.9,sz=0.2,sl=Math.hypot(sx,sy,sz),sd=Math.max(0,(dx*sx+dy*sy+dz*sz)/sl); const top=Math.pow(sd,40)*1.4; r+=top;g+=top;b+=top;
+  const bd=Math.max(0,-dz),back=Math.pow(bd,8)*0.22; r+=back;g+=back;b+=back; return [r,g,b]; }
+function makeMatcapTex(o){ const N=256,c=document.createElement('canvas'); c.width=c.height=N; const x=c.getContext('2d'),img=x.createImageData(N,N),d=img.data;
+  const base=_hex2rgb(o.base),tint=o.tint?_hex2rgb(o.tint):base,type=o.type||'matte',refl=o.refl??0.0,gain=o.gain??1;
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){ const nx=(px-128)/128,ny=-(py-128)/128,r2=nx*nx+ny*ny,i=(py*N+px)*4;
+    if(r2>1){ d[i+3]=0; continue; } const nz=Math.sqrt(1-r2),ndv=nz,fres=Math.pow(1-ndv,3);
+    const rx=2*nz*nx,ry=2*nz*ny,rz=2*nz*nz-1,e=_env(rx,ry,rz);
+    const kx=-0.42,ky=0.6,kz=0.68,kl=Math.hypot(kx,ky,kz),ndl=Math.max(0,(nx*kx+ny*ky+nz*kz)/kl); let rr,gg,bb;
+    if(type==='metal'){ rr=base[0]*0.10+e[0]*tint[0]*refl; gg=base[1]*0.10+e[1]*tint[1]*refl; bb=base[2]*0.10+e[2]*tint[2]*refl; }
+    else if(type==='chrome'){ rr=e[0]*(0.85+0.15*base[0]); gg=e[1]*(0.85+0.15*base[1]); bb=e[2]*(0.85+0.15*base[2]); }
+    else if(type==='glass'){ const f=0.15+0.85*fres; rr=e[0]*0.4*f+base[0]*0.18+fres*1.1; gg=e[1]*0.4*f+base[1]*0.2+fres*1.15; bb=e[2]*0.45*f+base[2]*0.26+fres*1.25; }
+    else if(type==='gem'){ const body=0.35+0.65*ndl; rr=base[0]*body+e[0]*refl*0.5+base[0]*fres*0.7+Math.pow(Math.max(0,rz),60)*1.2; gg=base[1]*body+e[1]*refl*0.5+base[1]*fres*0.7+Math.pow(Math.max(0,rz),60)*1.2; bb=base[2]*body+e[2]*refl*0.5+base[2]*fres*0.7+Math.pow(Math.max(0,rz),60)*1.2; }
+    else if(type==='pearl'){ const ph=fres*2.0+ndl,ir=[0.5+0.5*Math.cos(6.28*ph),0.5+0.5*Math.cos(6.28*ph+2.1),0.5+0.5*Math.cos(6.28*ph+4.2)],body=0.55+0.45*ndl,sp=Math.pow(Math.max(0,rz),70)*0.6; rr=base[0]*body+ir[0]*0.32*(0.4+fres)+sp; gg=base[1]*body+ir[1]*0.32*(0.4+fres)+sp; bb=base[2]*body+ir[2]*0.32*(0.4+fres)+sp; }
+    else { const amb=o.amb??0.4,sp=Math.pow(Math.max(0,rz),o.sExp??30)*(o.sInt??0.25),envamb=0.12*refl;
+      rr=base[0]*(amb+(1-amb)*ndl)+e[0]*envamb*base[0]+sp; gg=base[1]*(amb+(1-amb)*ndl)+e[1]*envamb*base[1]+sp; bb=base[2]*(amb+(1-amb)*ndl)+e[2]*envamb*base[2]+sp;
+      if(o.sss){ rr+=tint[0]*fres*o.sss; gg+=tint[1]*fres*o.sss; bb+=tint[2]*fres*o.sss; } }
+    d[i]=Math.min(255,rr*gain*255); d[i+1]=Math.min(255,gg*gain*255); d[i+2]=Math.min(255,bb*gain*255); d[i+3]=255; }
+  x.putImageData(img,0,0); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
+const MATCAP_PRESETS={ Clay:{type:'matte',base:'#c0876a',amb:0.5,sExp:6,sInt:0.05,sss:0.12,tint:'#ffd8c0'}, Skin:{type:'matte',base:'#e6b496',amb:0.5,sExp:14,sInt:0.14,sss:0.28,tint:'#ff9a86'},
+  Pearl:{type:'pearl',base:'#e8e0ee'}, Jade:{type:'gem',base:'#2f9f72',refl:0.5}, Bronze:{type:'metal',base:'#8a5a2a',tint:'#caa05a',refl:0.9}, Chrome:{type:'chrome',base:'#aab0bc'},
+  Gold:{type:'metal',base:'#c9a23c',tint:'#ffd76a',refl:1.0,gain:1.05}, Wax:{type:'matte',base:'#e8c98a',amb:0.52,sExp:12,sInt:0.18,sss:0.5,tint:'#ff9d5a'},
+  Basalt:{type:'matte',base:'#3a3f47',amb:0.34,sExp:18,sInt:0.18,refl:0.4}, Copper:{type:'metal',base:'#a05a34',tint:'#e08a5a',refl:0.92}, Pewter:{type:'metal',base:'#8c93a0',tint:'#c8cdd6',refl:0.7},
+  Ruby:{type:'gem',base:'#a01030',refl:0.55}, Emerald:{type:'gem',base:'#0f7a48',refl:0.55}, Sapphire:{type:'gem',base:'#173a9a',refl:0.6}, Porcelain:{type:'matte',base:'#f0eee8',amb:0.62,sExp:60,sInt:0.5,refl:0.5} };
+const MATCAPS={}; for(const k of Object.keys(MATCAP_PRESETS)) MATCAPS[k]=makeMatcapTex(MATCAP_PRESETS[k]);
+
 // ---------- materials ----------
-function makeMat(){ const st=$('material').value; const rim=$('rim').checked; let m;
-  if(st==='matte') m=new THREE.MeshStandardMaterial({roughness:1,metalness:0});
-  else if(st==='glossy') m=new THREE.MeshStandardMaterial({roughness:0.12,metalness:0.0});
-  else if(st==='metal') m=new THREE.MeshStandardMaterial({roughness:0.3,metalness:0.9});
+const clipPlanes=[]; let clipEnabled=false;   // world-space section cuts (see updateClip)
+function makeMat(){ const st=$('material').value; const rim=$('rim').checked;
+  const wire=$('wireframe')&&$('wireframe').checked, flat=$('flatShade')&&$('flatShade').checked; let m;
+  if(st.indexOf('matcap:')===0){ m=new THREE.MeshMatcapMaterial({matcap:MATCAPS[st.slice(7)]||null, flatShading:flat}); }
+  else if(st==='matte') m=new THREE.MeshStandardMaterial({roughness:1,metalness:0,flatShading:flat});
+  else if(st==='glossy') m=new THREE.MeshStandardMaterial({roughness:0.12,metalness:0.0,flatShading:flat});
+  else if(st==='metal') m=new THREE.MeshStandardMaterial({roughness:0.3,metalness:0.9,flatShading:flat});
   else if(st==='toon') m=new THREE.MeshToonMaterial({});
-  else if(st==='glass') m=new THREE.MeshStandardMaterial({roughness:0.05,metalness:0.0,transparent:true,opacity:0.45});
-  else m=new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.0});
-  if(rim){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
+  else if(st==='glass') m=new THREE.MeshStandardMaterial({roughness:0.05,metalness:0.0,transparent:true,opacity:0.45,flatShading:flat});
+  else m=new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.0,flatShading:flat});
+  if(rim && st.indexOf('matcap:')!==0){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
+  if(wire) m.wireframe=true;
+  if(clipEnabled && clipPlanes.length){ m.clippingPlanes=clipPlanes; m.clipShadows=true; }
   return m; }
 
+// ---------- section cut (world-space clipping plane) ----------
+function updateClip(){ clipEnabled=$('clipOn').checked; const ax=curClipAxis, flip=$('clipFlip').checked, pos=(+$('clipPos').value)*(molR||30);
+  const n=new THREE.Vector3(ax==='x'?1:0, ax==='y'?1:0, ax==='z'?1:0); if(!flip) n.negate();
+  const plane=new THREE.Plane(n, flip? -pos : pos); clipPlanes.length=0; clipPlanes.push(plane);
+  molGroup.traverse(o=>{ if(o.isMesh){ const ms=Array.isArray(o.material)?o.material:[o.material]; ms.forEach(m=>{ if(m===undefined)return; m.clippingPlanes=clipEnabled?clipPlanes:null; m.side=clipEnabled?THREE.DoubleSide:m.side; m.needsUpdate=true; }); } }); }
+// ---------- atom properties (shift-click): element facts + how it bonds here ----------
+function showAtomProps(gi){ const A=MOL.atoms, a=A[gi], sym=(a.el||'').replace('BASE_',''), e=ELEM[sym];
+  const nb=[]; for(const b of MOL.bonds){ if(b[0]===gi) nb.push(b[1]); else if(b[1]===gi) nb.push(b[0]); }
+  const neighEls=nb.map(j=>(A[j].el||'').replace('BASE_','')); const p=$('atomProps');
+  p.querySelector('.hd').innerHTML=`<span class="dot" style="background:${atomColor(a)}"></span>${e?e[0]:sym} — ${a.name||sym}`;
+  let h='';
+  if(e){ h+=`<div><span class="k">Element</span><b>${sym}</b> · Z=${e[1]}</div>`;
+    h+=`<div><span class="k">Atomic mass</span>${e[2]} u</div>`;
+    h+=`<div><span class="k">Electronegativity</span>${e[3]} (Pauling)</div>`;
+    h+=`<div><span class="k">Typical valence</span>${e[4]}</div>`; }
+  h+=`<div><span class="k">Residue</span>${a.resName} ${a.resSeq} · chain ${a.chain}</div>`;
+  h+=`<div><span class="k">Bonds here</span>${nb.length}${nb.length?': '+neighEls.join(', '):''}</div>`;
+  if(e && nb.length){ // polarity of each bond from ΔEN
+    const parts=nb.map(j=>{ const s2=(A[j].el||'').replace('BASE_',''), e2=ELEM[s2]; if(!e2) return `${s2} n/a`;
+      const d=Math.abs(e[3]-e2[3]); const kind=d<0.5?'nonpolar covalent':d<1.7?'polar covalent':'ionic-like';
+      return `${sym}–${s2} ΔEN ${d.toFixed(2)} → ${kind}`; });
+    h+=`<div style="margin-top:5px;color:var(--muted)">${parts.join('<br>')}</div>`;
+    if(e[4] && nb.length>e[4]) h+=`<div style="color:#ffb570">hypervalent / metal coordination (${nb.length} > typical ${e[4]})</div>`;
+    else if(e[4] && nb.length<e[4] && !a.het) h+=`<div style="color:var(--muted)">remaining valences → H (often implicit) or lone pairs</div>`; }
+  p.querySelector('.bd').innerHTML=h; p.classList.add('on'); }
 // ---------- shape factories (atoms + connectors) for custom looks ----------
 function atomGeom(){ switch($('atomShape').value){
   case 'cube':    return new THREE.BoxGeometry(1.6,1.6,1.6);
@@ -234,7 +335,8 @@ function bondGeom(){ switch($('bondShape').value){
 // ---------- build instanced geometry ----------
 const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_v=new THREE.Vector3(),_up=new THREE.Vector3(0,1,0),_s=new THREE.Vector3(),_c=new THREE.Color();
 function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[];
-  if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; } }
+  if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; }
+  if(surfMesh){ molGroup.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); surfMesh=null; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
 function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
@@ -256,11 +358,96 @@ function atomRad(a,rep){ const asc=+$('atomScale').value, br=+$('bondR').value;
   if(a.r!=null) return a.r*(rep==='space'?1.5:1.0);            // custom (DNA) radius
   if(rep==='space') return elVdw(a.el);
   if(rep==='stick') return br; return elVdw(a.el)*asc; }
+// HETATM ligands as ball&stick on top of a surface (populates sphereMesh/bondMesh → clearMesh disposes)
+function buildLigands(){ const A=MOL.atoms, showH=$('showH').checked, br=+$('bondR').value;
+  const hideSolv=$('hideSolvent').checked;
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(a.het && (showH||a.el!=='H') && !(hideSolv&&isSolvent(a))) idx.push(i); }
+  if(!idx.length) return; const asc=+$('atomScale').value;
+  sphereMesh=new THREE.InstancedMesh(atomGeom(), makeMat(), idx.length); let n=0;
+  for(const i of idx){ const a=A[i], r=elVdw(a.el)*asc; _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
+  sphereMesh.instanceMatrix.needsUpdate=true; if(sphereMesh.instanceColor)sphereMesh.instanceColor.needsUpdate=true; molGroup.add(sphereMesh);
+  const shown=new Set(idx), bs=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1])); if(!bs.length) return;
+  bondMesh=new THREE.InstancedMesh(bondGeom(), makeMat(), bs.length*2); let b=0;
+  for(const bd of bs){ const a=A[bd[0]], c=A[bd[1]], rr=bd[2]!=null?bd[2]:br;
+    const ax=new THREE.Vector3(a.x,a.y,a.z), cxx=new THREE.Vector3(c.x,c.y,c.z), dir=cxx.clone().sub(ax), len=dir.length()/2; dir.normalize(); _q.setFromUnitVectors(_up,dir);
+    const mid=ax.clone().add(cxx).multiplyScalar(0.5);
+    _m.compose(ax.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
+    _m.compose(mid.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++; }
+  bondMesh.instanceMatrix.needsUpdate=true; if(bondMesh.instanceColor)bondMesh.instanceColor.needsUpdate=true; molGroup.add(bondMesh); }
+// ---------- molecular surface (original: Gaussian atom-density field + naive Surface Nets) ----------
+// Density f(p)=Σ exp(-AG·d²/r²); iso=exp(-AG) puts an isolated atom's surface at radius r (=vdW·scale+inflate).
+function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
+  const hideSolv=$('hideSolvent').checked;
+  const A=MOL.atoms.filter(a=> ($('showH').checked||a.el!=='H') && !(hideSolv&&isSolvent(a))); if(!A.length) return null;
+  const probe=+$('surfProbe').value, opac=+$('surfOpac').value;
+  const rad=A.map(a=> (a.r!=null? a.r*1.6 : elVdw(a.el)) + probe);
+  let mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9], rmax=0;
+  for(let i=0;i<A.length;i++){ const a=A[i],r=rad[i]; if(r>rmax)rmax=r;
+    if(a.x<mn[0])mn[0]=a.x; if(a.y<mn[1])mn[1]=a.y; if(a.z<mn[2])mn[2]=a.z;
+    if(a.x>mx[0])mx[0]=a.x; if(a.y>mx[1])mx[1]=a.y; if(a.z>mx[2])mx[2]=a.z; }
+  const pad=rmax*1.5; for(let k=0;k<3;k++){ mn[k]-=pad; mx[k]+=pad; }
+  let sp=+$('surfQual').value; const NMAX=120;
+  const dimOf=k=>Math.ceil((mx[k]-mn[k])/sp)+1;
+  while(Math.max(dimOf(0),dimOf(1),dimOf(2))>NMAX) sp*=1.15;
+  const nx=dimOf(0),ny=dimOf(1),nz=dimOf(2), field=new Float32Array(nx*ny*nz);
+  const idx=(x,y,z)=>x+nx*(y+ny*z);
+  // splat each atom into its neighbourhood only (O(atoms·localcells))
+  for(let ai=0;ai<A.length;ai++){ const a=A[ai], r=rad[ai], r2=r*r, cut=r*Math.sqrt(6/AG), c2=cut*cut;
+    const x0=Math.max(0,Math.floor((a.x-cut-mn[0])/sp)), x1=Math.min(nx-1,Math.ceil((a.x+cut-mn[0])/sp));
+    const y0=Math.max(0,Math.floor((a.y-cut-mn[1])/sp)), y1=Math.min(ny-1,Math.ceil((a.y+cut-mn[1])/sp));
+    const z0=Math.max(0,Math.floor((a.z-cut-mn[2])/sp)), z1=Math.min(nz-1,Math.ceil((a.z+cut-mn[2])/sp));
+    for(let z=z0;z<=z1;z++){ const pz=mn[2]+z*sp, dz=pz-a.z; for(let y=y0;y<=y1;y++){ const py=mn[1]+y*sp, dy=py-a.y;
+      for(let x=x0;x<=x1;x++){ const px=mn[0]+x*sp, dx=px-a.x, d2=dx*dx+dy*dy+dz*dz; if(d2>c2) continue;
+        field[idx(x,y,z)]+=Math.exp(-AG*d2/r2); } } } }
+  // ---- naive Surface Nets ----
+  const R=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+  const ED=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  const cx=nx-1,cy=ny-1,cz=nz-1, cVert=new Int32Array(cx*cy*cz).fill(-1), cIdx=(x,y,z)=>x+cx*(y+cy*z);
+  const pos=[];
+  for(let z=0;z<cz;z++)for(let y=0;y<cy;y++)for(let x=0;x<cx;x++){ let mask=0; const cv=[];
+    for(let i=0;i<8;i++){ const c=R[i], v=field[idx(x+c[0],y+c[1],z+c[2])]; cv.push(v); if(v<iso) mask|=(1<<i); }
+    if(mask===0||mask===255) continue;
+    let ex=0,ey=0,ez=0,cnt=0;
+    for(const [a,b] of ED){ const va=cv[a],vb=cv[b]; if((va<iso)===(vb<iso)) continue; const t=(iso-va)/(vb-va), P=R[a],Q=R[b];
+      ex+=P[0]+(Q[0]-P[0])*t; ey+=P[1]+(Q[1]-P[1])*t; ez+=P[2]+(Q[2]-P[2])*t; cnt++; }
+    cVert[cIdx(x,y,z)]=pos.length/3;
+    pos.push(mn[0]+(x+ex/cnt)*sp, mn[1]+(y+ey/cnt)*sp, mn[2]+(z+ez/cnt)*sp); }
+  if(!pos.length) return null;
+  const cell=(x,y,z)=>(x<0||y<0||z<0||x>=cx||y>=cy||z>=cz)?-1:cVert[cIdx(x,y,z)];
+  const tris=[], quad=(a,b,c,d)=>{ if(a<0||b<0||c<0||d<0) return; tris.push(a,b,c, a,c,d); };
+  // one quad per grid edge with a sign change (double-sided material → winding is irrelevant)
+  for(let z=0;z<nz;z++)for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){ const in0=field[idx(x,y,z)]>=iso;
+    if(x+1<nx && (field[idx(x+1,y,z)]>=iso)!==in0) quad(cell(x,y-1,z-1),cell(x,y,z-1),cell(x,y,z),cell(x,y-1,z));
+    if(y+1<ny && (field[idx(x,y+1,z)]>=iso)!==in0) quad(cell(x-1,y,z-1),cell(x,y,z-1),cell(x,y,z),cell(x-1,y,z));
+    if(z+1<nz && (field[idx(x,y,z+1)]>=iso)!==in0) quad(cell(x-1,y-1,z),cell(x,y-1,z),cell(x,y,z),cell(x-1,y,z)); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setIndex(tris);
+  // analytic per-vertex NORMALS (−∇field, winding-independent → no speckle) + nearest-atom COLOUR, one grid pass
+  { const gc=4.0, gh=new Map(), gk=(a,b,c)=>a+','+b+','+c;
+    for(let i=0;i<A.length;i++){ const a=A[i], k=gk(Math.floor(a.x/gc),Math.floor(a.y/gc),Math.floor(a.z/gc)); (gh.get(k)||gh.set(k,[]).get(k)).push(i); }
+    const nrm=new Float32Array(pos.length), doCol=(curCol!=='none'), col=doCol?new Float32Array(pos.length):null, tmp=new THREE.Color();
+    for(let v=0;v<pos.length;v+=3){ const px=pos[v],py=pos[v+1],pz=pos[v+2]; let best=-1,bd=1e9,nxg=0,nyg=0,nzg=0;
+      const gx=Math.floor(px/gc),gy=Math.floor(py/gc),gz=Math.floor(pz/gc);
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){ const arr=gh.get(gk(gx+dx,gy+dy,gz+dz)); if(!arr)continue;
+        for(const i of arr){ const a=A[i], ex=px-a.x,ey=py-a.y,ez=pz-a.z, dd=ex*ex+ey*ey+ez*ez, r2=rad[i]*rad[i], w=Math.exp(-AG*dd/r2)/r2;
+          nxg+=w*ex; nyg+=w*ey; nzg+=w*ez; if(dd<bd){bd=dd;best=i;} } }
+      let ln=Math.hypot(nxg,nyg,nzg)||1; nrm[v]=nxg/ln; nrm[v+1]=nyg/ln; nrm[v+2]=nzg/ln;   // outward = away from atoms
+      if(doCol){ if(best<0){ for(let i=0;i<A.length;i++){ const a=A[i], dd=(a.x-px)**2+(a.y-py)**2+(a.z-pz)**2; if(dd<bd){bd=dd;best=i;} } }
+        tmp.set(atomColor(A[best])); col[v]=tmp.r; col[v+1]=tmp.g; col[v+2]=tmp.b; } }
+    g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+    if(doCol) g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); }
+  const mat=makeMat(); mat.side=THREE.DoubleSide; mat.flatShading=false;
+  if(curCol!=='none') mat.vertexColors=true; else mat.color.set('#8fd0ff');
+  if(opac<1){ mat.transparent=true; mat.opacity=opac; }
+  return new THREE.Mesh(g, mat); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
+  if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
+    if($('surfLig').checked) buildLigands();
+    $('status').textContent=`${A.length} atoms · surface`; return; }
   const showH=$('showH').checked, br=+$('bondR').value, cartoon=(curRep==='cartoon');
   const rep = cartoon ? 'bas' : curRep;                            // cartoon: ribbon + HETATM ligands as ball&stick
   if(cartoon){ cartoonGroup=buildCartoon(); molGroup.add(cartoonGroup); }
-  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(cartoon && !a.het) continue; idx.push(i); }
+  const hideSolv=$('hideSolvent').checked;
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(hideSolv && isSolvent(a)) continue; if(cartoon && !a.het) continue; idx.push(i); }
   const sg=atomGeom();
   sphereMesh=new THREE.InstancedMesh(sg, makeMat(), idx.length); let n=0;
   for(const i of idx){ const a=A[i], r=atomRad(a,rep); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
@@ -279,8 +466,10 @@ function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms
   if(!m.bonds.length || (m._hasConect && m.bonds.length<m.atoms.length/2)) m.bonds=m.bonds.concat(inferBonds(m.atoms));
   let cx=0,cy=0,cz=0; for(const a of m.atoms){cx+=a.x;cy+=a.y;cz+=a.z;} cx/=m.atoms.length;cy/=m.atoms.length;cz/=m.atoms.length;
   for(const a of m.atoms){a.x-=cx;a.y-=cy;a.z-=cz;} MOL=m; isDNA=!!m._dna;
+  molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z)));   // radius for clip-plane range
   measSel=[]; if(measGroup){ molGroup.remove(measGroup); measGroup=null; } if($('measOut'))$('measOut').textContent='';
-  rebuild(); fitCamera(); if(name) document.title='molWhiz — '+name; }
+  if($('atomProps'))$('atomProps').classList.remove('on');
+  rebuild(); fitCamera(); if($('clipOn').checked) updateClip(); if(name) document.title='molWhiz — '+name; }
 function fitCamera(){ if(!MOL.atoms.length) return; const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9]; let r=0;
   for(const a of MOL.atoms){ const p=[a.x,a.y,a.z]; for(let k=0;k<3;k++){ if(p[k]<mn[k])mn[k]=p[k]; if(p[k]>mx[k])mx[k]=p[k]; } r=Math.max(r,Math.hypot(a.x,a.y,a.z)); }
   r=Math.max(r,5); const d=r/Math.sin(camera.fov*Math.PI/360)*1.25, ext=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]], sa=ext.indexOf(Math.min(...ext)), pos=[0,0,0]; pos[sa]=d||60;
@@ -319,14 +508,19 @@ let measMode=false, measSel=[], measGroup=null;
 function labelSprite(text,color){ const fs=34,pad=10, c=document.createElement('canvas'), g=c.getContext('2d'); g.font=`bold ${fs}px system-ui`;
   c.width=g.measureText(text).width+pad*2; c.height=fs+pad*2; const x=c.getContext('2d'); x.font=`bold ${fs}px system-ui`;
   x.fillStyle='rgba(10,14,22,0.85)'; x.fillRect(0,0,c.width,c.height); x.fillStyle=color||'#eaf2ff'; x.textBaseline='middle'; x.fillText(text,pad,c.height/2);
-  const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true})); sp.scale.set(c.width/c.height*2.4,2.4,1); sp.renderOrder=6; return sp; }
+  const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:false}));
+  const h=0.085; sp.scale.set(h*c.width/c.height, h, 1); sp.renderOrder=6; return sp; }   // constant on-screen size (won't balloon on zoom)
 function clearMeasureGeo(){ if(measGroup){ molGroup.remove(measGroup); measGroup.traverse(o=>{ if(o.material){o.material.map&&o.material.map.dispose(); o.material.dispose();} if(o.geometry)o.geometry.dispose(); }); } measGroup=new THREE.Group(); molGroup.add(measGroup); }
 function drawMeasure(){ clearMeasureGeo(); const A=MOL.atoms, pts=measSel.map(i=>new THREE.Vector3(A[i].x,A[i].y,A[i].z)); let out='';
-  for(let i=0;i<pts.length-1;i++){ const gg=new THREE.BufferGeometry().setFromPoints([pts[i],pts[i+1]]);
+  for(let i=0;i<pts.length-1;i++){ const gg=new THREE.BufferGeometry().setFromPoints([pts[i],pts[i+1]]);   // running distance on every segment
     const ln=new THREE.LineSegments(gg,new THREE.LineDashedMaterial({color:0xffe066,dashSize:0.6,gapSize:0.3,depthTest:false})); ln.computeLineDistances(); measGroup.add(ln);
     const sp=labelSprite(pts[i].distanceTo(pts[i+1]).toFixed(2)+' Å','#ffe066'); sp.position.copy(pts[i].clone().add(pts[i+1]).multiplyScalar(0.5)); measGroup.add(sp); }
-  if(pts.length===2) out=`distance ${pts[0].distanceTo(pts[1]).toFixed(2)} Å`;
-  if(pts.length===3){ const a=pts[0].clone().sub(pts[1]), b=pts[2].clone().sub(pts[1]), ang=a.angleTo(b)*180/Math.PI; out=`angle ${ang.toFixed(1)}°`; const sp=labelSprite(ang.toFixed(1)+'°','#8fff88'); sp.position.copy(pts[1]); measGroup.add(sp); }
+  for(let i=1;i<pts.length-1;i++){ const a=pts[i-1].clone().sub(pts[i]), b=pts[i+1].clone().sub(pts[i]), ang=a.angleTo(b)*180/Math.PI;   // angle at each interior vertex
+    const sp=labelSprite(ang.toFixed(1)+'°','#8fff88'); sp.position.copy(pts[i]); measGroup.add(sp); }
+  if(pts.length>=2){ out=`last ${pts[pts.length-2].distanceTo(pts[pts.length-1]).toFixed(2)} Å`;
+    if(pts.length>=3){ const a=pts[pts.length-3].clone().sub(pts[pts.length-2]), b=pts[pts.length-1].clone().sub(pts[pts.length-2]); out+=` · ∠ ${(a.angleTo(b)*180/Math.PI).toFixed(1)}°`; }
+    out+=` · ${pts.length} atoms (✕ to clear)`; }
+  else if(pts.length===1) out='click the next atom…';
   $('measOut').textContent=out; }
 // ---------- picking ----------
 const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let downXY=null;
@@ -335,10 +529,11 @@ renderer.domElement.addEventListener('click',e=>{ if(!sphereMesh||!downXY||Math.
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
   const hit=ray.intersectObject(sphereMesh,false);
   if(hit.length){ const gi=pickList[hit[0].instanceId], a=MOL.atoms[gi];
-    if(measMode){ if(measSel.length>=3) measSel=[]; measSel.push(gi); drawMeasure(); return; }
+    if(measMode){ measSel.push(gi); drawMeasure(); return; }          // unlimited chain: each click extends
+    if(e.shiftKey){ showAtomProps(gi); return; }                       // shift-click → full properties + bonding role
     const hud=$('hud'); hud.querySelector('.t').textContent=`${a.name||a.el} · ${a.el.replace('BASE_','')}`;
-    hud.querySelector('.s').textContent=`${a.resName} ${a.resSeq} · chain ${a.chain} · #${a.serial}`; hud.classList.add('on'); }
-  else $('hud').classList.remove('on'); });
+    hud.querySelector('.s').textContent=`${a.resName} ${a.resSeq} · chain ${a.chain} · #${a.serial} · shift-click for details`; hud.classList.add('on'); }
+  else { $('hud').classList.remove('on'); $('atomProps').classList.remove('on'); } });
 
 // ---------- UI wiring ----------
 $('tglL').addEventListener('click',()=>{ $('sidebar').classList.toggle('hidden'); $('tglL').classList.toggle('on',!$('sidebar').classList.contains('hidden')); });
@@ -349,18 +544,30 @@ $('colSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if
 $('spinSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; const ax=b.dataset.ax; spinAx[ax]=!spinAx[ax]; b.classList.toggle('on',spinAx[ax]); });
 const bindRange=(id,fn)=>{ const el=$(id), v=$(id+'V'); el.addEventListener('input',()=>{ if(v)v.textContent=(+el.value).toFixed(el.step&&+el.step<0.1?2:1); (fn||rebuild)(); }); };
 bindRange('atomScale'); bindRange('bondR'); bindRange('spinSpeed',()=>{});
+bindRange('surfQual'); bindRange('surfProbe'); bindRange('surfOpac'); $('surfLig').addEventListener('change',rebuild);
 ['dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung'].forEach(id=>bindRange(id, rebuildDNAIfActive));
 ['colA','colT','colG','colC','colBB'].forEach(id=>$(id).addEventListener('input', rebuildDNAIfActive));
-$('showH').addEventListener('change',rebuild);
+$('showH').addEventListener('change',rebuild); $('hideSolvent').addEventListener('change',rebuild);
 $('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListener('change',rebuild);
 $('material').addEventListener('change',rebuild); $('rim').addEventListener('change',rebuild);
+$('wireframe').addEventListener('change',rebuild); $('flatShade').addEventListener('change',rebuild);
+// section cut
+$('clipOn').addEventListener('change',()=>{ updateClip(); if(!$('clipOn').checked) rebuild(); });
+$('clipFlip').addEventListener('change',updateClip);
+bindRange('clipPos',()=>{ if($('clipOn').checked) updateClip(); });
+$('clipAxis').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; curClipAxis=b.dataset.cax; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); if($('clipOn').checked) updateClip(); });
+// motion
+$('rockMode').addEventListener('change',()=>{ if(!$('rockMode').checked){ rockPhase=0; } });
+$('spinStop').addEventListener('click',()=>{ spinAx.x=spinAx.y=spinAx.z=false; [...$('spinSeg').children].forEach(x=>x.classList.remove('on')); $('rockMode').checked=false; });
+$('apX').addEventListener('click',()=>$('atomProps').classList.remove('on'));
 $('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) return;
   if(v.startsWith('ex:')){ const k=v.slice(3); if(EX[k]) loadMol(EX[k](),k); }
+  else if(v==='dna:build'){ buildDNA($('dnaSeq').value); }
   else if(v.startsWith('pdb:')){ const id=v.slice(4); $('pdbid').value=id; fetchPdb(id); } });
 $('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.value));
 $('fitBtn').addEventListener('click',fitCamera);
 $('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera); const a=document.createElement('a'); a.download='molwhiz.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); });
-$('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; $('measOut').textContent=measMode?'click 2 atoms → distance · 3 → angle':''; });
+$('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; clearMeasureGeo(); $('measOut').textContent=measMode?'click atoms in sequence · distance each hop, angle at each vertex':''; });
 $('measClear').addEventListener('click',()=>{ measSel=[]; clearMeasureGeo(); $('measOut').textContent=''; });
 $('dnaBtn').addEventListener('click',()=>buildDNA($('dnaSeq').value));
 $('dnaRand').addEventListener('click',()=>{ const b='ATGC'; let s=''; for(let i=0;i<18+Math.floor(Math.random()*10);i++) s+=b[Math.floor(Math.random()*4)]; $('dnaSeq').value=s; buildDNA(s); });
@@ -380,5 +587,7 @@ addEventListener('dragleave',()=>{dc--;if(dc<=0)dz.classList.remove('on');});
 addEventListener('drop',e=>{e.preventDefault();dc=0;dz.classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) readFile(f); });
 
 loadMol(EX.caffeine(),'caffeine'); $('example').value='ex:caffeine';
-window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, EX};
+window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
+  surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
+  shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps};
 </script>
