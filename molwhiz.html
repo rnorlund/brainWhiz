@@ -259,7 +259,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v1.3'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.4'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -457,15 +457,26 @@ function computeSS(atoms){ const helix=new Set(), sheet=new Set(), byChain={};
     for(let i=0;i+4<n;i++){ if(d(i,i+2)<6.2 && d(i,i+3)<6.0 && d(i,i+4)<6.7){ for(let k=i;k<=i+4;k++) helix.add(ch+':'+cas[k].resSeq); } }   // α-helix
     for(let i=0;i+2<n;i++){ const dd=d(i,i+2); if(dd>6.2 && dd<7.6 && !helix.has(ch+':'+cas[i].resSeq)){ sheet.add(ch+':'+cas[i].resSeq); sheet.add(ch+':'+cas[i+1].resSeq); sheet.add(ch+':'+cas[i+2].resSeq); } } }   // extended strand
   return {helix,sheet}; }
+// flat ribbon (rectangular cross-section swept along the curve) — arrow=true tapers to a β-strand arrowhead
+function ribbonGeom(curve, seg, halfW, halfT, arrow){ const fr=curve.computeFrenetFrames(seg,false), pos=[], idx=[], rings=[];
+  for(let i=0;i<=seg;i++){ const t=i/seg, p=curve.getPointAt(t), N=fr.normals[i], B=fr.binormals[i]; let hw=halfW;
+    if(arrow){ const a0=0.72; hw = t<a0 ? halfW : halfW*1.9*(1-(t-a0)/(1-a0)); }   // constant body, then arrowhead flare→point
+    rings.push([ p.clone().addScaledVector(B,hw).addScaledVector(N,halfT), p.clone().addScaledVector(B,-hw).addScaledVector(N,halfT),
+                 p.clone().addScaledVector(B,-hw).addScaledVector(N,-halfT), p.clone().addScaledVector(B,hw).addScaledVector(N,-halfT) ]); }
+  for(let i=0;i<seg;i++){ const base=pos.length/3; for(const v of rings[i]) pos.push(v.x,v.y,v.z); for(const v of rings[i+1]) pos.push(v.x,v.y,v.z);
+    for(let e=0;e<4;e++){ const n=(e+1)%4; idx.push(base+e,base+4+e,base+4+n, base+e,base+4+n,base+n); } }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setIndex(idx); g.computeVertexNormals(); return g; }
 function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
   for(const a of MOL.atoms){ if(!a.het && a.name==='CA'){ (chains.get(a.chain)||chains.set(a.chain,[]).get(a.chain)).push(a); } }
   const chainCol=ch=>{ let h=0; for(const c of ch)h+=c.charCodeAt(0); return PAL[h%PAL.length]; };
   for(const [ch,cas] of chains){ if(cas.length<2) continue; cas.sort((p,q)=>(+p.resSeq)-(+q.resSeq));
     const flush=(arr,ss)=>{ if(arr.length<2) return; const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z));
-      const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5);
-      const rad=ss==='H'?1.05:ss==='E'?0.9:0.34, col=(curCol==='chain')?chainCol(ch):(ss==='H'?'#ff5b6e':ss==='E'?'#ffd23f':'#9fd0ff');
-      const tube=new THREE.TubeGeometry(curve, Math.max(6,arr.length*6), rad, 12, false);
-      const mesh=new THREE.Mesh(tube, makeMat()); mesh.material.color.set(col); grp.add(mesh); };
+      const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(10,arr.length*8);
+      const col=(curCol==='chain')?chainCol(ch):(ss==='H'?'#ff5b6e':ss==='E'?'#ffd23f':'#9fd0ff');
+      let geo; if(ss==='H') geo=ribbonGeom(curve,seg,1.15,0.24,false);        // helix: flat ribbon
+        else if(ss==='E') geo=ribbonGeom(curve,seg,1.05,0.24,true);           // strand: flat arrow
+        else geo=new THREE.TubeGeometry(curve,seg,0.3,10,false);              // coil: thin tube
+      const mesh=new THREE.Mesh(geo, makeMat()); mesh.material.color.set(col); if(ss!=='C') mesh.material.side=THREE.DoubleSide; grp.add(mesh); };
     let run=[cas[0]], curSS=ssOf(cas[0]);
     for(let i=1;i<cas.length;i++){ const s=ssOf(cas[i]); if(s!==curSS){ flush(run.concat([cas[i]]), curSS); run=[cas[i]]; curSS=s; } else run.push(cas[i]); }
     flush(run, curSS); }
