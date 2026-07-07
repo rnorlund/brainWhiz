@@ -41,6 +41,14 @@
   #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
   #atomProps .x{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
   #atomProps .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  #figModal{position:fixed;inset:0;z-index:60;background:rgba(6,10,16,.97);display:none;grid-template-columns:310px 1fr;gap:14px;padding:16px}
+  #figModal.on{display:grid}
+  #figCtl{overflow-y:auto;font-size:12px} #figCtl h2{font-size:15px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+  #figPrevWrap{display:flex;align-items:center;justify-content:center;overflow:auto;background:#1a1f28;border:1px solid var(--line);border-radius:8px}
+  #figPrev{max-width:100%;max-height:100%;box-shadow:0 4px 24px rgba(0,0,0,.5)}
+  .figrow{display:flex;gap:6px;align-items:center;background:#141a24;border:1px solid var(--line);border-radius:6px;padding:4px;margin-bottom:5px}
+  .figrow img{width:52px;height:38px;object-fit:cover;border-radius:3px;background:#000}
+  .figrow input{flex:1;min-width:0;font-size:11px} .figrow button{padding:2px 6px}
   #status{font-size:11px;color:var(--muted);min-height:14px}
   #drop{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(10,20,40,.75);border:3px dashed var(--acc);font-size:22px;font-weight:700;color:#dff0ff}
   #drop.on{display:flex}
@@ -50,6 +58,24 @@
 <div id="drop">Drop a .pdb · .cif · .mol2 · .sdf/.mol · .xyz · .gro · .pdbqt · or .mwz/.mwzproj</div>
 <div id="hud"><div class="t"></div><div class="s"></div></div>
 <div id="atomProps"><button class="x" id="apX" title="close">✕</button><div class="hd"></div><div class="bd"></div></div>
+<div id="figModal">
+  <div id="figCtl">
+    <h2>🎬 Figure builder <button class="tbtn" id="figClose">✕ close</button></h2>
+    <button id="figAdd" class="acc" style="width:100%">＋ Add current 3D view as a panel</button>
+    <div style="font-size:10px;color:var(--muted);margin:5px 0 8px">Rotate/adjust the molecule behind this dialog, then add more panels. Reorder with ↑↓.</div>
+    <div class="row"><label>Title</label><input id="figTitle" placeholder="(optional figure title)"></div>
+    <div class="row"><label>Columns</label><input type="range" id="figCols" min="1" max="5" step="1" value="2"><span class="num" id="figColsV">2</span></div>
+    <div class="row"><label>Gap</label><input type="range" id="figGap" min="0" max="40" step="2" value="14"><span class="num" id="figGapV">14</span></div>
+    <div class="row"><label>Labels</label><select id="figLabel"><option value="ABC">A B C…</option><option value="abc">a b c…</option><option value="123">1 2 3…</option><option value="none">none</option></select></div>
+    <div class="row"><label>Background</label><input type="color" id="figBg" value="#ffffff"></div>
+    <div class="lbl" style="margin-top:8px">Panels</div>
+    <div id="figList" style="margin-top:4px"><div style="color:var(--muted);font-size:11px">No panels yet — add the current view.</div></div>
+    <div class="lbl" style="margin-top:10px">Export</div>
+    <div class="row"><label>PNG scale</label><select id="figScale"><option>1</option><option selected>2</option><option>3</option><option>4</option></select><button id="figPNG" class="acc">PNG</button></div>
+    <div class="row" style="margin-top:5px"><button id="figPDF" style="flex:1">PDF</button><button id="figSVG" style="flex:1">SVG</button></div>
+  </div>
+  <div id="figPrevWrap"><canvas id="figPrev" width="600" height="400"></canvas></div>
+</div>
 
 <div id="topbar">
   <button class="tbtn" id="tglL" title="show / hide functions">☰</button>
@@ -66,6 +92,7 @@
   <span class="sp"></span>
   <button class="tbtn" id="fitBtn" title="fit to view">⤢ Fit</button>
   <button class="tbtn" id="pngBtn">🖼 PNG</button>
+  <button class="tbtn" id="figBtn" title="multi-panel figure builder">🎬 Figure</button>
   <button class="tbtn" id="tglR" title="show / hide appearance">🎨</button>
 </div>
 
@@ -197,6 +224,7 @@
   var addons = served ? './vendor/jsm/' : 'https://unpkg.com/three@0.160.0/examples/jsm/';
   var im=document.createElement('script'); im.type='importmap';
   im.textContent=JSON.stringify({imports:{'three':three,'three/addons/':addons}}); document.head.appendChild(im);
+  document.write('<scr'+'ipt src="'+(served?'./vendor/jspdf.umd.min.js':'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')+'"><\/scr'+'ipt>');   // for figure PDF export
 })();
 </script>
 <script type="module">
@@ -231,7 +259,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v1.2'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.3'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -845,6 +873,19 @@ $('saveProject').addEventListener('click',saveProject);
 $('loadPresetBtn').addEventListener('click',()=>$('presetFile').click());
 $('presetFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readFile(f); e.target.value=''; });
 $('expHTML').addEventListener('click',exportHTML);
+// figure builder
+$('figBtn').addEventListener('click',()=>{ $('figModal').classList.add('on'); updateFigPreview(); });
+$('figClose').addEventListener('click',()=>$('figModal').classList.remove('on'));
+$('figAdd').addEventListener('click',captureViewPanel);
+['figCols','figGap'].forEach(id=>$(id).addEventListener('input',()=>{ const v=$(id+'V'); if(v)v.textContent=$(id).value; updateFigPreview(); }));
+['figTitle','figLabel','figBg'].forEach(id=>$(id).addEventListener('input',updateFigPreview));
+$('figList').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return;
+  if(b.dataset.rm!=null){ figPanels.splice(+b.dataset.rm,1); }
+  else if(b.dataset.up!=null){ const i=+b.dataset.up; if(i>0){ [figPanels[i-1],figPanels[i]]=[figPanels[i],figPanels[i-1]]; } }
+  else if(b.dataset.dn!=null){ const i=+b.dataset.dn; if(i<figPanels.length-1){ [figPanels[i+1],figPanels[i]]=[figPanels[i],figPanels[i+1]]; } }
+  renderFigList(); updateFigPreview(); });
+$('figList').addEventListener('input',e=>{ const inp=e.target.closest('input'); if(inp&&inp.dataset.i!=null) figPanels[+inp.dataset.i].caption=inp.value; });
+$('figPNG').addEventListener('click',exportFigPNG); $('figPDF').addEventListener('click',exportFigPDF); $('figSVG').addEventListener('click',exportFigSVG);
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
   try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); return; }
@@ -916,6 +957,47 @@ addEventListener('resize',()=>{rn.setSize(innerWidth,innerHeight);cam.aspect=inn
 (function loop(){requestAnimationFrame(loop);ct.update();rn.render(sc,cam);})();
 <\/script></body></html>`;
   dl((title.replace(/[^\w]+/g,'_')||'molecule')+'_molwhiz.html', H, 'text/html'); return H; }
+// ---------- figure builder: capture 3D views as panels → montage → PNG / PDF / SVG ----------
+let figPanels=[];   // {url, img, caption}
+const _hexRgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
+const _escX=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderer.render(scene,camera);
+  const url=renderer.domElement.toDataURL('image/png'); resize(); renderer.render(scene,camera);   // restore live viewport
+  const img=new Image(); img.onload=updateFigPreview; img.src=url; figPanels.push({url,img,caption:(document.title||'').replace('molWhiz — ','')}); renderFigList(); updateFigPreview(); }
+function layoutFig(scale){ scale=scale||1; const cols=+$('figCols').value, gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
+  const n=Math.max(1,figPanels.length), rows=Math.ceil(n/cols), pw=440*scale, ph=330*scale, title=$('figTitle').value.trim(), titleH=title?46*scale:0;
+  const W=pad*2+cols*pw+(cols-1)*gap, H=pad*2+titleH+rows*ph+(rows-1)*gap, lbls=$('figLabel').value, cells=[];
+  figPanels.forEach((p,i)=>{ const r=Math.floor(i/cols), c=i%cols, x=pad+c*(pw+gap), y=pad+titleH+r*(ph+gap);
+    const lab=lbls==='none'?'':lbls==='ABC'?String.fromCharCode(65+i):lbls==='abc'?String.fromCharCode(97+i):String(i+1);
+    cells.push({x,y,w:pw,h:ph,url:p.url,img:p.img,lab}); });
+  return {W,H,pad,title,titleH,cells,scale,lblFs:20*scale,titleFs:26*scale}; }
+function renderFigureCanvas(scale){ const L=layoutFig(scale), cv=document.createElement('canvas'); cv.width=Math.round(L.W); cv.height=Math.round(L.H); const x=cv.getContext('2d');
+  x.fillStyle=$('figBg').value; x.fillRect(0,0,cv.width,cv.height);
+  if(L.title){ x.fillStyle='#111'; x.font=`bold ${L.titleFs}px system-ui`; x.textBaseline='middle'; x.fillText(L.title,L.pad,L.pad+L.titleH/2); }
+  for(const c of L.cells){ x.fillStyle='#000'; x.fillRect(c.x,c.y,c.w,c.h);
+    if(c.img&&c.img.complete&&c.img.width){ const s=Math.min(c.w/c.img.width,c.h/c.img.height),dw=c.img.width*s,dh=c.img.height*s; x.drawImage(c.img,c.x+(c.w-dw)/2,c.y+(c.h-dh)/2,dw,dh); }
+    if(c.lab){ x.fillStyle='rgba(0,0,0,.55)'; x.fillRect(c.x,c.y,1.7*L.lblFs,1.5*L.lblFs); x.fillStyle='#fff'; x.font=`bold ${L.lblFs}px system-ui`; x.textBaseline='top'; x.fillText(c.lab,c.x+0.4*L.lblFs,c.y+0.25*L.lblFs); } }
+  return cv; }
+function updateFigPreview(){ const cv=renderFigureCanvas(1), pv=$('figPrev'); pv.width=cv.width; pv.height=cv.height; pv.getContext('2d').drawImage(cv,0,0); }
+function renderFigList(){ const el=$('figList'); if(!figPanels.length){ el.innerHTML='<div style="color:var(--muted);font-size:11px">No panels yet — add the current view.</div>'; return; }
+  el.innerHTML=''; figPanels.forEach((p,i)=>{ const row=document.createElement('div'); row.className='figrow';
+    row.innerHTML=`<img src="${p.url}"><input value="${_escX(p.caption)}" data-i="${i}"><button data-up="${i}" title="up">↑</button><button data-dn="${i}" title="down">↓</button><button data-rm="${i}" title="remove">✕</button>`;
+    el.appendChild(row); }); }
+function exportFigPNG(){ const cv=renderFigureCanvas(+$('figScale').value); const a=document.createElement('a'); a.download='figure.png'; a.href=cv.toDataURL('image/png'); a.click(); }
+function exportFigSVG(){ const L=layoutFig(2); let s=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.round(L.W)}" height="${Math.round(L.H)}" viewBox="0 0 ${Math.round(L.W)} ${Math.round(L.H)}">`;
+  s+=`<rect width="100%" height="100%" fill="${$('figBg').value}"/>`;
+  if(L.title) s+=`<text x="${L.pad}" y="${L.pad+L.titleH*0.62}" font-family="system-ui" font-weight="700" font-size="${L.titleFs}" fill="#111">${_escX(L.title)}</text>`;
+  for(const c of L.cells){ s+=`<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" fill="#000"/><image x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" preserveAspectRatio="xMidYMid meet" xlink:href="${c.url}"/>`;
+    if(c.lab) s+=`<rect x="${c.x}" y="${c.y}" width="${1.7*L.lblFs}" height="${1.5*L.lblFs}" fill="rgba(0,0,0,0.55)"/><text x="${c.x+0.4*L.lblFs}" y="${c.y+1.15*L.lblFs}" font-family="system-ui" font-weight="700" font-size="${L.lblFs}" fill="#fff">${c.lab}</text>`; }
+  s+='</svg>'; dl('figure.svg', s, 'image/svg+xml'); }
+function exportFigPDF(){ if(!window.jspdf){ $('status').textContent='PDF library not loaded (offline?) — use PNG/SVG'; return; }
+  const L=layoutFig(1), k=0.75, {jsPDF}=window.jspdf, pdf=new jsPDF({orientation:L.W>=L.H?'l':'p',unit:'pt',format:[L.W*k,L.H*k]}), bg=_hexRgb($('figBg').value);
+  pdf.setFillColor(bg[0],bg[1],bg[2]); pdf.rect(0,0,L.W*k,L.H*k,'F'); pdf.setFont('helvetica','bold');
+  if(L.title){ pdf.setTextColor(17,17,17); pdf.setFontSize(L.titleFs*k); pdf.text(L.title,L.pad*k,(L.pad+L.titleH*0.6)*k); }
+  for(const c of L.cells){ pdf.setFillColor(0,0,0); pdf.rect(c.x*k,c.y*k,c.w*k,c.h*k,'F');
+    if(c.img&&c.img.width){ const s=Math.min(c.w/c.img.width,c.h/c.img.height),dw=c.img.width*s,dh=c.img.height*s; pdf.addImage(c.url,'PNG',(c.x+(c.w-dw)/2)*k,(c.y+(c.h-dh)/2)*k,dw*k,dh*k); }
+    if(c.lab){ pdf.setFillColor(0,0,0); pdf.rect(c.x*k,c.y*k,1.7*L.lblFs*k,1.5*L.lblFs*k,'F'); pdf.setTextColor(255,255,255); pdf.setFontSize(L.lblFs*k); pdf.text(c.lab,(c.x+0.4*L.lblFs)*k,(c.y+1.1*L.lblFs)*k); } }
+  pdf.save('figure.pdf'); }
 const dz=$('drop'); let dc=0;
 addEventListener('dragenter',e=>{e.preventDefault();dc++;dz.classList.add('on');});
 addEventListener('dragover',e=>e.preventDefault());
@@ -927,5 +1009,6 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
   shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps,
   builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
-  fetchPdb, fetchAlphaFold, parseCIF, parseMol2, parseGro, parseByName, molToXYZ, molToPDB, molToMol2, exportHTML, snapCfg, applyCfg, loadPreset, loadProject, currentScene, computeSS};
+  fetchPdb, fetchAlphaFold, parseCIF, parseMol2, parseGro, parseByName, molToXYZ, molToPDB, molToMol2, exportHTML, snapCfg, applyCfg, loadPreset, loadProject, currentScene, computeSS,
+  captureViewPanel, renderFigureCanvas, exportFigSVG, figCount:()=>figPanels.length};
 </script>

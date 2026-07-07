@@ -189,6 +189,20 @@ ok('exported .html renders with no page errors', e2.length === 0);
 await p2.screenshot({ path: path.join(SHOTS,'pw_exported.png') }); await p2.close();
 if (e2.length) e2.slice(0,3).forEach(e=>console.log('   exported!', e.slice(0,100)));
 
+console.log('== figure builder ==');
+await load('caffeine'); await settle(200);
+await page.click('#figBtn'); await settle(200);
+ok('figure modal opens', await page.$eval('#figModal', e => e.classList.contains('on')));
+await page.click('#figAdd'); await settle(300);
+await page.evaluate(() => window.__mol.rebuild()); await page.click('#figAdd'); await settle(300);
+ok(`two panels captured (${await page.evaluate(()=>window.__mol.figCount())})`, (await page.evaluate(()=>window.__mol.figCount())) === 2);
+const fig = await page.evaluate(() => { const c = window.__mol.renderFigureCanvas(1); return { w: c.width, h: c.height }; });
+ok(`figure canvas composed (${fig.w}×${fig.h})`, fig.w > 100 && fig.h > 100);
+const svg = await page.evaluate(() => { let out=''; const _dl=window.URL; try{ window.__mol.exportFigSVG(); }catch(e){ out=String(e); } return out; });
+ok('exportFigSVG runs without error', svg === '');
+await page.screenshot({ path: path.join(SHOTS,'pw_figure.png') });
+await page.click('#figClose'); await settle(150);
+
 console.log('\n== page errors ==');
 ok('no uncaught page errors', errs.length === 0);
 if (errs.length) errs.slice(0,5).forEach(e => console.log('   !', e.slice(0,120)));
