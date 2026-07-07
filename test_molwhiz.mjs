@@ -51,6 +51,19 @@ for (const r of ['bas','space','stick','surface','atomic']) {
 }
 ok(`surface produced triangles (${surfTris})`, surfTris > 0);
 
+console.log('== colouring + zoom + rep sizing ==');
+await load('caffeine'); await settle(150);
+await rep('bas'); const rBas = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'bas'));
+const rStick = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'stick'));
+ok(`ball&stick radius (${rBas.toFixed(2)}) > sticks radius (${rStick.toFixed(2)})`, rBas > rStick + 0.1);
+await page.evaluate(() => window.__mol.setCol('rainbow')); await settle(200); ok('rainbow colour ok', errs.length === 0);
+await page.evaluate(() => window.__mol.setCol('bfactor')); await settle(200); ok('B/pLDDT colour ok', errs.length === 0);
+await page.evaluate(() => window.__mol.setCol('element'));
+const d0 = await page.evaluate(() => window.__mol.camDist());
+await page.evaluate(() => window.__mol.setZoom(90)); const d1 = await page.evaluate(() => window.__mol.camDist());
+await page.evaluate(() => window.__mol.setZoom(10)); const d2 = await page.evaluate(() => window.__mol.camDist());
+ok(`zoom slider changes distance (${d1.toFixed(1)} < ${d2.toFixed(1)})`, d1 < d2);
+
 console.log('== Voronoi cells ==');
 await load('caffeine'); await settle(150);
 await rep('voronoi'); await settle(700);
