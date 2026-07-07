@@ -235,6 +235,7 @@
   <div class="grp"><div class="lbl">🎬 Cinematic FX</div>
     <div class="row"><label class="tog"><input type="checkbox" id="fxOn"> ambient occlusion + bloom (SSAO·SMAA)</label></div>
     <div class="row"><label>Bloom</label><input type="range" id="fxBloom" min="0" max="1.5" step="0.05" value="0.5"><span class="num" id="fxBloomV">0.50</span></div>
+    <div class="row"><label title="only pixels brighter than this glow — lower it to bloom coloured atoms too, not just white">Glow threshold</label><input type="range" id="fxThresh" min="0" max="1" step="0.05" value="0.85"><span class="num" id="fxThreshV">0.85</span></div>
     <div style="font-size:10px;color:var(--muted)">Softer contact shadows in crevices + glow. Heavier — toggle off on very large structures.</div>
   </div>
   <div class="grp"><div class="lbl">⚛ Atomic view (Bohr model)</div>
@@ -331,7 +332,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.7'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.8'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -357,7 +358,7 @@ function buildComposer(){ if(composer) return; composer=new EffectComposer(rende
   composer.addPass(new SMAAPass(innerWidth,innerHeight));
   composer.addPass(new OutputPass()); }
 const fxOn=()=>$('fxOn')&&$('fxOn').checked;
-function renderFrame(w,h){ if(fxOn()){ buildComposer(); if(bloomPass) bloomPass.strength=+($('fxBloom')?.value ?? 0.5); if(w){composer.setSize(w,h);} composer.render(); if(w){composer.setSize(innerWidth,innerHeight);} }
+function renderFrame(w,h){ if(fxOn()){ buildComposer(); if(bloomPass){ bloomPass.strength=+($('fxBloom')?.value ?? 0.5); bloomPass.threshold=+($('fxThresh')?.value ?? 0.85); } if(w){composer.setSize(w,h);} composer.render(); if(w){composer.setSize(innerWidth,innerHeight);} }
   else renderer.render(scene,camera); }
 function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); if(composer) composer.setSize(innerWidth,innerHeight); }
 addEventListener('resize',resize); resize();
@@ -1163,7 +1164,7 @@ $('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListen
 $('material').addEventListener('change',rebuild); $('rim').addEventListener('change',rebuild);
 $('wireframe').addEventListener('change',rebuild); $('flatShade').addEventListener('change',rebuild);
 $('outlineOn').addEventListener('change',rebuild); $('depthCue').addEventListener('change',()=>{}); bindRange('outlineW',()=>{ if($('outlineOn').checked) rebuild(); });
-$('fxOn').addEventListener('change',()=>{}); bindRange('fxBloom',()=>{});
+$('fxOn').addEventListener('change',()=>{}); bindRange('fxBloom',()=>{}); bindRange('fxThresh',()=>{});
 $('pattern').addEventListener('change',e=>{ patU.uPattern.value=PAT_ID[e.target.value]||0; });
 bindRange('patScale',()=>{ patU.uScale.value=+$('patScale').value; });
 bindRange('patStr',()=>{ patU.uContrast.value=1-(+$('patStr').value); });
