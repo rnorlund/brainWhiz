@@ -153,6 +153,23 @@ await page.evaluate(() => { document.getElementById('dnaTwist').value=34.3; wind
 ok('DNA detected as nucleic (cartoon-capable)', await page.evaluate(() => window.__mol.hasNucleic()));
 await rep('cartoon'); await settle(500); ok('DNA cartoon renders', /atoms/.test(await status()));
 
+console.log('== legend + side chains ==');
+await load('caffeine'); await settle(150);
+await page.evaluate(() => window.__mol.setCol('element'));
+const legEl = await page.evaluate(() => { const c = window.__mol.legendCanvas(1); return c ? {w:c.width,h:c.height} : null; });
+ok(`element legend renders (${legEl?legEl.w+'x'+legEl.h:'null'})`, legEl && legEl.w > 20);
+await page.evaluate(() => window.__mol.setCol('rainbow'));
+ok('rainbow legend renders', await page.evaluate(() => !!window.__mol.legendCanvas(1)));
+await page.evaluate(() => window.__mol.setCol('element'));
+try {
+  await page.evaluate(() => window.__mol.fetchPdb('1CRN'));
+  await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent) && !/fetch/i.test(document.getElementById('status').textContent), { timeout: 15000 });
+  await rep('cartoon'); const s0 = await page.evaluate(() => window.__mol.shownAtoms());
+  await setChk('sideChains', true); await settle(500); const s1 = await page.evaluate(() => window.__mol.shownAtoms());
+  ok(`side chains add atoms to cartoon (${s0} → ${s1})`, s1 > s0);
+  await setChk('sideChains', false);
+} catch(e){ console.log('  (skipped side-chains — network)'); }
+
 console.log('== selection & isolation ==');
 try {
   await page.evaluate(() => window.__mol.fetchPdb('1HHO'));

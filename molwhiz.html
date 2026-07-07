@@ -38,6 +38,8 @@
   #hud.on{opacity:1} #hud .t{font-weight:700} #hud .s{color:var(--muted);font-size:11px}
   #zoomBar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:8px;background:rgba(10,14,22,.72);border:1px solid var(--line);border-radius:20px;padding:5px 14px}
   #zoomBar input{width:200px}
+  #legend{position:fixed;left:290px;bottom:14px;z-index:8;display:none;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+  #legend.on{display:block}
   #atomProps{position:fixed;right:14px;bottom:14px;width:260px;background:rgba(10,14,22,.95);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:11;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
   #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px}
   #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
@@ -60,6 +62,7 @@
 <div id="drop">Drop a .pdb · .cif · .mol2 · .sdf/.mol · .xyz · .gro · .pdbqt · or .mwz/.mwzproj</div>
 <div id="hud"><div class="t"></div><div class="s"></div></div>
 <div id="zoomBar"><span title="zoom">🔍</span><input type="range" id="zoom" min="0" max="100" value="30"></div>
+<canvas id="legend"></canvas>
 <div id="atomProps"><button class="x" id="apX" title="close">✕</button><div class="hd"></div><div class="bd"></div></div>
 <div id="figModal">
   <div id="figCtl">
@@ -176,6 +179,7 @@
     <div class="row"><label>Bond size</label><input type="range" id="bondR" min="0.04" max="0.4" step="0.01" value="0.15"><span class="num" id="bondRV">0.15</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="showH" checked> show hydrogens</label></div>
     <div class="row"><label class="tog"><input type="checkbox" id="hideSolvent" checked> hide waters / ions</label></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="sideChains"> side chains on cartoon</label></div>
   </div>
   <div class="grp"><div class="lbl">Material / texture</div>
     <div class="row"><label title="15 baked-studio matcaps live in this dropdown (Clay, Chrome, Gold, Pearl…)">Style / matcap ▾</label>
@@ -211,6 +215,7 @@
   </div>
   <div class="grp"><div class="lbl">Colour by</div>
     <div class="seg" id="colSeg"><button data-col="element" class="on">Element</button><button data-col="chain">Chain</button><button data-col="residue">Residue</button><button data-col="rainbow">Rainbow</button><button data-col="bfactor" title="B-factor, or pLDDT confidence for AlphaFold models">B / pLDDT</button></div>
+    <div class="row" style="margin-top:6px"><label class="tog"><input type="checkbox" id="legendOn"> show colour legend</label></div>
   </div>
   <div class="grp"><div class="lbl">Surface</div>
     <div class="row"><label>Detail</label><input type="range" id="surfQual" min="0.35" max="1.6" step="0.05" value="0.75"><span class="num" id="surfQualV">0.75</span></div>
@@ -279,7 +284,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v1.8'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.9'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -551,6 +556,28 @@ function atomColor(a){ if(a.ovcol) return a.ovcol;   // selection colour overrid
   if(curCol==='bfactor'){ const b=a.b||0; if(_ccx&&_ccx.isPLDDT) return b>=90?'#0053d6':b>=70?'#65cbf3':b>=50?'#ffdb13':'#ff7d45';   // AlphaFold pLDDT palette
     return _spectrum(_ccx&&_ccx.bmax>_ccx.bmin?(b-_ccx.bmin)/(_ccx.bmax-_ccx.bmin):0.5); }
   return elCol(a.el); }
+// ---------- colour legend (composited into the app overlay + PNG/figure exports) ----------
+function legendCanvas(scale){ scale=scale||1; const rows=[]; let title='', grad=null;
+  if(curCol==='bfactor' && _ccx && _ccx.isPLDDT){ title='pLDDT confidence'; rows.push(['#0053d6','Very high (≥90)'],['#65cbf3','Confident (70–90)'],['#ffdb13','Low (50–70)'],['#ff7d45','Very low (<50)']); }
+  else if(curCol==='bfactor' && _ccx){ title='B-factor'; grad=[_ccx.bmin.toFixed(0), _ccx.bmax.toFixed(0)]; }
+  else if(curCol==='rainbow'){ title='Chain N → C'; grad=['N','C']; }
+  else if(curCol==='chain'){ title='Chains'; const chs=[...new Set(MOL.atoms.filter(a=>!a.hidden).map(a=>a.chain))].sort(); for(const c of chs.slice(0,14)){ let h=0; for(const x of c)h+=x.charCodeAt(0); rows.push([PAL[h%PAL.length],'Chain '+c]); } }
+  else if(curCol==='element'){ title='Elements'; const els=[...new Set(MOL.atoms.filter(a=>!a.hidden).map(a=>(a.el||'').replace('BASE_','')))].filter(e=>CPK[e]); for(const e of els.slice(0,12)) rows.push([elCol(e),e]); }
+  else return null;
+  const fs=13*scale, pad=10*scale, sw=15*scale, rh=fs+7*scale, cvs=document.createElement('canvas'), g=cvs.getContext('2d');
+  g.font=`${fs}px system-ui`; let tw=g.measureText(title).width; for(const r of rows) tw=Math.max(tw, sw+7*scale+g.measureText(r[1]).width);
+  const barW=140*scale, W=pad*2+Math.max(tw, grad?barW:0), H=pad*2 + (fs+8*scale) + (grad? (18*scale+fs+4*scale) : rows.length*rh);
+  cvs.width=Math.ceil(W); cvs.height=Math.ceil(H); g.font=`bold ${fs}px system-ui`;
+  g.fillStyle='rgba(12,16,24,0.82)'; if(g.roundRect){g.beginPath();g.roundRect(0,0,W,H,8*scale);g.fill();}else g.fillRect(0,0,W,H);
+  g.fillStyle='#eaf2ff'; g.textBaseline='top'; g.fillText(title, pad, pad);
+  let y=pad+fs+8*scale;
+  if(grad){ const gr=g.createLinearGradient(pad,0,pad+barW,0); for(let s=0;s<=10;s++){ gr.addColorStop(s/10, _spectrum(s/10)); } g.fillStyle=gr; g.fillRect(pad,y,barW,14*scale);
+    g.font=`${fs}px system-ui`; g.fillStyle='#cfe0f5'; g.fillText(grad[0],pad,y+16*scale); const rtw=g.measureText(grad[1]).width; g.fillText(grad[1],pad+barW-rtw,y+16*scale); }
+  else { g.font=`${fs}px system-ui`; for(const [col,lab] of rows){ g.fillStyle=col; if(g.roundRect){g.beginPath();g.roundRect(pad,y,sw,sw,3*scale);g.fill();}else g.fillRect(pad,y,sw,sw); g.fillStyle='#dfe8f5'; g.fillText(lab,pad+sw+7*scale,y+1*scale); y+=rh; } }
+  return cvs; }
+function updateLegend(){ const el=$('legend'); if(!el)return; if(!$('legendOn').checked){ el.classList.remove('on'); return; }
+  const c=legendCanvas(1); if(!c){ el.classList.remove('on'); return; } el.width=c.width; el.height=c.height; el.getContext('2d').clearRect(0,0,c.width,c.height); el.getContext('2d').drawImage(c,0,0); el.classList.add('on'); }
+function compositeLegend(target, scale){ if(!$('legendOn')||!$('legendOn').checked) return; const c=legendCanvas(scale||1); if(!c) return; const x=target.getContext('2d'); x.drawImage(c, 10, target.height-c.height-10); }
 function atomRad(a,rep){ const asc=+$('atomScale').value, br=+$('bondR').value;
   if(rep==='stick') return br;                                 // sticks: uniform thin (even DNA) — distinct from ball & stick
   if(a.r!=null) return a.r*(rep==='space'?1.5:1.0);            // custom (DNA) radius
@@ -759,7 +786,7 @@ function addOutline(){ if(!$('outlineOn')||!$('outlineOn').checked) return; cons
   for(const grp of [cartoonGroup,atomicGroup,voronoiGroup]) if(grp) grp.traverse(shell);
   molGroup.add(outlineGroup); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
-  computeColorCtx();
+  computeColorCtx(); updateLegend();
   if(curRep==='atomic'){ buildAtomic(); buildAura(); buildHBonds(); addOutline(); return; }
   if(curRep==='voronoi'){ buildVoronoi(); buildAura(); buildHBonds(); addOutline(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
@@ -772,10 +799,13 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
   if(curRep==='cartoon' && !hasBB) $('status').textContent='no backbone to ribbon — showing ball & stick';
   if(cartoon){ cartoonGroup=buildCartoon(); molGroup.add(cartoonGroup); }
   const hideSolv=$('hideSolvent').checked;
-  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(hideSolv && isSolvent(a)) continue; if(a.hidden) continue; if(cartoon && !a.het) continue; idx.push(i); }
+  const sideCh=cartoon && $('sideChains').checked, BB=new Set(['N','CA','C','O']);
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH && a.el==='H') continue; if(hideSolv && isSolvent(a)) continue; if(a.hidden) continue;
+    if(cartoon && !a.het){ if(!(sideCh && !BB.has(a.name) && !isNuc(a.resName))) continue; }   // cartoon: het ligands + (optionally) protein side chains
+    idx.push(i); }
   const sg=atomGeom();
   sphereMesh=new THREE.InstancedMesh(sg, makeMat(), idx.length); let n=0;
-  for(const i of idx){ const a=A[i], r=atomRad(a,rep); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
+  for(const i of idx){ const a=A[i], ar=(cartoon && !a.het)?'stick':rep, r=atomRad(a,ar); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
   sphereMesh.instanceMatrix.needsUpdate=true; if(sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate=true; molGroup.add(sphereMesh);
   if(rep!=='space' && $('bondShape').value!=='none'){ const shown=new Set(idx), bs=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1]));
     const cg=bondGeom(), lineThin=$('bondShape').value==='line'; bondMesh=new THREE.InstancedMesh(cg, makeMat(), bs.length*2); let b=0;
@@ -929,6 +959,8 @@ bindRange('atSpread',rebuildIfAtomic); bindRange('atNuc',rebuildIfAtomic); bindR
 ['colA','colT','colG','colC','colBB'].forEach(id=>$(id).addEventListener('input', rebuildDNAIfActive));
 $('showH').addEventListener('change',rebuild); $('hideSolvent').addEventListener('change',rebuild);
 $('hbondOn').addEventListener('change',rebuild);
+$('legendOn').addEventListener('change',updateLegend);
+$('sideChains').addEventListener('change',rebuild);
 $('selChain').addEventListener('change',e=>{ selChain=e.target.value; });
 $('selKind').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; selKind=(selKind===b.dataset.k)?'':b.dataset.k; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x.dataset.k===selKind)); });
 $('selIsolate').addEventListener('click',()=>selAct('isolate')); $('selHide').addEventListener('click',()=>selAct('hide'));
@@ -959,7 +991,9 @@ $('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.va
 $('fitBtn').addEventListener('click',()=>{ fitCamera(); syncZoom(); });
 $('zoom').addEventListener('input',e=>setZoom(+e.target.value));
 controls.addEventListener('change',syncZoom);
-$('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera); const a=document.createElement('a'); a.download='molwhiz.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); });
+$('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera);
+  const src=renderer.domElement, cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height; const x=cv.getContext('2d'); x.drawImage(src,0,0); compositeLegend(cv, src.width/innerWidth);
+  const a=document.createElement('a'); a.download='molwhiz.png'; a.href=cv.toDataURL('image/png'); a.click(); });
 $('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; clearMeasureGeo(); $('measOut').textContent=measMode?'click atoms in sequence · distance each hop, angle at each vertex':''; });
 // builder
 $('buildBtn').addEventListener('click',()=>{ builderOn=!builderOn; $('buildBtn').textContent='Build mode: '+(builderOn?'ON':'OFF'); $('buildBtn').classList.toggle('acc',builderOn); $('buildUI').style.display=builderOn?'block':'none'; if(!builderOn)builderSel=-1; updateBuildMarker(); if(builderOn && $('buildOut'))$('buildOut').textContent='selected: none · click an atom or +add'; });
@@ -1081,7 +1115,8 @@ let figPanels=[];   // {url, img, caption}
 const _hexRgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
 const _escX=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderer.render(scene,camera);
-  const url=renderer.domElement.toDataURL('image/png'); resize(); renderer.render(scene,camera);   // restore live viewport
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeLegend(cv,1.4);   // bake legend into the panel
+  const url=cv.toDataURL('image/png'); resize(); renderer.render(scene,camera);   // restore live viewport
   const img=new Image(); img.onload=updateFigPreview; img.src=url; figPanels.push({url,img,caption:(document.title||'').replace('molWhiz — ','')}); renderFigList(); updateFigPreview(); }
 function layoutFig(scale){ scale=scale||1; const cols=+$('figCols').value, gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
   const anyCap=figPanels.some(p=>(p.caption||'').trim()), capH=anyCap?28*scale:0, capFs=15*scale;
@@ -1136,5 +1171,5 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   captureViewPanel, renderFigureCanvas, exportFigSVG, figCount:()=>figPanels.length,
   setZoom, camDist:()=>camera.position.distanceTo(controls.target), colorCtx:()=>_ccx, atomRad, setCol:c=>{curCol=c;[...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===c));rebuild();},
   hasHBonds:()=>!!hbondGroup, hasOutline:()=>!!outlineGroup, hasNucleic:structHasNucleic,
-  selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length};
+  selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas};
 </script>
