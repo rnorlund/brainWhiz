@@ -47,7 +47,12 @@
 <div id="topbar">
   <button class="tbtn" id="tglL" title="show / hide functions">☰</button>
   <h1>mol<b>Whiz</b></h1>
-  <select id="example" style="max-width:130px"><option value="">Examples…</option><option value="caffeine">Caffeine</option><option value="benzene">Benzene</option><option value="water">Water</option><option value="ethanol">Ethanol</option><option value="methane">Methane</option></select>
+  <select id="example" style="max-width:200px"><option value="">Gallery…</option>
+    <optgroup label="Small molecules (offline)"><option value="ex:caffeine">Caffeine</option><option value="ex:benzene">Benzene</option><option value="ex:ethanol">Ethanol</option><option value="ex:water">Water</option><option value="ex:methane">Methane</option></optgroup>
+    <optgroup label="Proteins"><option value="pdb:1CRN">Crambin (1CRN)</option><option value="pdb:1UBQ">Ubiquitin (1UBQ)</option><option value="pdb:3I40">Insulin (3I40)</option><option value="pdb:1HHO">Hemoglobin (1HHO)</option><option value="pdb:1IGT">Antibody IgG (1IGT)</option></optgroup>
+    <optgroup label="Bound complexes (+ ligand)"><option value="pdb:1HSG">HIV protease + drug (1HSG)</option><option value="pdb:6LU7">SARS-CoV-2 Mpro + inhibitor (6LU7)</option><option value="pdb:1STP">Streptavidin + biotin (1STP)</option><option value="pdb:2HHB">Hemoglobin + heme (2HHB)</option></optgroup>
+    <optgroup label="DNA / DNA–protein"><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option></optgroup>
+  </select>
   <input type="text" id="pdbid" placeholder="PDB ID (1CRN)" maxlength="8" style="max-width:130px;text-transform:uppercase">
   <button class="tbtn" id="fetchBtn">Fetch</button>
   <span class="sp"></span>
@@ -79,7 +84,11 @@
 <div id="sidebarR" class="side hidden">
   <div class="grp"><div class="lbl">Representation</div>
     <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button></div>
-    <div class="row" style="margin-top:7px"><label>Atom size</label><input type="range" id="atomScale" min="0.08" max="1" step="0.02" value="0.28"><span class="num" id="atomScaleV">0.28</span></div>
+    <div class="row" style="margin-top:7px"><label>Atom shape</label>
+      <select id="atomShape"><option value="sphere">Sphere</option><option value="cube">Cube</option><option value="ico">Icosahedron</option><option value="octa">Octahedron</option><option value="tetra">Tetrahedron</option><option value="dodeca">Dodecahedron</option><option value="cone">Cone</option><option value="torus">Torus</option><option value="cyl">Cylinder</option><option value="diamond">Diamond</option></select></div>
+    <div class="row"><label>Connector</label>
+      <select id="bondShape"><option value="cyl">Cylinder</option><option value="box">Square rod</option><option value="hex">Hex prism</option><option value="tri">Triangular</option><option value="line">Thin line</option><option value="none">None</option></select></div>
+    <div class="row"><label>Atom size</label><input type="range" id="atomScale" min="0.08" max="1" step="0.02" value="0.28"><span class="num" id="atomScaleV">0.28</span></div>
     <div class="row"><label>Bond size</label><input type="range" id="bondR" min="0.04" max="0.4" step="0.01" value="0.15"><span class="num" id="bondRV">0.15</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="showH" checked> show hydrogens</label></div>
   </div>
@@ -196,6 +205,25 @@ function makeMat(){ const st=$('material').value; const rim=$('rim').checked; le
   if(rim){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
   return m; }
 
+// ---------- shape factories (atoms + connectors) for custom looks ----------
+function atomGeom(){ switch($('atomShape').value){
+  case 'cube':    return new THREE.BoxGeometry(1.6,1.6,1.6);
+  case 'ico':     return new THREE.IcosahedronGeometry(1.05,0);
+  case 'octa':    return new THREE.OctahedronGeometry(1.15,0);
+  case 'tetra':   return new THREE.TetrahedronGeometry(1.35,0);
+  case 'dodeca':  return new THREE.DodecahedronGeometry(1.05,0);
+  case 'cone':    return new THREE.ConeGeometry(1.05,1.9,18);
+  case 'torus':   return new THREE.TorusGeometry(0.72,0.42,12,22);
+  case 'cyl':     return new THREE.CylinderGeometry(0.95,0.95,1.7,18);
+  case 'diamond': return new THREE.OctahedronGeometry(1.25,0);
+  default:        return new THREE.SphereGeometry(1,20,16);
+}}
+function bondGeom(){ switch($('bondShape').value){
+  case 'box': return new THREE.BoxGeometry(2,1,2);              // square rod
+  case 'hex': return new THREE.CylinderGeometry(1,1,1,6,1,true);
+  case 'tri': return new THREE.CylinderGeometry(1,1,1,3,1,true);
+  default:    return new THREE.CylinderGeometry(1,1,1,14,1,true);
+}}
 // ---------- build instanced geometry ----------
 const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_v=new THREE.Vector3(),_up=new THREE.Vector3(0,1,0),_s=new THREE.Vector3(),_c=new THREE.Color();
 function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[]; }
@@ -208,13 +236,13 @@ function atomRad(a){ const asc=+$('atomScale').value, br=+$('bondR').value;
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
   const showH=$('showH').checked, rep=curRep, br=+$('bondR').value;
   const idx=[]; for(let i=0;i<A.length;i++){ if(!showH && A[i].el==='H') continue; idx.push(i); }
-  const sg=new THREE.SphereGeometry(1,20,16);
+  const sg=atomGeom();
   sphereMesh=new THREE.InstancedMesh(sg, makeMat(), idx.length); let n=0;
   for(const i of idx){ const a=A[i], r=atomRad(a); _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); sphereMesh.setMatrixAt(n,_m); sphereMesh.setColorAt(n,_c.set(atomColor(a))); pickList[n]=i; n++; }
   sphereMesh.instanceMatrix.needsUpdate=true; if(sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate=true; molGroup.add(sphereMesh);
-  if(rep!=='space'){ const shown=new Set(idx), bs=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1]));
-    const cg=new THREE.CylinderGeometry(1,1,1,12,1,true); bondMesh=new THREE.InstancedMesh(cg, makeMat(), bs.length*2); let b=0;
-    for(const bd of bs){ const a=A[bd[0]], c=A[bd[1]], rr=(bd[2]!=null?bd[2]:br);
+  if(rep!=='space' && $('bondShape').value!=='none'){ const shown=new Set(idx), bs=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1]));
+    const cg=bondGeom(), lineThin=$('bondShape').value==='line'; bondMesh=new THREE.InstancedMesh(cg, makeMat(), bs.length*2); let b=0;
+    for(const bd of bs){ const a=A[bd[0]], c=A[bd[1]], rr=(bd[2]!=null?bd[2]:br)*(lineThin?0.4:1);
       const ax=new THREE.Vector3(a.x,a.y,a.z), cx=new THREE.Vector3(c.x,c.y,c.z), dir=cx.clone().sub(ax), len=dir.length()/2; dir.normalize(); _q.setFromUnitVectors(_up,dir);
       const mid=ax.clone().add(cx).multiplyScalar(0.5);
       _m.compose(ax.clone().add(dir.clone().multiplyScalar(len/2)),_q,_s.set(rr,len,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
@@ -282,8 +310,11 @@ bindRange('atomScale'); bindRange('bondR'); bindRange('spinSpeed',()=>{});
 ['dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung'].forEach(id=>bindRange(id, rebuildDNAIfActive));
 ['colA','colT','colG','colC','colBB'].forEach(id=>$(id).addEventListener('input', rebuildDNAIfActive));
 $('showH').addEventListener('change',rebuild);
+$('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListener('change',rebuild);
 $('material').addEventListener('change',rebuild); $('rim').addEventListener('change',rebuild);
-$('example').addEventListener('change',e=>{ const k=e.target.value; if(EX[k]) loadMol(EX[k](),k); });
+$('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) return;
+  if(v.startsWith('ex:')){ const k=v.slice(3); if(EX[k]) loadMol(EX[k](),k); }
+  else if(v.startsWith('pdb:')){ const id=v.slice(4); $('pdbid').value=id; fetchPdb(id); } });
 $('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.value));
 $('fitBtn').addEventListener('click',fitCamera);
 $('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera); const a=document.createElement('a'); a.download='molwhiz.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); });
@@ -294,7 +325,7 @@ $('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readFi
 function parseByName(t,n){ n=n.toLowerCase(); if(n.endsWith('.xyz'))return parseXYZ(t); if(n.endsWith('.sdf')||n.endsWith('.mol'))return parseSDF(t); return parsePDB(t); }
 function readFile(f){ const r=new FileReader(); r.onload=()=>{ try{ loadMol(parseByName(r.result,f.name),f.name); }catch(err){ $('status').textContent='parse error: '+err.message; } }; r.readAsText(f); }
 $('fetchBtn').addEventListener('click',fetchPdb); $('pdbid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchPdb(); });
-async function fetchPdb(){ const id=$('pdbid').value.trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
+async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
   try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); }
   catch(err){ $('status').textContent='fetch failed ('+err.message+') — try Open file'; } }
@@ -304,6 +335,6 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('dragleave',()=>{dc--;if(dc<=0)dz.classList.remove('on');});
 addEventListener('drop',e=>{e.preventDefault();dc=0;dz.classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) readFile(f); });
 
-loadMol(EX.caffeine(),'caffeine'); $('example').value='caffeine';
+loadMol(EX.caffeine(),'caffeine'); $('example').value='ex:caffeine';
 window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, EX};
 </script>
