@@ -29,8 +29,11 @@ const shot    = f => page.screenshot({ path: path.join(SHOTS, f) });
 
 console.log('\n== boot ==');
 ok('module ready + version pill', await page.$eval('#verPill', e => /^v/.test(e.textContent)));
-await page.click('#tglR'); await settle(200);   // reveal the appearance (right) sidebar so its controls are clickable
-ok('right sidebar opens', !(await page.$eval('#sidebarR', e => e.classList.contains('hidden'))));
+if (await page.$eval('#sidebarR', e => e.classList.contains('hidden'))) await page.click('#tglR');   // ensure appearance sidebar open
+await settle(200);
+ok('appearance sidebar visible', !(await page.$eval('#sidebarR', e => e.classList.contains('hidden'))));
+ok('matcaps present in Style dropdown', (await page.$$eval('#material option', os => os.filter(o=>o.value.startsWith('matcap:')).length)) === 15);
+ok('atom-shape + connector selects present', (await page.$('#atomShape')) && (await page.$('#bondShape')));
 
 console.log('== small-molecule gallery ==');
 for (const k of ['water','methane','benzene','ethanol','caffeine']) {
@@ -136,6 +139,19 @@ ok(`phenyl fragment (${ring} carbons ≥6)`, ring >= 6);
 await page.evaluate(() => window.__mol.builderFragment('water'));
 ok('snap +H2O no errors', errs.length === 0);
 await shot('pw_builder.png');
+
+console.log('== import formats (MOL2 / GRO / .mwz round-trip) ==');
+const mol2 = '@<TRIPOS>MOLECULE\nx\n3 2 0 0 0\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 O1 0.0 0.0 0.0 O.3 1 HOH 0\n2 H1 0.76 0.59 0.0 H 1 HOH 0\n3 H2 -0.76 0.59 0.0 H 1 HOH 0\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 1\n';
+const nMol2 = await page.evaluate(m => window.__mol.parseMol2(m).atoms.length, mol2);
+ok(`parseMol2 (${nMol2} atoms)`, nMol2 === 3);
+const gro = 'title\n2\n    1WATER  OW    1   0.126   1.624   1.679\n    1WATER  HW1   2   0.190   1.661   1.747\n';
+const nGro = await page.evaluate(g => window.__mol.parseGro(g).atoms.length, gro);
+ok(`parseGro (${nGro} atoms, nm→Å)`, nGro === 2);
+await load('caffeine'); await settle(150);
+const rt = await page.evaluate(() => { const s = window.__mol.currentScene(); window.__mol.builderNew(); const before = window.__mol.MOL.atoms.length; window.__mol.loadPreset(s); return { sig: s.molwhiz, before, after: window.__mol.MOL.atoms.length }; });
+ok(`.mwz round-trip (sig=${rt.sig}, ${rt.before}→${rt.after})`, rt.sig === 'mwz' && rt.after === 24);
+const m2 = await page.evaluate(() => window.__mol.molToMol2());
+ok('molToMol2 has TRIPOS sections', /@<TRIPOS>ATOM/.test(m2) && /@<TRIPOS>BOND/.test(m2));
 
 console.log('== mmCIF + AlphaFold (network) ==');
 try {
