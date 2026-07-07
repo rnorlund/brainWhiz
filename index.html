@@ -3573,7 +3573,7 @@ function buildAxisLabels(box, r){
     if(axis==='x') m.rotation.z=Math.PI/2; if(axis==='z') m.rotation.x=Math.PI/2; return m; };
   axisLineGroup.add(cyl(2*hx,'x')); axisLineGroup.add(cyl(2*hy,'y')); axisLineGroup.add(cyl(2*hz,'z'));
 }
-$('axisLines').addEventListener('change', e=>axisLineGroup.visible=e.target.checked);
+$('axisLines').addEventListener('change', e=>{ axisLineGroup.visible=e.target.checked; if(typeof sliceRenderAll==='function') sliceRenderAll(); });   // also governs slice crosshairs
 $('axisLetters').addEventListener('change', e=>axisLetterGroup.visible=e.target.checked);
 axisLineGroup.visible=$('axisLines').checked; axisLetterGroup.visible=$('axisLetters').checked;   // off by default
 function rebuildAxes(){ if(_axisBox) buildAxisLabels(_axisBox,_axisR); }
@@ -5372,7 +5372,7 @@ function renderMeshSlices(){
       ctx.save(); ctx.clip(unionPath,'evenodd'); ctx.drawImage(ovImg, ox, oy); ctx.restore();
       if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(unionPath); } }   // region borders on top
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
-    if($('slCross').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
+    if($('slCross').checked && $('axisLines').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
     cv._plane={plane,ox,oy,dw,dh,hmin:win.hmin,hr:win.hr,vmax:win.vmax,vr:win.vr,mesh:true};
@@ -5513,7 +5513,7 @@ function renderPlane(cv, plane){
   ctx.putImageData(img,ox,oy);
   const toX=h=>ox+((h-hmin)/hr)*dw, toY=v=>oy+((vmax-v)/vr)*dh;
   drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
-  if($('slCross').checked){ const c=crossInplane(plane);
+  if($('slCross').checked && $('axisLines').checked){ const c=crossInplane(plane);
     const cx=toX(c[0]), cy=toY(c[1]);
     ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
