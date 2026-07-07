@@ -122,7 +122,7 @@
 <!-- RIGHT: appearance -->
 <div id="sidebarR" class="side hidden">
   <div class="grp"><div class="lbl">Representation</div>
-    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button><button data-rep="surface">Surface</button><button data-rep="atomic">⚛ Atoms</button></div>
+    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button><button data-rep="surface">Surface</button><button data-rep="atomic">⚛ Atoms</button><button data-rep="voronoi">◆ Cells</button></div>
     <div class="row" style="margin-top:7px"><label>Atom shape</label>
       <select id="atomShape"><option value="sphere">Sphere</option><option value="cube">Cube</option><option value="ico">Icosahedron</option><option value="octa">Octahedron</option><option value="tetra">Tetrahedron</option><option value="dodeca">Dodecahedron</option><option value="cone">Cone</option><option value="torus">Torus</option><option value="cyl">Cylinder</option><option value="diamond">Diamond</option></select></div>
     <div class="row"><label>Connector</label>
@@ -229,7 +229,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v1.0'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v1.1'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -255,7 +255,7 @@ function loop(){ requestAnimationFrame(loop); controls.update();
   renderer.render(scene,camera); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
-let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], auraGroup=null, pickList=[], isDNA=false, molR=30;
+let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], auraGroup=null, voronoiGroup=null, pickList=[], isDNA=false, molR=30;
 let curRep='bas', curCol='element', curClipAxis='x';
 
 // ---------- parsers ----------
@@ -400,7 +400,8 @@ function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.rem
   if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; }
   if(surfMesh){ molGroup.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); surfMesh=null; }
   if(atomicGroup){ molGroup.remove(atomicGroup); atomicGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); atomicGroup=null; electronOrbits=[]; }
-  if(auraGroup){ molGroup.remove(auraGroup); auraGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); auraGroup=null; } }
+  if(auraGroup){ molGroup.remove(auraGroup); auraGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); auraGroup=null; }
+  if(voronoiGroup){ molGroup.remove(voronoiGroup); voronoiGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); voronoiGroup=null; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
 // geometric secondary-structure guess (for AlphaFold/mmCIF with no HELIX/SHEET records): CA-CA spacing
@@ -565,8 +566,47 @@ function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=
     for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
     im.instanceMatrix.needsUpdate=true; im.frustumCulled=false; auraGroup.add(im); }
   molGroup.add(auraGroup); }
+// ---------- Voronoi tessellation: each atom's convex domain = a cube clipped by bisector planes to neighbours ----------
+function cubeFaces(c,h){ const V=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].map(v=>new THREE.Vector3(c.x+v[0]*h,c.y+v[1]*h,c.z+v[2]*h));
+  const F=[[0,3,2,1],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,4,7,3]]; return F.map(f=>({verts:f.map(i=>V[i].clone())})); }
+function clipPoly(faces,pn,pd){ const eps=1e-7, out=[], cap=[]; const sd=p=>pn.x*p.x+pn.y*p.y+pn.z*p.z-pd;
+  for(const f of faces){ const vs=f.verts, m=vs.length, keep=[], cr=[];
+    for(let i=0;i<m;i++){ const a=vs[i], b=vs[(i+1)%m], da=sd(a), db=sd(b);
+      if(da<=eps) keep.push(a);
+      if((da<-eps&&db>eps)||(da>eps&&db<-eps)){ const t=da/(da-db), ip=a.clone().lerp(b,t); keep.push(ip); cr.push(ip); } }
+    if(keep.length>=3) out.push({verts:keep}); if(cr.length>=2) cap.push(cr[0],cr[cr.length-1]); }
+  const uniq=[]; for(const p of cap){ if(!uniq.some(q=>q.distanceToSquared(p)<1e-8)) uniq.push(p); }
+  if(uniq.length>=3){ const c=new THREE.Vector3(); uniq.forEach(p=>c.add(p)); c.multiplyScalar(1/uniq.length);
+    let u=Math.abs(pn.x)>0.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0); u=new THREE.Vector3().crossVectors(pn,u).normalize(); const w=new THREE.Vector3().crossVectors(pn,u).normalize();
+    uniq.sort((a,b)=>Math.atan2(a.clone().sub(c).dot(w),a.clone().sub(c).dot(u))-Math.atan2(b.clone().sub(c).dot(w),b.clone().sub(c).dot(u)));
+    out.push({verts:uniq}); }
+  return out; }
+function buildVoronoi(){ voronoiGroup=new THREE.Group(); const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; idx.push(i); }
+  if(!idx.length){ molGroup.add(voronoiGroup); return; }
+  if(idx.length>400){ $('status').textContent=`${idx.length} atoms — Cells view is for smaller molecules (≤400)`; molGroup.add(voronoiGroup); return; }
+  const H=3.0, CUT=2*H, C2=CUT*CUT, pos=[], col=[], tmp=new THREE.Color();
+  for(const i of idx){ const a=A[i], ci=new THREE.Vector3(a.x,a.y,a.z); let faces=cubeFaces(ci,H);
+    for(const j of idx){ if(j===i)continue; const b=A[j], dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z, d2=dx*dx+dy*dy+dz*dz; if(d2>C2||d2<1e-6)continue;
+      const pn=new THREE.Vector3(dx,dy,dz).normalize(), mid=new THREE.Vector3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2), pd=pn.dot(mid);
+      faces=clipPoly(faces,pn,pd); if(!faces.length)break; }
+    tmp.set(atomColor(a));
+    for(const f of faces){ const v=f.verts; for(let t=1;t+1<v.length;t++){ // fan triangulate
+      pos.push(v[0].x,v[0].y,v[0].z, v[t].x,v[t].y,v[t].z, v[t+1].x,v[t+1].y,v[t+1].z);
+      for(let q=0;q<3;q++) col.push(tmp.r,tmp.g,tmp.b); } } }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); g.computeVertexNormals();
+  const mat=makeMat(); mat.vertexColors=true; mat.side=THREE.DoubleSide; mat.flatShading=true; if($('surfOpac')&&+$('surfOpac').value<1){ mat.transparent=true; mat.opacity=+$('surfOpac').value; }
+  const mesh=new THREE.Mesh(g,mat); voronoiGroup.add(mesh);
+  // cell edges (wireframe overlay) for a crisp tessellation look
+  const eg=new THREE.WireframeGeometry(g); voronoiGroup.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x0a0e16,transparent:true,opacity:0.35})));
+  molGroup.add(voronoiGroup); $('status').textContent=`${idx.length} atoms · Voronoi cells`;
+  // reframe camera to the cells (they extend up to H beyond the atoms) keeping current view angle
+  let Rc=5; for(let k=0;k<pos.length;k+=3) Rc=Math.max(Rc,Math.hypot(pos[k],pos[k+1],pos[k+2]));
+  const dir=camera.position.clone().sub(controls.target); if(dir.lengthSq()<1e-6)dir.set(0,0,1); dir.normalize();
+  camera.position.copy(controls.target).add(dir.multiplyScalar(Rc/Math.sin(camera.fov*Math.PI/360)*1.2)); controls.update(); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
   if(curRep==='atomic'){ buildAtomic(); buildAura(); return; }
+  if(curRep==='voronoi'){ buildVoronoi(); buildAura(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
     if($('surfLig').checked) buildLigands();
     buildAura(); $('status').textContent=`${A.length} atoms · surface`; return; }

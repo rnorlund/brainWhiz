@@ -48,6 +48,13 @@ for (const r of ['bas','space','stick','surface','atomic']) {
 }
 ok(`surface produced triangles (${surfTris})`, surfTris > 0);
 
+console.log('== Voronoi cells ==');
+await load('caffeine'); await settle(150);
+await rep('voronoi'); await settle(700);
+ok('Voronoi cells built', /Voronoi cells/.test(await status()));
+await shot('pw_voronoi.png');
+await rep('bas'); await settle(200);
+
 console.log('== materials / matcaps ==');
 await rep('bas'); await settle(200);
 for (const mat of ['glossy','metal','toon','glass','matcap:Gold','matcap:Pearl','matcap:Chrome']) {
