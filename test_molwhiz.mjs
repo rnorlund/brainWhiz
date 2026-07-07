@@ -130,6 +130,20 @@ await page.evaluate(() => window.__mol.builderFragment('water'));
 ok('snap +H2O no errors', errs.length === 0);
 await shot('pw_builder.png');
 
+console.log('== mmCIF + AlphaFold (network) ==');
+try {
+  const cifAtoms = await page.evaluate(async () => {
+    const r = await fetch('https://files.rcsb.org/download/1CRN.cif'); const t = await r.text();
+    return window.__mol.parseCIF(t).atoms.length;
+  });
+  ok(`mmCIF parse 1CRN.cif (${cifAtoms} atoms)`, cifAtoms > 300);
+  await page.evaluate(() => window.__mol.fetchAlphaFold('P00698'));
+  await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent) && !/fetch|AlphaFold:/.test(document.getElementById('status').textContent), { timeout: 20000 });
+  const afN = await page.evaluate(() => window.__mol.MOL.atoms.length);
+  ok(`AlphaFold P00698 (lysozyme) loaded (${afN} atoms)`, afN > 500);
+  await rep('cartoon'); await settle(800); await shot('pw_alphafold.png');
+} catch (e) { console.log('  (skipped mmCIF/AlphaFold — network:', String(e).slice(0,60), ')'); }
+
 console.log('\n== page errors ==');
 ok('no uncaught page errors', errs.length === 0);
 if (errs.length) errs.slice(0,5).forEach(e => console.log('   !', e.slice(0,120)));

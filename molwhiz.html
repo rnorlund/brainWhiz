@@ -58,6 +58,7 @@
     <optgroup label="Small molecules (offline)"><option value="ex:caffeine">Caffeine</option><option value="ex:benzene">Benzene</option><option value="ex:ethanol">Ethanol</option><option value="ex:water">Water</option><option value="ex:methane">Methane</option></optgroup>
     <optgroup label="Proteins"><option value="pdb:1CRN">Crambin (1CRN)</option><option value="pdb:1UBQ">Ubiquitin (1UBQ)</option><option value="pdb:3I40">Insulin (3I40)</option><option value="pdb:1HHO">Hemoglobin (1HHO)</option><option value="pdb:1IGT">Antibody IgG (1IGT)</option></optgroup>
     <optgroup label="Bound complexes (+ ligand)"><option value="pdb:1HSG">HIV protease + drug (1HSG)</option><option value="pdb:6LU7">SARS-CoV-2 Mpro + inhibitor (6LU7)</option><option value="pdb:1STP">Streptavidin + biotin (1STP)</option><option value="pdb:2HHB">Hemoglobin + heme (2HHB)</option></optgroup>
+    <optgroup label="🔮 AlphaFold (predicted, by UniProt)"><option value="af:P69905">Hemoglobin α (P69905)</option><option value="af:P01308">Insulin (P01308)</option><option value="af:P04637">p53 tumour suppressor (P04637)</option><option value="af:P00698">Lysozyme C (P00698)</option><option value="af:P0DTC2">SARS-CoV-2 spike (P0DTC2)</option></optgroup>
     <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option></optgroup>
   </select>
   <input type="text" id="pdbid" placeholder="PDB ID (1CRN)" maxlength="8" style="max-width:130px;text-transform:uppercase">
@@ -71,9 +72,10 @@
 <!-- LEFT: functions -->
 <div id="sidebar" class="side">
   <div class="grp"><div class="lbl">Load structure</div>
-    <div class="row"><button id="openBtn" style="flex:1">📂 Open .pdb / .sdf / .xyz…</button>
-      <input type="file" id="file" accept=".pdb,.ent,.sdf,.mol,.mol2,.xyz" style="display:none"></div>
+    <div class="row"><button id="openBtn" style="flex:1">📂 Open .pdb / .cif / .sdf / .xyz…</button>
+      <input type="file" id="file" accept=".pdb,.ent,.cif,.mmcif,.sdf,.mol,.mol2,.xyz" style="display:none"></div>
     <div class="row"><span style="font-size:11px;color:var(--muted)">…or drag a file anywhere · or Fetch a PDB ID above</span></div>
+    <div class="row" style="margin-top:5px"><input type="text" id="afid" placeholder="UniProt (P69905)" maxlength="10" style="text-transform:uppercase"><button id="afBtn" title="fetch predicted structure from AlphaFold">🔮 AlphaFold</button></div>
     <div id="status">caffeine</div>
   </div>
   <div class="grp"><div class="lbl">🧬 Build B-DNA from sequence</div>
@@ -221,7 +223,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v0.8'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v0.9'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
@@ -269,6 +271,24 @@ function parseXYZ(text){ const L=text.split(/\r?\n/), n=+L[0], atoms=[];
 function parseSDF(text){ const L=text.split(/\r?\n/), c=L[3]||'', na=+c.slice(0,3), nb=+c.slice(3,6), atoms=[],bonds=[];
   for(let i=0;i<na;i++){ const l=L[4+i]; atoms.push({el:l.slice(31,34).trim().toUpperCase(),x:+l.slice(0,10),y:+l.slice(10,20),z:+l.slice(20,30),name:l.slice(31,34).trim(),resName:'LIG',resSeq:'1',chain:'A',serial:i+1}); }
   for(let i=0;i<nb;i++){ const l=L[4+na+i]; bonds.push([(+l.slice(0,3))-1,(+l.slice(3,6))-1]); } return {atoms,bonds}; }
+// minimal mmCIF: read the _atom_site loop (+ _struct_conf helices, _struct_sheet_range sheets)
+function parseCIF(text){ const L=text.split(/\r?\n/), atoms=[], helix=new Set(), sheet=new Set();
+  const addRange=(ch,a,b,set)=>{ if(!isFinite(a)||!isFinite(b))return; for(let s=a;s<=b;s++) set.add(ch+':'+s); };
+  for(let i=0;i<L.length;i++){ if(L[i].trim()!=='loop_') continue;
+    const tags=[]; let j=i+1; while(j<L.length && L[j].trim().startsWith('_')){ tags.push(L[j].trim().split(/\s+/)[0]); j++; }
+    const pre = tags[0]||'';
+    const rows=[]; for(; j<L.length; j++){ const t=L[j].trim(); if(t===''||t==='#'||t==='loop_'||t.startsWith('_')) break; if(t.startsWith(';')) continue; rows.push(t); }
+    if(pre.startsWith('_atom_site.')){ const idx={}; tags.forEach((t,k)=>idx[t.replace('_atom_site.','')]=k);
+      for(const row of rows){ const f=row.match(/"[^"]*"|'[^']*'|\S+/g); if(!f||f.length<tags.length) continue; const g=k=>{ const v=f[idx[k]]; return v==null?'':v.replace(/^['"]|['"]$/g,''); };
+        const x=+g('Cartn_x'),y=+g('Cartn_y'),z=+g('Cartn_z'); if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
+        let el=g('type_symbol').toUpperCase(); const name=g('label_atom_id'); if(!el) el=name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase();
+        atoms.push({el,x,y,z,name,resName:g('label_comp_id'),resSeq:g('auth_seq_id')||g('label_seq_id')||'1',chain:g('auth_asym_id')||g('label_asym_id')||'A',serial:atoms.length+1,het:g('group_PDB')==='HETATM'}); }
+      i=j-1; }
+    else if(pre.startsWith('_struct_conf.')){ const idx={}; tags.forEach((t,k)=>idx[t.replace('_struct_conf.','')]=k);
+      for(const row of rows){ const f=row.match(/"[^"]*"|'[^']*'|\S+/g); if(!f)continue; addRange(f[idx.beg_auth_asym_id]||'A', +f[idx.beg_auth_seq_id], +f[idx.end_auth_seq_id], helix); } i=j-1; }
+    else if(pre.startsWith('_struct_sheet_range.')){ const idx={}; tags.forEach((t,k)=>idx[t.replace('_struct_sheet_range.','')]=k);
+      for(const row of rows){ const f=row.match(/"[^"]*"|'[^']*'|\S+/g); if(!f)continue; addRange(f[idx.beg_auth_asym_id]||'A', +f[idx.beg_auth_seq_id], +f[idx.end_auth_seq_id], sheet); } i=j-1; } }
+  return {atoms, bonds:[], ss:{helix,sheet}}; }
 function inferBonds(atoms){ const bonds=[], n=atoms.length, cell=3.2, grid=new Map(), key=(a,b,c)=>a+','+b+','+c;
   for(let i=0;i<n;i++){ const a=atoms[i], gx=Math.floor(a.x/cell),gy=Math.floor(a.y/cell),gz=Math.floor(a.z/cell), k=key(gx,gy,gz); (grid.get(k)||grid.set(k,[]).get(k)).push(i); }
   for(let i=0;i<n;i++){ const a=atoms[i], gx=Math.floor(a.x/cell),gy=Math.floor(a.y/cell),gz=Math.floor(a.z/cell);
@@ -377,6 +397,14 @@ function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.rem
   if(auraGroup){ molGroup.remove(auraGroup); auraGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); auraGroup=null; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
+// geometric secondary-structure guess (for AlphaFold/mmCIF with no HELIX/SHEET records): CA-CA spacing
+function computeSS(atoms){ const helix=new Set(), sheet=new Set(), byChain={};
+  atoms.forEach(a=>{ if(!a.het && a.name==='CA'){ (byChain[a.chain]||(byChain[a.chain]=[])).push(a); } });
+  for(const ch in byChain){ const cas=byChain[ch]; cas.sort((p,q)=>(+p.resSeq)-(+q.resSeq)); const n=cas.length;
+    const d=(i,j)=>(i<0||j>=n)?1e9:Math.hypot(cas[i].x-cas[j].x,cas[i].y-cas[j].y,cas[i].z-cas[j].z);
+    for(let i=0;i+4<n;i++){ if(d(i,i+2)<6.2 && d(i,i+3)<6.0 && d(i,i+4)<6.7){ for(let k=i;k<=i+4;k++) helix.add(ch+':'+cas[k].resSeq); } }   // α-helix
+    for(let i=0;i+2<n;i++){ const dd=d(i,i+2); if(dd>6.2 && dd<7.6 && !helix.has(ch+':'+cas[i].resSeq)){ sheet.add(ch+':'+cas[i].resSeq); sheet.add(ch+':'+cas[i+1].resSeq); sheet.add(ch+':'+cas[i+2].resSeq); } } }   // extended strand
+  return {helix,sheet}; }
 function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
   for(const a of MOL.atoms){ if(!a.het && a.name==='CA'){ (chains.get(a.chain)||chains.set(a.chain,[]).get(a.chain)).push(a); } }
   const chainCol=ch=>{ let h=0; for(const c of ch)h+=c.charCodeAt(0); return PAL[h%PAL.length]; };
@@ -559,6 +587,7 @@ function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms
   if(!m.bonds.length || (m._hasConect && m.bonds.length<m.atoms.length/2)) m.bonds=m.bonds.concat(inferBonds(m.atoms));
   let cx=0,cy=0,cz=0; for(const a of m.atoms){cx+=a.x;cy+=a.y;cz+=a.z;} cx/=m.atoms.length;cy/=m.atoms.length;cz/=m.atoms.length;
   for(const a of m.atoms){a.x-=cx;a.y-=cy;a.z-=cz;} MOL=m; isDNA=!!m._dna;
+  if((!m.ss || (m.ss.helix.size===0 && m.ss.sheet.size===0)) && m.atoms.some(a=>a.name==='CA')) m.ss=computeSS(m.atoms);   // AlphaFold/mmCIF have no SS records
   molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z)));   // radius for clip-plane range
   measSel=[]; if(measGroup){ molGroup.remove(measGroup); measGroup=null; } if($('measOut'))$('measOut').textContent='';
   if($('atomProps'))$('atomProps').classList.remove('on');
@@ -707,6 +736,7 @@ $('apX').addEventListener('click',()=>$('atomProps').classList.remove('on'));
 $('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) return;
   if(v.startsWith('ex:')){ const k=v.slice(3); if(EX[k]) loadMol(EX[k](),k); }
   else if(v==='dna:build'){ buildDNA($('dnaSeq').value); }
+  else if(v.startsWith('af:')){ const acc=v.slice(3); $('afid').value=acc; fetchAlphaFold(acc); }
   else if(v.startsWith('pdb:')){ const id=v.slice(4); $('pdbid').value=id; fetchPdb(id); } });
 $('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.value));
 $('fitBtn').addEventListener('click',fitCamera);
@@ -725,13 +755,24 @@ $('dnaBtn').addEventListener('click',()=>buildDNA($('dnaSeq').value));
 $('dnaRand').addEventListener('click',()=>{ const b='ATGC'; let s=''; for(let i=0;i<18+Math.floor(Math.random()*10);i++) s+=b[Math.floor(Math.random()*4)]; $('dnaSeq').value=s; buildDNA(s); });
 $('openBtn').addEventListener('click',()=>$('file').click());
 $('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readFile(f); e.target.value=''; });
-function parseByName(t,n){ n=n.toLowerCase(); if(n.endsWith('.xyz'))return parseXYZ(t); if(n.endsWith('.sdf')||n.endsWith('.mol'))return parseSDF(t); return parsePDB(t); }
+function parseByName(t,n){ n=n.toLowerCase(); if(n.endsWith('.xyz'))return parseXYZ(t); if(n.endsWith('.sdf')||n.endsWith('.mol'))return parseSDF(t); if(n.endsWith('.cif')||n.endsWith('.mmcif'))return parseCIF(t); return parsePDB(t); }
 function readFile(f){ const r=new FileReader(); r.onload=()=>{ try{ loadMol(parseByName(r.result,f.name),f.name); }catch(err){ $('status').textContent='parse error: '+err.message; } }; r.readAsText(f); }
 $('fetchBtn').addEventListener('click',fetchPdb); $('pdbid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchPdb(); });
+$('afBtn').addEventListener('click',fetchAlphaFold); $('afid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchAlphaFold(); });
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
-  try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); }
+  try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); return; }
+  catch(err){ /* large/modern entries may be mmCIF-only → fall back to .cif */ }
+  try{ const r=await fetch(`https://files.rcsb.org/download/${id}.cif`); if(!r.ok) throw new Error(r.status); loadMol(parseCIF(await r.text()),id); }
   catch(err){ $('status').textContent='fetch failed ('+err.message+') — try Open file'; } }
+// AlphaFold: predicted structure by UniProt accession. Ask the API for the current model URL
+// (versions bump over time — v6 as of 2025), then fall back to versioned direct URLs.
+async function fetchAlphaFold(accArg){ const acc=(typeof accArg==='string'?accArg:$('afid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{6,10}$/.test(acc)){ $('status').textContent='enter a UniProt accession (e.g. P69905)'; return; }
+  $('status').textContent='fetching AlphaFold '+acc+' …';
+  try{ const meta=await fetch(`https://alphafold.ebi.ac.uk/api/prediction/${acc}`); if(meta.ok){ const j=await meta.json(); const rec=j&&j[0], url=rec&&(rec.pdbUrl||rec.cifUrl);
+    if(url){ const r=await fetch(url); if(r.ok){ const t=await r.text(); loadMol(url.endsWith('.cif')?parseCIF(t):parsePDB(t),'AF-'+acc); return; } } } }catch(e){}
+  for(const v of ['v6','v5','v4','v3','v2']){ try{ const r=await fetch(`https://alphafold.ebi.ac.uk/files/AF-${acc}-F1-model_${v}.pdb`); if(!r.ok) continue; loadMol(parsePDB(await r.text()),'AF-'+acc); return; }catch(e){} }
+  $('status').textContent='AlphaFold: no model for '+acc; }
 const dz=$('drop'); let dc=0;
 addEventListener('dragenter',e=>{e.preventDefault();dc++;dz.classList.add('on');});
 addEventListener('dragover',e=>e.preventDefault());
@@ -742,5 +783,6 @@ loadMol(EX.caffeine(),'caffeine'); $('example').value='ex:caffeine';
 window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
   shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps,
-  builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();}};
+  builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
+  fetchPdb, fetchAlphaFold, parseCIF};
 </script>
