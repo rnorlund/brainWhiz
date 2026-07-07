@@ -1,5 +1,5 @@
 {
-  "title": "brainWhiz: interactive multi-atlas exploding-brain viewer and figure tooling",
+  "title": "brainWhiz: interactive multi-atlas visualization of brain parcellations and region-mapped data",
   "description": "brainWhiz is a static, single-page Three.js viewer for multi-atlas neuroimaging figures. It renders brain parcellations in 3D, colors regions by per-region CSV values or voxelwise .nii statistical maps (auto-matching a CSV to its atlas), draws DTI / resting-state connectivity, shows native-resolution slices and mosaics, and composes publication-ready figure panels — entirely in the browser. Bundled atlases, NeuroQuery task maps, and connectivity are third-party data with their own terms, for non-commercial research; cite the original sources.",
   "upload_type": "software",
   "access_right": "open",

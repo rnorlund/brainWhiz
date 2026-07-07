@@ -351,7 +351,7 @@ context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or h
 Cite the **concept DOI** [`10.5281/zenodo.21246441`](https://doi.org/10.5281/zenodo.21246441) — it always
 resolves to the latest version. APA:
 
-> Newman-Norlund, R. (2026). *brainWhiz: Interactive multi-atlas exploding-brain viewer and figure tooling* (Version 1.2.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21246441
+> Newman-Norlund, R. (2026). *brainWhiz: Interactive multi-atlas visualization of brain parcellations and region-mapped data* (Version 1.2.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21246441
 
 Please also cite the original atlas / NeuroQuery / connectivity sources used in your figure.
 
