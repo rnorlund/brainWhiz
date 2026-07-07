@@ -101,7 +101,7 @@
 <!-- RIGHT: appearance -->
 <div id="sidebarR" class="side hidden">
   <div class="grp"><div class="lbl">Representation</div>
-    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button><button data-rep="surface">Surface</button></div>
+    <div class="seg" id="repSeg"><button data-rep="bas" class="on">Ball &amp; stick</button><button data-rep="space">Spacefill</button><button data-rep="stick">Sticks</button><button data-rep="cartoon">Cartoon</button><button data-rep="surface">Surface</button><button data-rep="atomic">⚛ Atoms</button></div>
     <div class="row" style="margin-top:7px"><label>Atom shape</label>
       <select id="atomShape"><option value="sphere">Sphere</option><option value="cube">Cube</option><option value="ico">Icosahedron</option><option value="octa">Octahedron</option><option value="tetra">Tetrahedron</option><option value="dodeca">Dodecahedron</option><option value="cone">Cone</option><option value="torus">Torus</option><option value="cyl">Cylinder</option><option value="diamond">Diamond</option></select></div>
     <div class="row"><label>Connector</label>
@@ -117,6 +117,13 @@
       <optgroup label="Matcap (baked studio)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="row"><label class="tog"><input type="checkbox" id="rim"> rim glow</label></div>
     <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
+  </div>
+  <div class="grp"><div class="lbl">⚛ Atomic view (Bohr model)</div>
+    <div class="row"><label>Spread</label><input type="range" id="atSpread" min="1.5" max="8" step="0.5" value="4"><span class="num" id="atSpreadV">4.0</span></div>
+    <div class="row"><label>Nucleus size</label><input type="range" id="atNuc" min="0.4" max="2" step="0.1" value="1"><span class="num" id="atNucV">1.0</span></div>
+    <div class="row"><label>e⁻ speed</label><input type="range" id="atESpeed" min="0" max="3" step="0.1" value="1"><span class="num" id="atESpeedV">1.0</span></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="atShells" checked> show shell rings</label></div>
+    <div style="font-size:10px;color:var(--muted);line-height:1.45">Protons red · neutrons grey · electrons cyan. Bonding pairs orbit the bond; lone pairs sit on the atom. Best for small molecules (water, methane…).</div>
   </div>
   <div class="grp"><div class="lbl">✂ Clip / section cut</div>
     <div class="row"><label class="tog"><input type="checkbox" id="clipOn"> enable cut</label></div>
@@ -203,15 +210,19 @@ const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-
 const molGroup=new THREE.Group(); scene.add(molGroup);
 function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize',resize); resize();
-const spinAx={x:false,y:false,z:false}; let rockPhase=0;
-(function loop(){ requestAnimationFrame(loop); controls.update();
+const spinAx={x:false,y:false,z:false}; let rockPhase=0, electronT=0;
+function loop(){ requestAnimationFrame(loop); controls.update();
   const s=+$('spinSpeed').value*0.01;
   if($('rockMode').checked){ rockPhase+=s; const off=Math.sin(rockPhase)*0.6;   // gentle oscillation on active axes
     if(spinAx.x)molGroup.rotation.x=off; if(spinAx.y)molGroup.rotation.y=off; if(spinAx.z)molGroup.rotation.z=off; }
   else { if(spinAx.x)molGroup.rotation.x+=s; if(spinAx.y)molGroup.rotation.y+=s; if(spinAx.z)molGroup.rotation.z+=s; }
-  renderer.render(scene,camera); })();
+  if(electronOrbits.length){ electronT+=0.016; for(const o of electronOrbits){ const c=o.c,u=o.u,v=o.v,r=o.r;
+    for(const e of o.es){ const ca=Math.cos(e.ph+electronT*e.sp)*r, sa=Math.sin(e.ph+electronT*e.sp)*r;
+      e.mesh.position.set(c.x+u.x*ca+v.x*sa, c.y+u.y*ca+v.y*sa, c.z+u.z*ca+v.z*sa); } } }
+  renderer.render(scene,camera); }
+requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
-let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, pickList=[], isDNA=false, molR=30;
+let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], pickList=[], isDNA=false, molR=30;
 let curRep='bas', curCol='element', curClipAxis='x';
 
 // ---------- parsers ----------
@@ -336,7 +347,8 @@ function bondGeom(){ switch($('bondShape').value){
 const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_v=new THREE.Vector3(),_up=new THREE.Vector3(0,1,0),_s=new THREE.Vector3(),_c=new THREE.Color();
 function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[];
   if(cartoonGroup){ molGroup.remove(cartoonGroup); cartoonGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); cartoonGroup=null; }
-  if(surfMesh){ molGroup.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); surfMesh=null; } }
+  if(surfMesh){ molGroup.remove(surfMesh); surfMesh.geometry.dispose(); surfMesh.material.dispose(); surfMesh=null; }
+  if(atomicGroup){ molGroup.remove(atomicGroup); atomicGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }); atomicGroup=null; electronOrbits=[]; } }
 // backbone cartoon: smooth Catmull-Rom tube through CA atoms per chain, radius+colour by secondary structure
 function ssOf(a){ const k=a.chain+':'+a.resSeq; if(MOL.ss&&MOL.ss.helix.has(k))return'H'; if(MOL.ss&&MOL.ss.sheet.has(k))return'E'; return'C'; }
 function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
@@ -439,7 +451,50 @@ function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
   if(curCol!=='none') mat.vertexColors=true; else mat.color.set('#8fd0ff');
   if(opac<1){ mat.transparent=true; mat.opacity=opac; }
   return new THREE.Mesh(g, mat); }
+// ---------- atomic / electron view (educational Bohr model: nucleus + shells + shared/lone pairs) ----------
+function bohrShells(Z){ let rem=Z, s=[], n=1; while(rem>0){ const cap=2*n*n, c=Math.min(cap,rem); s.push(c); rem-=c; n++; } return s; }   // 2,8,18,… (light-atom teaching model)
+const _perp=a=>{ const t=Math.abs(a.x)<0.9?new THREE.Vector3(1,0,0):new THREE.Vector3(0,1,0); const u=new THREE.Vector3().crossVectors(a,t).normalize(); const v=new THREE.Vector3().crossVectors(a,u).normalize(); return [u,v]; };
+function addOrbit(grp,c,axis,r,electrons,speed,eMat){ const [u,v]=_perp(axis.clone().normalize());
+  if($('atShells').checked){ const ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.018*r+0.01,6,48), new THREE.MeshBasicMaterial({color:0x2d4a6a,transparent:true,opacity:0.6}));
+    const m=new THREE.Matrix4().makeBasis(u,v,axis.clone().normalize()); m.setPosition(c); ring.applyMatrix4(m); grp.add(ring); }
+  const es=[]; for(let i=0;i<electrons;i++){ const e=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), eMat); grp.add(e); es.push({mesh:e, ph:i/electrons*Math.PI*2, sp:speed}); }
+  electronOrbits.push({c:c.clone(), u, v, r, es}); }
+function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const A=MOL.atoms, hideSolv=$('hideSolvent').checked, showH=$('showH').checked;
+  const SP=+$('atSpread').value, NS=+$('atNuc').value, ESP=+$('atESpeed').value;
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(ELEM[(a.el||'').replace('BASE_','')]) idx.push(i); }
+  if(!idx.length){ $('status').textContent='atomic view needs simple elements (H,C,N,O…)'; molGroup.add(atomicGroup); return; }
+  const eMat=new THREE.MeshStandardMaterial({color:0x7ecbff,emissive:0x2a6bd0,emissiveIntensity:0.9,roughness:0.4});
+  const pMat=new THREE.MeshStandardMaterial({color:0xff4a4a,emissive:0x501010,emissiveIntensity:0.35,roughness:0.5});
+  const nMat=new THREE.MeshStandardMaterial({color:0xb8bcc4,roughness:0.6});
+  const P=i=>new THREE.Vector3(A[i].x*SP,A[i].y*SP,A[i].z*SP);
+  // bonds among shown atoms
+  const shown=new Set(idx), bondsOf={}; idx.forEach(i=>bondsOf[i]=0);
+  const useBonds=MOL.bonds.filter(b=>shown.has(b[0])&&shown.has(b[1])); useBonds.forEach(b=>{bondsOf[b[0]]++;bondsOf[b[1]]++;});
+  for(const i of idx){ const a=A[i], sym=(a.el||'').replace('BASE_',''), e=ELEM[sym], Z=e[1], mass=e[2], N=Math.max(0,Math.round(mass)-Z), pos=P(i);
+    // nucleus: pack Z protons + N neutrons (fibonacci sphere), protons/neutrons interleaved
+    const T=Z+N, rn=(0.16+0.06*Math.cbrt(T))*NS, nucR=0.5*rn, ga=Math.PI*(3-Math.sqrt(5));
+    const nuc=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8), new THREE.MeshStandardMaterial({roughness:0.5,vertexColors:false}), T);
+    nuc.material.dispose(); const nucMat=new THREE.MeshStandardMaterial({roughness:0.5}); nuc.material=nucMat;
+    const _mm=new THREE.Matrix4(), _cc=new THREE.Color(); let pc=0,nc=0;
+    for(let k=0;k<T;k++){ const y=T>1?1-2*(k+0.5)/T:0, rr=Math.sqrt(Math.max(0,1-y*y)), th=k*ga, rad=rn*(0.35+0.65*Math.cbrt((k+1)/T));
+      const px=pos.x+rad*rr*Math.cos(th), py=pos.y+rad*y, pz=pos.z+rad*rr*Math.sin(th);
+      _mm.makeScale(nucR,nucR,nucR); _mm.setPosition(px,py,pz); nuc.setMatrixAt(k,_mm);
+      const proton=(k%2===0 && pc<Z)|| nc>=N; if(proton){ _cc.set('#ff4a4a'); pc++; } else { _cc.set('#b8bcc4'); nc++; } nuc.setColorAt(k,_cc); }
+    nuc.instanceMatrix.needsUpdate=true; if(nuc.instanceColor)nuc.instanceColor.needsUpdate=true; atomicGroup.add(nuc);
+    // shells: core shells drawn full; valence shell holds only the NON-bonding (lone) electrons
+    const sh=bohrShells(Z), nb=bondsOf[i]||0, valIdx=sh.length-1;
+    for(let s=0;s<sh.length;s++){ let cnt=sh[s]; if(s===valIdx) cnt=Math.max(0, sh[s]-Math.min(nb,sh[s]));   // bonding e⁻ move into shared pairs
+      if(cnt<=0 && s===valIdx) continue;
+      const axis=new THREE.Vector3(Math.sin(s*1.3),Math.cos(s*2.1),Math.sin(s*0.7)+0.4).normalize();
+      addOrbit(atomicGroup,pos,axis,rn+ (0.9+0.7*s)*NS*0.9, cnt, ESP*(1.6/(s+1)), eMat); }
+  }
+  // bonding electron PAIRS: 2 shared e⁻ orbit the bond midpoint (perpendicular ring)
+  for(const b of useBonds){ const p0=P(b[0]),p1=P(b[1]), mid=p0.clone().add(p1).multiplyScalar(0.5), axis=p1.clone().sub(p0).normalize();
+    addOrbit(atomicGroup, mid, axis, 0.42*NS+0.1, 2, ESP*1.4, eMat); }
+  molGroup.add(atomicGroup);
+  $('status').textContent=`${idx.length} atoms · atomic (Bohr) view · ${electronOrbits.reduce((s,o)=>s+o.es.length,0)} e⁻`; }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
+  if(curRep==='atomic'){ buildAtomic(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
     if($('surfLig').checked) buildLigands();
     $('status').textContent=`${A.length} atoms · surface`; return; }
@@ -545,6 +600,8 @@ $('spinSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); i
 const bindRange=(id,fn)=>{ const el=$(id), v=$(id+'V'); el.addEventListener('input',()=>{ if(v)v.textContent=(+el.value).toFixed(el.step&&+el.step<0.1?2:1); (fn||rebuild)(); }); };
 bindRange('atomScale'); bindRange('bondR'); bindRange('spinSpeed',()=>{});
 bindRange('surfQual'); bindRange('surfProbe'); bindRange('surfOpac'); $('surfLig').addEventListener('change',rebuild);
+const rebuildIfAtomic=()=>{ if(curRep==='atomic') rebuild(); };
+bindRange('atSpread',rebuildIfAtomic); bindRange('atNuc',rebuildIfAtomic); bindRange('atESpeed',rebuildIfAtomic); $('atShells').addEventListener('change',rebuildIfAtomic);
 ['dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung'].forEach(id=>bindRange(id, rebuildDNAIfActive));
 ['colA','colT','colG','colC','colBB'].forEach(id=>$(id).addEventListener('input', rebuildDNAIfActive));
 $('showH').addEventListener('change',rebuild); $('hideSolvent').addEventListener('change',rebuild);
