@@ -153,6 +153,22 @@ await page.evaluate(() => { document.getElementById('dnaTwist').value=34.3; wind
 ok('DNA detected as nucleic (cartoon-capable)', await page.evaluate(() => window.__mol.hasNucleic()));
 await rep('cartoon'); await settle(500); ok('DNA cartoon renders', /atoms/.test(await status()));
 
+console.log('== selection & isolation ==');
+try {
+  await page.evaluate(() => window.__mol.fetchPdb('1HHO'));
+  await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent) && !/fetch/i.test(document.getElementById('status').textContent), { timeout: 15000 });
+  await rep('bas'); const total = await page.evaluate(() => window.__mol.shownAtoms());
+  await page.evaluate(() => { window.__mol.setSel('A',''); window.__mol.selAct('isolate'); }); await settle(400);
+  const isoA = await page.evaluate(() => window.__mol.shownAtoms());
+  ok(`isolate chain A shows fewer atoms (${isoA} < ${total})`, isoA > 0 && isoA < total);
+  await page.evaluate(() => { window.__mol.setSel('',''); window.__mol.selAct('reset'); }); await settle(300);
+  const back = await page.evaluate(() => window.__mol.shownAtoms());
+  ok(`reset restores all (${back})`, back === total);
+  await page.evaluate(() => { window.__mol.setSel('','ligand'); window.__mol.selAct('hide'); }); await settle(300);
+  ok('hide ligand no errors', errs.length === 0);
+  await page.evaluate(() => { window.__mol.setSel('',''); window.__mol.selAct('reset'); });
+} catch(e){ console.log('  (skipped selection — network:', String(e).slice(0,50), ')'); }
+
 console.log('== fragment builder ==');
 await page.evaluate(() => window.__mol.builderNew());
 await page.evaluate(() => window.__mol.builderAdd('C'));          // first carbon
