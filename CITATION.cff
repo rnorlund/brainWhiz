@@ -6,9 +6,10 @@ authors:
   - family-names: Newman-Norlund
     given-names: Roger
 repository-code: "https://github.com/rnorlund/brainWhiz"
+url: "https://rnorlund.github.io/brainWhiz/"
 license: CC-BY-NC-4.0
-version: "1.0"
-date-released: "2026-06-17"
+version: "1.2"
+date-released: "2026-07-07"
 keywords:
   - neuroimaging
   - brain atlas
