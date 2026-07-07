@@ -152,6 +152,7 @@
       <div class="lbl" style="margin:8px 0 3px">Fragments (snap on)</div>
       <div class="seg" id="buildFrags"><button data-frag="ch3">–CH₃</button><button data-frag="oh">–OH</button><button data-frag="nh2">–NH₂</button><button data-frag="carbonyl">=O</button><button data-frag="phenyl">–C₆H₅</button><button data-frag="water">+H₂O</button></div>
       <div class="row" style="margin-top:7px"><button id="buildAddBtn" class="acc" style="flex:1" title="add the selected element bonded to the growth atom">+ add atom</button><button id="buildDel" title="delete selected atom">🗑</button></div>
+      <div class="row"><button id="buildSetEl" style="flex:1" title="change the clicked atom to the chosen element">Set clicked atom → element</button></div>
       <div class="row"><button id="buildNew" style="flex:1">New molecule (clear)</button><button id="buildFillH" title="fill open valences with H">+H all</button></div>
       <div id="buildOut" style="font-size:11px;color:var(--muted);min-height:14px">selected: none</div>
     </div>
@@ -265,6 +266,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const $ = id=>document.getElementById(id);
 
 // ---------- public reference DATA (not code): CPK colours + covalent + vdW radii (Å) ----------
@@ -294,8 +296,10 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.1'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.2'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
+const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true; controls.enableZoom=false;   // wheel/trackpad routed through the zoom slider instead (see below)
 scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
@@ -869,9 +873,10 @@ function fitCamera(){ if(!MOL.atoms.length) return; const mn=[1e9,1e9,1e9],mx=[-
   if(MOL._dna){ camera.up.set(0,0,1); camera.position.set(d||60,0,0); controls.update(); return; }   // DNA: side-on, helix (z) vertical
   camera.up.set(0,1,0); camera.position.set(0,0,d||60); controls.update(); }   // standard +Z view, Y-up → consistent, predictable orbit controls
 // zoom slider (on-canvas) drives camera distance along the current view direction — reliable, never clips out
-function zoomBounds(){ const mr=molR||30; return {mr, min:mr*0.10, max:mr*4.0}; }   // 0.10·R (very close) … 4·R (far)
-function setZoom(v){ const {mr}=zoomBounds(), dist=mr*(4.0-(v/100)*3.9); let dir=camera.position.clone().sub(controls.target); if(dir.lengthSq()<1e-6)dir.set(0,0,1); dir.normalize(); camera.position.copy(controls.target).add(dir.multiplyScalar(dist)); controls.update(); }
-function syncZoom(){ const {mr}=zoomBounds(), dist=camera.position.distanceTo(controls.target), v=Math.round((4.0-dist/mr)/3.9*100); const z=$('zoom'); if(z) z.value=Math.max(0,Math.min(100,v)); }
+const ZFAR=8.0, ZNEAR=0.10, ZSPAN=ZFAR-ZNEAR;   // slider 0 → ZFAR·R (far), 100 → ZNEAR·R (close)
+function zoomBounds(){ const mr=molR||30; return {mr, min:mr*ZNEAR, max:mr*ZFAR}; }
+function setZoom(v){ const {mr}=zoomBounds(), dist=mr*(ZFAR-(v/100)*ZSPAN); let dir=camera.position.clone().sub(controls.target); if(dir.lengthSq()<1e-6)dir.set(0,0,1); dir.normalize(); camera.position.copy(controls.target).add(dir.multiplyScalar(dist)); controls.update(); }
+function syncZoom(){ const {mr}=zoomBounds(), dist=camera.position.distanceTo(controls.target), v=Math.round((ZFAR-dist/mr)/ZSPAN*100); const z=$('zoom'); if(z) z.value=Math.max(0,Math.min(100,v)); }
 
 // ---------- procedural B-DNA (original) ----------
 const COMP={A:'T',T:'A',G:'C',C:'G'};
@@ -990,7 +995,8 @@ renderer.domElement.addEventListener('click',e=>{ if(!sphereMesh||!downXY||Math.
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
   const hit=ray.intersectObject(sphereMesh,false);
   if(builderOn && !e.shiftKey && !measMode){ builderSel = hit.length? pickList[hit[0].instanceId] : -1; updateBuildMarker();   // build mode: click selects growth atom
-    $('buildOut').textContent = builderSel>=0 ? `selected: ${MOL.atoms[builderSel].el} #${builderSel+1} · ${bNeighbors(builderSel).length} bonds` : 'selected: none · click +add to place'; return; }
+    if(builderSel>=0){ const a=MOL.atoms[builderSel], sym=(a.el||'').replace('BASE_',''), e=ELEM[sym]; $('buildOut').textContent=`${e?e[0]:sym}${a.name&&a.name!==sym?' ('+a.name+')':''} · ${bNeighbors(builderSel).length} bonds · shift-click for full info`; }
+    else $('buildOut').textContent='selected: none · click +add to place'; return; }
   if(hit.length){ const gi=pickList[hit[0].instanceId], a=MOL.atoms[gi];
     if(measMode){ measSel.push(gi); drawMeasure(); return; }          // unlimited chain: each click extends
     if(e.shiftKey){ showAtomProps(gi); return; }                       // shift-click → full properties + bonding role
@@ -1061,10 +1067,14 @@ $('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera);
   const a=document.createElement('a'); a.download='molwhiz.png'; a.href=cv.toDataURL('image/png'); a.click(); });
 $('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; clearMeasureGeo(); $('measOut').textContent=measMode?'click atoms in sequence · distance each hop, angle at each vertex':''; });
 // builder
-$('buildBtn').addEventListener('click',()=>{ builderOn=!builderOn; $('buildBtn').textContent='Build mode: '+(builderOn?'ON':'OFF'); $('buildBtn').classList.toggle('acc',builderOn); $('buildUI').style.display=builderOn?'block':'none'; if(!builderOn)builderSel=-1; updateBuildMarker(); if(builderOn && $('buildOut'))$('buildOut').textContent='selected: none · click an atom or +add'; });
+$('buildBtn').addEventListener('click',()=>{ builderOn=!builderOn; $('buildBtn').textContent='Build mode: '+(builderOn?'ON':'OFF'); $('buildBtn').classList.toggle('acc',builderOn); $('buildUI').style.display=builderOn?'block':'none'; if(!builderOn)builderSel=-1;
+  if(builderOn){ if(curRep!=='bas'){ curRep='bas'; [...$('repSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.rep==='bas')); rebuild(); }
+    camera.up.set(0,1,0); controls.update(); }   // standard Y-up orbit (DNA leaves up=Z → tumbling feels off)
+  updateBuildMarker(); if(builderOn && $('buildOut'))$('buildOut').textContent='click an atom to grow from, or +add / a fragment · use “New molecule” for a blank canvas'; });
 $('buildEls').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; builderEl=b.dataset.el; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); });
 $('buildFrags').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; builderFragment(b.dataset.frag); });
 $('buildAddBtn').addEventListener('click',()=>builderAdd(builderEl));
+$('buildSetEl').addEventListener('click',()=>{ if(builderSel<0){ $('buildOut').textContent='click an atom first, then Set'; return; } const a=MOL.atoms[builderSel]; a.el=builderEl.toUpperCase(); a.name=builderEl.toUpperCase(); delete a.r; refreshBuild(); });
 $('buildDel').addEventListener('click',builderDelete);
 $('buildFillH').addEventListener('click',builderFillH);
 $('buildNew').addEventListener('click',()=>{ MOL={atoms:[],bonds:[]}; builderSel=-1; isDNA=false; refreshBuild(); document.title='molWhiz — new'; });
