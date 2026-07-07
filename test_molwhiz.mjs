@@ -137,6 +137,22 @@ const props = await page.evaluate(() => { window.__mol.showAtomProps(0); const p
 ok('atom props panel opens with facts', props.on && props.hasEN);
 console.log('   props header:', props.hd);
 
+console.log('== H-bonds + outline + DNA cartoon ==');
+try {
+  await page.evaluate(() => window.__mol.fetchPdb('1CRN'));
+  await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent) && !/fetch/i.test(document.getElementById('status').textContent), { timeout: 15000 });
+  await setChk('hbondOn', true); await settle(400);
+  ok('H-bonds drawn on 1CRN', await page.evaluate(() => window.__mol.hasHBonds()));
+  await setChk('hbondOn', false);
+  await setChk('outlineOn', true); await settle(400);
+  ok('ink outline built', await page.evaluate(() => window.__mol.hasOutline()));
+  await setChk('outlineOn', false); await setChk('depthCue', true); await settle(200);
+  ok('depth cue toggles cleanly', errs.length === 0); await setChk('depthCue', false);
+} catch(e){ console.log('  (skipped H-bond/outline — network:', String(e).slice(0,50), ')'); }
+await page.evaluate(() => { document.getElementById('dnaTwist').value=34.3; window.__mol.buildDNA('ATGGCCTAGC'); });
+ok('DNA detected as nucleic (cartoon-capable)', await page.evaluate(() => window.__mol.hasNucleic()));
+await rep('cartoon'); await settle(500); ok('DNA cartoon renders', /atoms/.test(await status()));
+
 console.log('== fragment builder ==');
 await page.evaluate(() => window.__mol.builderNew());
 await page.evaluate(() => window.__mol.builderAdd('C'));          // first carbon
