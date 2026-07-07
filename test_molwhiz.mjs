@@ -30,6 +30,8 @@ const shot    = f => page.screenshot({ path: path.join(SHOTS, f) });
 console.log('\n== boot ==');
 ok('module ready + version pill', await page.$eval('#verPill', e => /^v/.test(e.textContent)));
 if (await page.$eval('#sidebarR', e => e.classList.contains('hidden'))) await page.click('#tglR');   // ensure appearance sidebar open
+ok('sections collapsed by default', (await page.$$eval('.grp.collapsed', g => g.length)) > 8);
+await page.evaluate(() => document.querySelectorAll('.grp.collapsed').forEach(g => g.classList.remove('collapsed')));   // expand all so controls are clickable in tests
 await settle(200);
 ok('appearance sidebar visible', !(await page.$eval('#sidebarR', e => e.classList.contains('hidden'))));
 ok('matcaps present in Style dropdown', (await page.$$eval('#material option', os => os.filter(o=>o.value.startsWith('matcap:')).length)) === 15);

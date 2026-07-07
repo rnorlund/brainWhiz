@@ -24,6 +24,7 @@
   #sidebarR{right:0;border-left:1px solid var(--line)} #sidebarR.hidden{transform:translateX(100%)}
   .grp{border-top:1px solid var(--line);padding:10px 0 4px} .grp:first-child{border-top:0}
   .lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .grp>.lbl{cursor:pointer;user-select:none} .grp>.lbl::before{content:"▾ ";font-size:9px;color:var(--acc)} .grp.collapsed>.lbl::before{content:"▸ "} .grp.collapsed>.lbl{margin-bottom:0} .grp.collapsed>*:not(.lbl){display:none!important}
   .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
   .row label{min-width:62px;color:var(--muted)} .row label.tog{min-width:0}
   select,input[type=text]{flex:1;min-width:0;background:#0c1220;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
@@ -211,6 +212,11 @@
     <div class="row"><label class="tog"><input type="checkbox" id="outlineOn"> ink outline</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="depthCue"> depth cue</label></div>
     <div class="row"><label>Outline width</label><input type="range" id="outlineW" min="0.5" max="5" step="0.5" value="2"><span class="num" id="outlineWV">2.0</span></div>
   </div>
+  <div class="grp"><div class="lbl">🎬 Cinematic FX</div>
+    <div class="row"><label class="tog"><input type="checkbox" id="fxOn"> ambient occlusion + bloom (SSAO·SMAA)</label></div>
+    <div class="row"><label>Bloom</label><input type="range" id="fxBloom" min="0" max="1.5" step="0.05" value="0.5"><span class="num" id="fxBloomV">0.50</span></div>
+    <div style="font-size:10px;color:var(--muted)">Softer contact shadows in crevices + glow. Heavier — toggle off on very large structures.</div>
+  </div>
   <div class="grp"><div class="lbl">⚛ Atomic view (Bohr model)</div>
     <div class="row"><label>Spread</label><input type="range" id="atSpread" min="1.5" max="8" step="0.5" value="4"><span class="num" id="atSpreadV">4.0</span></div>
     <div class="row"><label>Nucleus size</label><input type="range" id="atNuc" min="0.4" max="2" step="0.1" value="1"><span class="num" id="atNucV">1.0</span></div>
@@ -267,6 +273,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const $ = id=>document.getElementById(id);
 
 // ---------- public reference DATA (not code): CPK colours + covalent + vdW radii (Å) ----------
@@ -296,7 +308,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.2'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.3'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -306,7 +318,18 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
 const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
 const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
 const molGroup=new THREE.Group(); scene.add(molGroup);
-function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+// ---------- optional cinematic post-processing (SSAO + bloom + SMAA), built lazily on first enable ----------
+let composer=null, ssaoPass=null, bloomPass=null;
+function buildComposer(){ if(composer) return; composer=new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene,camera));
+  ssaoPass=new SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=6; ssaoPass.minDistance=0.001; ssaoPass.maxDistance=0.08; composer.addPass(ssaoPass);
+  bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.5,0.85); composer.addPass(bloomPass);
+  composer.addPass(new SMAAPass(innerWidth,innerHeight));
+  composer.addPass(new OutputPass()); }
+const fxOn=()=>$('fxOn')&&$('fxOn').checked;
+function renderFrame(w,h){ if(fxOn()){ buildComposer(); if(bloomPass) bloomPass.strength=+($('fxBloom')?.value ?? 0.5); if(w){composer.setSize(w,h);} composer.render(); if(w){composer.setSize(innerWidth,innerHeight);} }
+  else renderer.render(scene,camera); }
+function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); if(composer) composer.setSize(innerWidth,innerHeight); }
 addEventListener('resize',resize); resize();
 const spinAx={x:false,y:false,z:false}; let rockPhase=0, electronT=0, auraHue=0.58;
 function loop(){ requestAnimationFrame(loop); controls.update();
@@ -325,7 +348,7 @@ function loop(){ requestAnimationFrame(loop); controls.update();
     const mul = pul>0 ? (0.55+0.45*Math.sin(performance.now()*0.001*pul)) : 1;
     if($('auraRainbow').checked){ auraHue=(auraHue+0.004)%1; const c=new THREE.Color().setHSL(auraHue,0.8,0.6); auraGroup.children.forEach(m=>m.material.color.copy(c)); }
     auraGroup.children.forEach((m,L)=>{ m.material.opacity=base*0.14/(L+1)*mul; }); }
-  renderer.render(scene,camera); }
+  renderFrame(); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
 let MOL={atoms:[],bonds:[]}, sphereMesh=null, bondMesh=null, cartoonGroup=null, surfMesh=null, atomicGroup=null, electronOrbits=[], auraGroup=null, voronoiGroup=null, hbondGroup=null, outlineGroup=null, labelsGroup=null, pickList=[], isDNA=false, molR=30;
@@ -955,8 +978,8 @@ function labelSprite(text,color){ const fs=48,pad=6, c=document.createElement('c
   c.width=Math.ceil(x.measureText(text).width)+pad*2; c.height=fs+pad*2; x.font=`bold ${fs}px system-ui`; x.textBaseline='middle'; x.lineJoin='round';
   x.strokeStyle='rgba(0,0,0,0.9)'; x.lineWidth=7; x.strokeText(text,pad,c.height/2);   // transparent bg + dark outline for legibility (no box)
   x.fillStyle=color||'#eaf2ff'; x.fillText(text,pad,c.height/2);
-  const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:false}));
-  const h=0.05; sp.scale.set(h*c.width/c.height, h, 1); sp.renderOrder=6; return sp; }   // smaller, constant on-screen size
+  const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:true}));
+  const h=1.5; sp.scale.set(h*c.width/c.height, h, 1); sp.renderOrder=6; return sp; }   // world-sized → scales with the molecule as you zoom
 function clearMeasureGeo(){ if(measGroup){ molGroup.remove(measGroup); measGroup.traverse(o=>{ if(o.material){o.material.map&&o.material.map.dispose(); o.material.dispose();} if(o.geometry)o.geometry.dispose(); }); } measGroup=new THREE.Group(); molGroup.add(measGroup); }
 function drawMeasure(){ clearMeasureGeo(); const A=MOL.atoms, pts=measSel.map(i=>new THREE.Vector3(A[i].x,A[i].y,A[i].z)); let out='';
   for(let i=0;i<pts.length-1;i++){ const gg=new THREE.BufferGeometry().setFromPoints([pts[i],pts[i+1]]);   // running distance on every segment
@@ -1036,6 +1059,7 @@ $('atomShape').addEventListener('change',rebuild); $('bondShape').addEventListen
 $('material').addEventListener('change',rebuild); $('rim').addEventListener('change',rebuild);
 $('wireframe').addEventListener('change',rebuild); $('flatShade').addEventListener('change',rebuild);
 $('outlineOn').addEventListener('change',rebuild); $('depthCue').addEventListener('change',()=>{}); bindRange('outlineW',()=>{ if($('outlineOn').checked) rebuild(); });
+$('fxOn').addEventListener('change',()=>{}); bindRange('fxBloom',()=>{});
 // aura glow
 ['auraColor'].forEach(id=>$(id).addEventListener('input',()=>{ if($('auraOn').checked) rebuild(); }));
 $('auraOn').addEventListener('change',rebuild); $('auraRainbow').addEventListener('change',()=>{});
@@ -1062,7 +1086,7 @@ controls.addEventListener('change',syncZoom);
 renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault(); const z=$('zoom'); if(!z)return;
   const mag=Math.min(5, Math.abs(e.deltaY)*0.08+0.6), v=Math.max(0,Math.min(100, +z.value - Math.sign(e.deltaY)*mag));
   z.value=v; setZoom(v); }, {passive:false});
-$('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera);
+$('pngBtn').addEventListener('click',()=>{ renderFrame();
   const src=renderer.domElement, cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height; const x=cv.getContext('2d'); x.drawImage(src,0,0); compositeLegend(cv, src.width/innerWidth);
   const a=document.createElement('a'); a.download='molwhiz.png'; a.href=cv.toDataURL('image/png'); a.click(); });
 $('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; clearMeasureGeo(); $('measOut').textContent=measMode?'click atoms in sequence · distance each hop, angle at each vertex':''; });
@@ -1189,9 +1213,9 @@ addEventListener('resize',()=>{rn.setSize(innerWidth,innerHeight);cam.aspect=inn
 let figPanels=[];   // {url, img, caption}
 const _hexRgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
 const _escX=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderer.render(scene,camera);
+function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderFrame(W,H);
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeLegend(cv,1.4);   // bake legend into the panel
-  const url=cv.toDataURL('image/png'); resize(); renderer.render(scene,camera);   // restore live viewport
+  const url=cv.toDataURL('image/png'); resize(); renderFrame();   // restore live viewport
   const img=new Image(); img.onload=updateFigPreview; img.src=url; figPanels.push({url,img,caption:(document.title||'').replace('molWhiz — ','')}); renderFigList(); updateFigPreview(); }
 function layoutFig(scale){ scale=scale||1; const cols=+$('figCols').value, gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
   const anyCap=figPanels.some(p=>(p.caption||'').trim()), capH=anyCap?28*scale:0, capFs=15*scale;
@@ -1237,6 +1261,9 @@ addEventListener('dragover',e=>e.preventDefault());
 addEventListener('dragleave',()=>{dc--;if(dc<=0)dz.classList.remove('on');});
 addEventListener('drop',e=>{e.preventDefault();dc=0;dz.classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) readFile(f); });
 
+// collapsible sidebar sections — start collapsed; click a header to expand/collapse
+document.querySelectorAll('#sidebar .grp, #sidebarR .grp').forEach(g=>g.classList.add('collapsed'));
+document.addEventListener('click',e=>{ const lbl=e.target.closest('.grp>.lbl'); if(lbl&&lbl.parentElement.classList.contains('grp')) lbl.parentElement.classList.toggle('collapsed'); });
 loadMol(EX.caffeine(),'caffeine'); $('example').value='ex:caffeine';
 window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
