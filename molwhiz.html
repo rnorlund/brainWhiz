@@ -294,10 +294,10 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.0'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.1'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
-const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true; controls.zoomSpeed=0.6;   // gentler wheel zoom (was overshooting)
+const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true; controls.enableZoom=false;   // wheel/trackpad routed through the zoom slider instead (see below)
 scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
 const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
 const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
@@ -1052,6 +1052,10 @@ $('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.va
 $('fitBtn').addEventListener('click',()=>{ fitCamera(); syncZoom(); });
 $('zoom').addEventListener('input',e=>setZoom(+e.target.value));
 controls.addEventListener('change',syncZoom);
+// mouse wheel / trackpad pinch → drive the SAME zoom slider (identical, clamped, never disappears)
+renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault(); const z=$('zoom'); if(!z)return;
+  const mag=Math.min(5, Math.abs(e.deltaY)*0.08+0.6), v=Math.max(0,Math.min(100, +z.value - Math.sign(e.deltaY)*mag));
+  z.value=v; setZoom(v); }, {passive:false});
 $('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera);
   const src=renderer.domElement, cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height; const x=cv.getContext('2d'); x.drawImage(src,0,0); compositeLegend(cv, src.width/innerWidth);
   const a=document.createElement('a'); a.download='molwhiz.png'; a.href=cv.toDataURL('image/png'); a.click(); });
