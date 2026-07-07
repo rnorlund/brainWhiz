@@ -1,0 +1,298 @@
+<!-- molWhiz — original molecular visualizer (three.js MIT scaffolding, all molecule code original).
+     Phase 1: PDB parse + bond inference, instanced spacefill / ball-&-stick / sticks,
+     colour by element/chain/residue, click-to-identify, PDB-ID fetch, built-ins, procedural B-DNA.
+     © 2026 Roger Newman-Norlund. Not for redistribution without a licence. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>molWhiz — molecular visualizer</title>
+<style>
+  :root{--bg:#0a0e16;--panel:#121826;--txt:#e6edf7;--muted:#8ea2c0;--acc:#5db0ff;--line:#26314a}
+  *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:13px system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0} #app canvas{display:block}
+  #panel{position:fixed;top:0;left:0;width:280px;height:100%;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px;z-index:10}
+  #panel h1{font-size:16px;margin:0 0 2px;letter-spacing:.5px} #panel h1 b{color:var(--acc)}
+  #panel .sub{color:var(--muted);font-size:11px;margin-bottom:12px}
+  .grp{border-top:1px solid var(--line);padding:10px 0 4px} .grp:first-of-type{border-top:0}
+  .lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+  .row label{min-width:64px;color:var(--muted)}
+  select,input[type=text]{flex:1;background:#0c1220;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
+  input[type=range]{flex:1} input[type=color]{width:34px;height:26px;border:1px solid var(--line);border-radius:6px;background:none;padding:0}
+  button{background:#1b2436;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--acc)} button.acc{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
+  .seg{display:flex;gap:4px} .seg button{flex:1;padding:5px 4px;font-size:11px} .seg button.on{background:var(--acc);color:#06223a;border-color:var(--acc);font-weight:600}
+  #hud{position:fixed;left:292px;bottom:14px;background:rgba(10,14,22,.88);border:1px solid var(--line);border-radius:8px;padding:8px 12px;z-index:9;max-width:360px;opacity:0;transition:opacity .15s;pointer-events:none}
+  #hud.on{opacity:1} #hud .t{font-weight:700} #hud .s{color:var(--muted);font-size:11px}
+  #status{font-size:11px;color:var(--muted);min-height:14px;margin-top:4px}
+  #drop{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(10,20,40,.75);border:3px dashed var(--acc);font-size:22px;font-weight:700;color:#dff0ff}
+  #drop.on{display:flex}
+  .hint{position:fixed;right:14px;bottom:12px;color:var(--muted);font-size:11px;z-index:9}
+  a.brand{color:var(--muted);text-decoration:none} a.brand:hover{color:var(--acc)}
+</style>
+
+<div id="app"></div>
+<div id="drop">Drop a .pdb / .sdf / .mol / .xyz / .cif</div>
+<div id="hud"><div class="t"></div><div class="s"></div></div>
+<div class="hint">drag-rotate · scroll-zoom · right-drag pan · click an atom</div>
+
+<div id="panel">
+  <h1>mol<b>Whiz</b></h1>
+  <div class="sub">molecular visualizer — proteins · ligands · DNA</div>
+
+  <div class="grp"><div class="lbl">Load</div>
+    <div class="row"><label>Example</label>
+      <select id="example"><option value="">— pick —</option><option value="caffeine">Caffeine</option><option value="benzene">Benzene</option><option value="water">Water</option><option value="ethanol">Ethanol</option><option value="methane">Methane</option></select></div>
+    <div class="row"><label>PDB ID</label><input type="text" id="pdbid" placeholder="e.g. 1CRN" maxlength="8" style="text-transform:uppercase">
+      <button id="fetchBtn">Fetch</button></div>
+    <div class="row"><button id="openBtn" style="flex:1">📂 Open file…</button>
+      <input type="file" id="file" accept=".pdb,.ent,.sdf,.mol,.mol2,.xyz,.cif" style="display:none"></div>
+    <div id="status"></div>
+  </div>
+
+  <div class="grp"><div class="lbl">Representation</div>
+    <div class="seg" id="repSeg">
+      <button data-rep="bas" class="on">Ball &amp; stick</button>
+      <button data-rep="space">Spacefill</button>
+      <button data-rep="stick">Sticks</button></div>
+    <div class="row" style="margin-top:7px"><label>Atom size</label><input type="range" id="atomScale" min="0.1" max="1" step="0.02" value="0.28"></div>
+    <div class="row"><label>Bond size</label><input type="range" id="bondR" min="0.04" max="0.4" step="0.01" value="0.15"></div>
+    <div class="row"><label class="row" style="min-width:0"><input type="checkbox" id="showH" checked> show H</label></div>
+  </div>
+
+  <div class="grp"><div class="lbl">Colour by</div>
+    <div class="seg" id="colSeg">
+      <button data-col="element" class="on">Element</button>
+      <button data-col="chain">Chain</button>
+      <button data-col="residue">Residue</button></div>
+  </div>
+
+  <div class="grp"><div class="lbl">🧬 Build B-DNA from sequence</div>
+    <div class="row"><input type="text" id="dnaSeq" placeholder="ATGCATTAGC…" value="ATGGCCTAGCGTAC"></div>
+    <div class="row"><button id="dnaBtn" class="acc" style="flex:1">Build double helix</button></div>
+  </div>
+
+  <div class="grp"><div class="lbl">Scene</div>
+    <div class="row"><label>Background</label><input type="color" id="bg" value="#0a0e16"></div>
+    <div class="row"><button id="fitBtn">⤢ Fit</button><button id="pngBtn">🖼 PNG</button><button id="spinBtn">↻ Spin</button></div>
+  </div>
+  <div class="sub" style="margin-top:10px"><a class="brand" href="https://rnorlund.github.io/brainWhiz/" target="_blank">← brainWhiz</a> · © 2026</div>
+</div>
+
+<script>
+// import map: use vendored three (offline/served) or CDN (file://) — MIT three.js.
+(function(){ var served = location.protocol.indexOf('http')===0;
+  var three  = served ? './vendor/three.module.js' : 'https://unpkg.com/three@0.160.0/build/three.module.js';
+  var addons = served ? './vendor/jsm/' : 'https://unpkg.com/three@0.160.0/examples/jsm/';
+  var im=document.createElement('script'); im.type='importmap';
+  im.textContent=JSON.stringify({imports:{'three':three,'three/addons/':addons}}); document.head.appendChild(im);
+})();
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const $ = id=>document.getElementById(id);
+
+// ---------- public reference DATA (not code): CPK colours, covalent + vdW radii (Å) ----------
+const CPK = { H:'#ffffff',C:'#3a3a3a',N:'#3050f8',O:'#ff2010',S:'#e6c000',P:'#ff8000',
+  F:'#33cc33',CL:'#1fd01f',BR:'#a52a2a',I:'#940094',B:'#ffb5b5',SI:'#f0c8a0',
+  FE:'#e06633',ZN:'#7d80b0',NA:'#ab5cf2',K:'#8f40d4',CA:'#3dff00',MG:'#8aff00',
+  MN:'#9c7ac7',CU:'#c88033',SE:'#ffa100',default:'#ff69b4' };
+const COV = { H:0.31,C:0.76,N:0.71,O:0.66,S:1.05,P:1.07,F:0.57,CL:1.02,BR:1.20,I:1.39,
+  B:0.84,SI:1.11,FE:1.32,ZN:1.22,NA:1.66,K:2.03,CA:1.76,MG:1.41,MN:1.39,CU:1.32,SE:1.20,default:0.9 };
+const VDW = { H:1.10,C:1.70,N:1.55,O:1.52,S:1.80,P:1.80,F:1.47,CL:1.75,BR:1.85,I:1.98,
+  B:1.92,SI:2.10,FE:2.0,ZN:2.1,NA:2.27,K:2.75,CA:2.31,MG:1.73,MN:2.0,CU:2.0,SE:1.90,default:1.7 };
+const elCol=e=>CPK[e]||CPK.default, elCov=e=>COV[e]||COV.default, elVdw=e=>VDW[e]||VDW.default;
+const PAL=['#ff3b30','#ffcc00','#34c759','#00c7be','#5db0ff','#bf5af2','#ff77d0','#ff9f0a','#a2d729','#64d2ff','#ff6482','#c0a3ff'];
+const RESCOL={ALA:'#8cff8c',GLY:'#dddddd',SER:'#ffb570',THR:'#ffb570',CYS:'#ffe000',VAL:'#8cff8c',LEU:'#8cff8c',ILE:'#8cff8c',MET:'#ffe000',PRO:'#8cff8c',PHE:'#7ca0ff',TYR:'#7ca0ff',TRP:'#7ca0ff',ASP:'#ff5050',GLU:'#ff5050',ASN:'#00d0d0',GLN:'#00d0d0',HIS:'#7cc0ff',LYS:'#3050ff',ARG:'#3050ff',
+  DA:'#ff4d4d',DT:'#4d7bff',DG:'#4dff4d',DC:'#ffd24d',A:'#ff4d4d',U:'#4d7bff',G:'#4dff4d',C:'#ffd24d',default:'#c0c0c0'};
+
+// ---------- three.js scene ----------
+const app=$('app');
+const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2)); app.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
+const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
+const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xffffff,0x334455,1.0));
+const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
+const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
+const molGroup=new THREE.Group(); scene.add(molGroup);
+function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize); resize();
+let spin=false;
+(function loop(){ requestAnimationFrame(loop); controls.update(); if(spin) molGroup.rotation.y+=0.005; renderer.render(scene,camera); })();
+
+// ---------- current molecule: {atoms:[{el,x,y,z,name,resName,resSeq,chain,serial}], bonds:[[i,j]] } ----------
+let MOL={atoms:[],bonds:[]};
+let sphereMesh=null, bondMesh=null, pickList=[];
+
+// ---------- parsers ----------
+function parsePDB(text){
+  const atoms=[], serialMap=new Map(), conect=[];
+  for(const line of text.split(/\r?\n/)){
+    const rec=line.slice(0,6);
+    if(rec==='ATOM  '||rec==='HETATM'){
+      let el=line.slice(76,78).trim().toUpperCase();
+      const name=line.slice(12,16).trim();
+      if(!el){ el=name.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase(); if(!COV[el]) el=el[0]; }
+      const x=+line.slice(30,38), y=+line.slice(38,46), z=+line.slice(46,54);
+      if(!isFinite(x)||!isFinite(y)||!isFinite(z)) continue;
+      const serial=+line.slice(6,11);
+      serialMap.set(serial, atoms.length);
+      atoms.push({el, x,y,z, name, resName:line.slice(17,20).trim(), resSeq:line.slice(22,26).trim(), chain:line.slice(21,22).trim()||'A', serial});
+    } else if(rec==='CONECT'){
+      const a=+line.slice(6,11); for(let c=11;c<31;c+=5){ const b=+line.slice(c,c+5); if(b) conect.push([a,b]); }
+    }
+  }
+  const bondsSet=new Set(), bonds=[];
+  for(const [a,b] of conect){ const i=serialMap.get(a), j=serialMap.get(b); if(i==null||j==null) continue; const k=i<j?i+'_'+j:j+'_'+i; if(!bondsSet.has(k)){ bondsSet.add(k); bonds.push([i,j]); } }
+  return {atoms, bonds, _hasConect:conect.length>0};
+}
+function parseXYZ(text){ const L=text.split(/\r?\n/); const n=+L[0]; const atoms=[];
+  for(let i=0;i<n;i++){ const p=(L[2+i]||'').trim().split(/\s+/); if(p.length<4) continue; atoms.push({el:p[0].toUpperCase(),x:+p[1],y:+p[2],z:+p[3],name:p[0],resName:'MOL',resSeq:'1',chain:'A',serial:i+1}); }
+  return {atoms, bonds:[]}; }
+function parseSDF(text){ const L=text.split(/\r?\n/); const counts=L[3]||''; const na=+counts.slice(0,3), nb=+counts.slice(3,6); const atoms=[],bonds=[];
+  for(let i=0;i<na;i++){ const l=L[4+i]; atoms.push({el:l.slice(31,34).trim().toUpperCase(),x:+l.slice(0,10),y:+l.slice(10,20),z:+l.slice(20,30),name:l.slice(31,34).trim(),resName:'LIG',resSeq:'1',chain:'A',serial:i+1}); }
+  for(let i=0;i<nb;i++){ const l=L[4+na+i]; bonds.push([(+l.slice(0,3))-1,(+l.slice(3,6))-1]); }
+  return {atoms,bonds}; }
+
+// distance-based bond inference (uniform grid so it scales to proteins)
+function inferBonds(atoms){
+  const bonds=[], n=atoms.length, cell=3.2, grid=new Map();
+  const key=(a,b,c)=>a+','+b+','+c;
+  for(let i=0;i<n;i++){ const a=atoms[i]; const gx=Math.floor(a.x/cell),gy=Math.floor(a.y/cell),gz=Math.floor(a.z/cell); const k=key(gx,gy,gz); (grid.get(k)||grid.set(k,[]).get(k)).push(i); }
+  for(let i=0;i<n;i++){ const a=atoms[i]; const gx=Math.floor(a.x/cell),gy=Math.floor(a.y/cell),gz=Math.floor(a.z/cell);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){ const arr=grid.get(key(gx+dx,gy+dy,gz+dz)); if(!arr) continue;
+      for(const j of arr){ if(j<=i) continue; const b=atoms[j]; const dd=(a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2;
+        const max=(elCov(a.el)+elCov(b.el))*1.3, min=0.16; if(dd>min && dd<max*max){ if(a.el==='H'&&b.el==='H') continue; bonds.push([i,j]); } } } }
+  return bonds;
+}
+
+// ---------- build instanced geometry ----------
+const _m=new THREE.Matrix4(), _q=new THREE.Quaternion(), _v=new THREE.Vector3(), _up=new THREE.Vector3(0,1,0), _s=new THREE.Vector3(), _c=new THREE.Color();
+function clearMesh(){ for(const o of [sphereMesh,bondMesh]){ if(o){ molGroup.remove(o); o.geometry.dispose(); o.material.dispose(); } } sphereMesh=bondMesh=null; pickList=[]; }
+function atomColor(a){ const mode=curCol;
+  if(mode==='chain'){ let h=0; for(const ch of a.chain) h+=ch.charCodeAt(0); return PAL[h%PAL.length]; }
+  if(mode==='residue'){ return RESCOL[a.resName]||RESCOL.default; }
+  return elCol(a.el);
+}
+function rebuild(){
+  clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
+  const showH=$('showH').checked, rep=curRep, ascale=+$('atomScale').value, br=+$('bondR').value;
+  const idx=[]; for(let i=0;i<A.length;i++){ if(!showH && A[i].el==='H') continue; idx.push(i); }
+  // spheres
+  const sg=new THREE.SphereGeometry(1,20,16);
+  const sm=new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.0});
+  sphereMesh=new THREE.InstancedMesh(sg, sm, idx.length); sphereMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  let n=0; for(const i of idx){ const a=A[i]; let r; if(rep==='space') r=elVdw(a.el)*ascale*3.5; else if(rep==='stick') r=br; else r=elVdw(a.el)*ascale;
+    _m.compose(_v.set(a.x,a.y,a.z), _q.identity(), _s.set(r,r,r)); sphereMesh.setMatrixAt(n, _m); sphereMesh.setColorAt(n, _c.set(atomColor(a))); pickList[n]=i; n++; }
+  sphereMesh.instanceMatrix.needsUpdate=true; if(sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate=true;
+  molGroup.add(sphereMesh);
+  // bonds (two half-cylinders coloured by each atom), skip in spacefill
+  if(rep!=='space'){
+    const shown=new Set(idx); const bs=MOL.bonds.filter(([i,j])=>shown.has(i)&&shown.has(j));
+    const cg=new THREE.CylinderGeometry(1,1,1,12,1,true);
+    const cm=new THREE.MeshStandardMaterial({roughness:0.4,metalness:0.0});
+    bondMesh=new THREE.InstancedMesh(cg, cm, bs.length*2);
+    let b=0; for(const [i,j] of bs){ const a=A[i], c=A[j];
+      const ax=new THREE.Vector3(a.x,a.y,a.z), cx=new THREE.Vector3(c.x,c.y,c.z), mid=ax.clone().add(cx).multiplyScalar(0.5), dir=cx.clone().sub(ax), len=dir.length()/2; dir.normalize();
+      _q.setFromUnitVectors(_up, dir);
+      _m.compose(ax.clone().add(cx).multiplyScalar(0.5).sub(dir.clone().multiplyScalar(len/2)), _q, _s.set(br,len,br)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
+      _m.compose(mid.clone().add(dir.clone().multiplyScalar(len/2)), _q, _s.set(br,len,br)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++;
+    }
+    bondMesh.instanceMatrix.needsUpdate=true; if(bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate=true; molGroup.add(bondMesh);
+  }
+  $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
+}
+
+function loadMol(m, name){ if(!m.atoms.length){ $('status').textContent='no atoms parsed'; return; }
+  if(!m.bonds.length || (m._hasConect && m.bonds.length<m.atoms.length/2)) m.bonds=m.bonds.concat(inferBonds(m.atoms));
+  // recenter to centroid
+  let cx=0,cy=0,cz=0; for(const a of m.atoms){cx+=a.x;cy+=a.y;cz+=a.z;} cx/=m.atoms.length;cy/=m.atoms.length;cz/=m.atoms.length;
+  for(const a of m.atoms){a.x-=cx;a.y-=cy;a.z-=cz;}
+  MOL=m; rebuild(); fitCamera(); if(name) document.title='molWhiz — '+name;
+}
+function fitCamera(){ if(!MOL.atoms.length) return;
+  const mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9]; let r=0;
+  for(const a of MOL.atoms){ const p=[a.x,a.y,a.z]; for(let k=0;k<3;k++){ if(p[k]<mn[k])mn[k]=p[k]; if(p[k]>mx[k])mx[k]=p[k]; } r=Math.max(r,Math.hypot(a.x,a.y,a.z)); }
+  r=Math.max(r,5); const d=r/Math.sin(camera.fov*Math.PI/360)*1.25;
+  const ext=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]], sa=ext.indexOf(Math.min(...ext));   // look along shortest axis -> long axis spans screen (DNA side-on)
+  const pos=[0,0,0]; pos[sa]=d||60; controls.target.set(0,0,0);
+  camera.position.set(pos[0]||1e-3,pos[1],pos[2]); camera.up.set(0, sa===1?0:1, sa===1?1:0); controls.update(); }
+
+// ---------- procedural B-DNA from a sequence (original) ----------
+const COMP={A:'T',T:'A',G:'C',C:'G'};
+function buildDNA(seq){ seq=(seq||'').toUpperCase().replace(/[^ATGC]/g,''); if(!seq.length){ $('status').textContent='enter an A/T/G/C sequence'; return; }
+  const rise=3.38, twist=34.3*Math.PI/180, Rb=9.5, Rbase=3.2, atoms=[], bonds=[];
+  const strand={A:[],B:[]};
+  for(let i=0;i<seq.length;i++){ const ang=i*twist, z=i*rise - seq.length*rise/2, base=seq[i], comp=COMP[base];
+    // backbone A
+    atoms.push({el:'P',name:'BB',resName:'D'+base,resSeq:String(i+1),chain:'A',serial:atoms.length+1, x:Rb*Math.cos(ang), y:Rb*Math.sin(ang), z}); const a1=atoms.length-1; strand.A.push(a1);
+    // backbone B (antiparallel, ~137.5° minor-groove offset)
+    const ang2=ang+Math.PI*0.76; atoms.push({el:'P',name:'BB',resName:'D'+comp,resSeq:String(i+1),chain:'B',serial:atoms.length+1, x:Rb*Math.cos(ang2), y:Rb*Math.sin(ang2), z}); const b1=atoms.length-1; strand.B.push(b1);
+    // base A (toward axis) coloured by base
+    atoms.push({el:'BASE_'+base,name:base,resName:'D'+base,resSeq:String(i+1),chain:'A',serial:atoms.length+1, x:Rbase*Math.cos(ang), y:Rbase*Math.sin(ang), z}); const ba=atoms.length-1;
+    atoms.push({el:'BASE_'+comp,name:comp,resName:'D'+comp,resSeq:String(i+1),chain:'B',serial:atoms.length+1, x:Rbase*Math.cos(ang), y:Rbase*Math.sin(ang), z:z}); const bb=atoms.length-1;
+    bonds.push([a1,ba]); bonds.push([b1,bb]); bonds.push([ba,bb]);   // backbone->base and the base-pair rung
+    if(i>0){ bonds.push([strand.A[i-1],a1]); bonds.push([strand.B[i-1],b1]); }   // backbone continuity
+  }
+  // base colours via a small CPK extension
+  CPK.BASE_A='#ff4d4d'; CPK.BASE_T='#4d7bff'; CPK.BASE_G='#4dff4d'; CPK.BASE_C='#ffd24d';
+  COV.BASE_A=COV.BASE_T=COV.BASE_G=COV.BASE_C=0.9; VDW.BASE_A=VDW.BASE_T=VDW.BASE_G=VDW.BASE_C=1.5;
+  loadMol({atoms,bonds}, seq.length+'bp B-DNA'); $('status').textContent=`B-DNA · ${seq.length} bp`;
+}
+
+// ---------- built-in small molecules (constructed geometry, original) ----------
+function mk(list){ return {atoms:list.map((a,i)=>({el:a[0],x:a[1],y:a[2],z:a[3],name:a[0],resName:'MOL',resSeq:'1',chain:'A',serial:i+1})), bonds:[]}; }
+const EX={
+  water: ()=>mk([['O',0,0,0],['H',0.757,0.586,0],['H',-0.757,0.586,0]]),
+  methane: ()=>mk([['C',0,0,0],['H',0.63,0.63,0.63],['H',-0.63,-0.63,0.63],['H',-0.63,0.63,-0.63],['H',0.63,-0.63,-0.63]]),
+  benzene: ()=>{ const a=[]; for(let i=0;i<6;i++){ const t=i*Math.PI/3; a.push(['C',1.39*Math.cos(t),1.39*Math.sin(t),0]); } for(let i=0;i<6;i++){ const t=i*Math.PI/3; a.push(['H',2.48*Math.cos(t),2.48*Math.sin(t),0]); } return mk(a); },
+  ethanol: ()=>mk([['C',-0.75,0.19,0],['C',0.68,-0.28,0],['O',1.5,0.86,0],['H',-1.4,-0.68,0],['H',-0.95,0.8,0.89],['H',-0.95,0.8,-0.89],['H',0.9,-0.9,0.88],['H',0.9,-0.9,-0.88],['H',2.4,0.5,0]]),
+  caffeine: ()=>mk([['N',1.2,0.5,0],['C',0.1,1.3,0],['N',-1.1,0.7,0],['C',-1.1,-0.7,0],['C',0.1,-1.4,0],['C',1.3,-0.8,0],['O',0.1,2.5,0],['O',2.4,-1.4,0],['N',-2.4,-1.0,0],['C',-3.0,0.2,0],['N',-2.4,1.2,0],['C',2.5,1.1,0],['C',-3.1,-2.2,0],['C',-3.0,2.5,0],['H',-4.1,0.2,0],['H',3.4,0.5,0],['H',2.6,2.1,0],['H',1.9,1.1,0.8],['H',-4.2,-2.1,0],['H',-2.8,-2.8,0.8],['H',-2.8,-2.8,-0.8],['H',-4.1,2.5,0],['H',-2.7,3.1,0.8],['H',-2.7,3.1,-0.8]]),
+};
+
+// ---------- picking ----------
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let downXY=null;
+renderer.domElement.addEventListener('pointerdown',e=>downXY=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('click',e=>{ if(!sphereMesh||!downXY||Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])>5) return;
+  ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
+  const hit=ray.intersectObject(sphereMesh,false);
+  if(hit.length){ const a=MOL.atoms[pickList[hit[0].instanceId]]; const hud=$('hud');
+    hud.querySelector('.t').textContent=`${a.name||a.el} · ${a.el.replace('BASE_','')}`;
+    hud.querySelector('.s').textContent=`${a.resName} ${a.resSeq} · chain ${a.chain} · #${a.serial}`; hud.classList.add('on'); }
+  else $('hud').classList.remove('on');
+});
+
+// ---------- UI ----------
+let curRep='bas', curCol='element';
+$('repSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; curRep=b.dataset.rep; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); rebuild(); });
+$('colSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; curCol=b.dataset.col; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); rebuild(); });
+$('atomScale').addEventListener('input',rebuild); $('bondR').addEventListener('input',rebuild); $('showH').addEventListener('change',rebuild);
+$('example').addEventListener('change',e=>{ const k=e.target.value; if(EX[k]) loadMol(EX[k](), k); });
+$('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.value));
+$('fitBtn').addEventListener('click',fitCamera);
+$('spinBtn').addEventListener('click',e=>{ spin=!spin; e.target.classList.toggle('acc',spin); });
+$('pngBtn').addEventListener('click',()=>{ renderer.render(scene,camera); const a=document.createElement('a'); a.download='molwhiz.png'; a.href=renderer.domElement.toDataURL('image/png'); a.click(); });
+$('dnaBtn').addEventListener('click',()=>buildDNA($('dnaSeq').value));
+$('openBtn').addEventListener('click',()=>$('file').click());
+$('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readFile(f); e.target.value=''; });
+function parseByName(text,name){ const n=name.toLowerCase();
+  if(n.endsWith('.xyz')) return parseXYZ(text); if(n.endsWith('.sdf')||n.endsWith('.mol')) return parseSDF(text); return parsePDB(text); }
+function readFile(f){ const r=new FileReader(); r.onload=()=>{ try{ loadMol(parseByName(r.result,f.name), f.name); }catch(err){ $('status').textContent='parse error: '+err.message; } }; r.readAsText(f); }
+$('fetchBtn').addEventListener('click',fetchPdb); $('pdbid').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchPdb(); });
+async function fetchPdb(){ const id=$('pdbid').value.trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
+  $('status').textContent='fetching '+id+' …';
+  try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()), id); }
+  catch(err){ $('status').textContent='fetch failed ('+err.message+') — CORS? try Open file'; } }
+// drag-drop
+const dz=$('drop'); let dc=0;
+addEventListener('dragenter',e=>{e.preventDefault();dc++;dz.classList.add('on');});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('dragleave',e=>{dc--;if(dc<=0)dz.classList.remove('on');});
+addEventListener('drop',e=>{e.preventDefault();dc=0;dz.classList.remove('on'); const f=e.dataTransfer.files[0]; if(f) readFile(f); });
+
+// boot: caffeine
+loadMol(EX.caffeine(),'caffeine'); $('example').value='caffeine';
+window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, EX};
+</script>
