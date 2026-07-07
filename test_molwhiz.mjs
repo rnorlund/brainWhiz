@@ -243,6 +243,16 @@ ok(`.mwz round-trip (sig=${rt.sig}, ${rt.before}→${rt.after})`, rt.sig === 'mw
 const m2 = await page.evaluate(() => window.__mol.molToMol2());
 ok('molToMol2 has TRIPOS sections', /@<TRIPOS>ATOM/.test(m2) && /@<TRIPOS>BOND/.test(m2));
 
+console.log('== undo + delete molecule ==');
+await page.evaluate(() => window.__mol.builderNew());
+await page.evaluate(() => { window.__mol.builderAdd('C'); window.__mol.setBuildSel(0); window.__mol.builderAdd('O'); });
+const beforeUndo = await page.evaluate(() => window.__mol.MOL.atoms.length);
+await page.evaluate(() => window.__mol.undo());
+const afterUndo = await page.evaluate(() => window.__mol.MOL.atoms.length);
+ok(`undo reverts last add (${beforeUndo} → ${afterUndo})`, afterUndo === beforeUndo - 1);
+await page.evaluate(() => { window.__mol.builderNew(); window.__mol.builderFragment('phenyl'); window.__mol.setBuildSel(0); window.__mol.builderDeleteMol(); });
+ok('delete molecule removes the connected fragment', await page.evaluate(() => window.__mol.MOL.atoms.length) === 0);
+
 console.log('== mmCIF + AlphaFold (network) ==');
 try {
   const cifAtoms = await page.evaluate(async () => {

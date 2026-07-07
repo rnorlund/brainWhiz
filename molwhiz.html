@@ -157,7 +157,9 @@
       <div class="seg" id="buildFrags"><button data-frag="ch3">–CH₃</button><button data-frag="oh">–OH</button><button data-frag="nh2">–NH₂</button><button data-frag="carbonyl">=O</button><button data-frag="phenyl">–C₆H₅</button><button data-frag="water">+H₂O</button></div>
       <div class="row" style="margin-top:7px"><button id="buildAddBtn" class="acc" style="flex:1" title="add the selected element bonded to the growth atom">+ add atom</button><button id="buildDel" title="delete selected atom">🗑</button></div>
       <div class="row"><button id="buildSetEl" style="flex:1" title="change the clicked atom to the chosen element">Set clicked atom → element</button></div>
+      <div class="row"><button id="buildDelMol" style="flex:1" title="delete the whole connected molecule the atom belongs to">🗑 delete molecule</button><button id="buildUndo" title="undo (⌘Z)">↶ undo</button></div>
       <div class="row"><button id="buildNew" style="flex:1">New molecule (clear)</button><button id="buildFillH" title="fill open valences with H">+H all</button></div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.4">Tip: drag an atom to move it (snaps to bond length). New atoms are placed at the correct bond length in the least-crowded direction (VSEPR).</div>
       <div id="buildOut" style="font-size:11px;color:var(--muted);min-height:14px">selected: none</div>
     </div>
   </div>
@@ -313,7 +315,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.4'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.5'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -899,6 +901,7 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
   decorations(); $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
 }
 function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms parsed'; return; }
+  if(MOL.atoms.length) pushUndo();   // so Cmd-Z can return to the previous molecule
   if(!m.bonds.length || (m._hasConect && m.bonds.length<m.atoms.length/2)) m.bonds=m.bonds.concat(inferBonds(m.atoms));
   let cx=0,cy=0,cz=0; for(const a of m.atoms){cx+=a.x;cy+=a.y;cz+=a.z;} cx/=m.atoms.length;cy/=m.atoms.length;cz/=m.atoms.length;
   for(const a of m.atoms){a.x-=cx;a.y-=cy;a.z-=cz;} MOL=m; isDNA=!!m._dna;
@@ -961,13 +964,25 @@ function openDir(gi){ const a=MOL.atoms[gi], nb=bNeighbors(gi); if(!nb.length) r
   if(nb.length===1){ let perp=new THREE.Vector3().crossVectors(dirs[0],new THREE.Vector3(0,1,0)); if(perp.lengthSq()<1e-3)perp.crossVectors(dirs[0],new THREE.Vector3(1,0,0)); perp.normalize();
     dir.copy(dirs[0]).negate().applyAxisAngle(perp,(180-109.5)*Math.PI/180).normalize(); }
   return dir; }
+// ---------- undo (Cmd/Ctrl-Z) ----------
+let undoStack=[];
+function snapMol(){ return JSON.stringify({atoms:MOL.atoms,bonds:MOL.bonds,_dna:!!MOL._dna,ss:MOL.ss?{helix:[...MOL.ss.helix],sheet:[...MOL.ss.sheet]}:null}); }
+function pushUndo(){ undoStack.push(snapMol()); if(undoStack.length>30) undoStack.shift(); }
+function undo(){ if(!undoStack.length){ if($('buildOut'))$('buildOut').textContent='nothing to undo'; return; } const s=JSON.parse(undoStack.pop());
+  MOL={atoms:s.atoms,bonds:s.bonds,_dna:s._dna,ss:s.ss?{helix:new Set(s.ss.helix),sheet:new Set(s.ss.sheet)}:null}; isDNA=!!MOL._dna;
+  molR=MOL.atoms.length?Math.max(5,...MOL.atoms.map(a=>Math.hypot(a.x,a.y,a.z))):30; builderSel=-1; resSel.clear();
+  rebuild(); updateBuildMarker(); populateChains(); if($('seqPanel')&&$('seqPanel').classList.contains('on'))buildSeqPanel(); }
+function builderDeleteMol(){ if(builderSel<0)return; pushUndo(); const adj={}; MOL.bonds.forEach(b=>{(adj[b[0]]=adj[b[0]]||[]).push(b[1]);(adj[b[1]]=adj[b[1]]||[]).push(b[0]);});
+  const rm=new Set(),st=[builderSel]; while(st.length){ const i=st.pop(); if(rm.has(i))continue; rm.add(i); (adj[i]||[]).forEach(j=>{if(!rm.has(j))st.push(j);}); }
+  const map={},na=[]; MOL.atoms.forEach((a,i)=>{ if(!rm.has(i)){map[i]=na.length;na.push(a);} });
+  MOL.bonds=MOL.bonds.filter(b=>!rm.has(b[0])&&!rm.has(b[1])).map(b=>{ const r=[map[b[0]],map[b[1]]]; if(b[2]!=null)r.push(b[2]); return r; }); MOL.atoms=na; builderSel=-1; refreshBuild(); }
 function addRaw(el,x,y,z){ MOL.atoms.push({el,x,y,z,name:el,resName:'MOL',resSeq:'1',chain:'A',serial:MOL.atoms.length+1,het:false}); return MOL.atoms.length-1; }
 function addBondRaw(i,j){ MOL.bonds.push([i,j]); }
-function builderAdd(el){ el=el.toUpperCase(); const A=MOL.atoms;
+function builderAdd(el){ pushUndo(); el=el.toUpperCase(); const A=MOL.atoms;
   if(builderSel<0){ builderSel=addRaw(el, A.length?2:0,0,0); }
   else { const g=A[builderSel], dir=openDir(builderSel), L=elCov(g.el)+elCov(el); const ni=addRaw(el,g.x+dir.x*L,g.y+dir.y*L,g.z+dir.z*L); addBondRaw(builderSel,ni); }
   MOL._dna=false; isDNA=false; refreshBuild(); }
-function builderFragment(type){ const A=MOL.atoms;
+function builderFragment(type){ pushUndo(); const A=MOL.atoms;
   if(type==='water'){ const c=builderSel>=0? new THREE.Vector3(A[builderSel].x,A[builderSel].y,A[builderSel].z).add(openDir(builderSel).multiplyScalar(3)) : new THREE.Vector3(0,0,0);
     const o=addRaw('O',c.x,c.y,c.z); addBondRaw(o,addRaw('H',c.x+0.76,c.y+0.59,c.z)); addBondRaw(o,addRaw('H',c.x-0.76,c.y+0.59,c.z)); MOL._dna=false;isDNA=false; refreshBuild(); return; }
   if(builderSel<0) builderAdd('C');
@@ -982,9 +997,9 @@ function builderFragment(type){ const A=MOL.atoms;
     for(let i=0;i<6;i++) addBondRaw(ids[i],ids[(i+1)%6]); addBondRaw(builderSel,ids[0]);
     for(let i=1;i<6;i++){ const cc=A[ids[i]], out=new THREE.Vector3(cc.x-c0.x,cc.y-c0.y,cc.z-c0.z).normalize(), HL=elCov('C')+elCov('H'); addBondRaw(ids[i], addRaw('H',cc.x+out.x*HL,cc.y+out.y*HL,cc.z+out.z*HL)); } }
   MOL._dna=false; isDNA=false; refreshBuild(); }
-function builderFillH(){ const n=MOL.atoms.length; for(let i=0;i<n;i++){ const a=MOL.atoms[i], e=ELEM[(a.el||'').replace('BASE_','')]; if(!e||a.el==='H')continue;
+function builderFillH(){ pushUndo(); const n=MOL.atoms.length; for(let i=0;i<n;i++){ const a=MOL.atoms[i], e=ELEM[(a.el||'').replace('BASE_','')]; if(!e||a.el==='H')continue;
     const need=e[4]-bNeighbors(i).length; for(let k=0;k<need;k++){ const d=openDir(i), L=elCov(a.el)+elCov('H'); addBondRaw(i, addRaw('H',a.x+d.x*L,a.y+d.y*L,a.z+d.z*L)); } } refreshBuild(); }
-function builderDelete(){ if(builderSel<0)return; const gi=builderSel; MOL.atoms.splice(gi,1);
+function builderDelete(){ if(builderSel<0)return; pushUndo(); const gi=builderSel; MOL.atoms.splice(gi,1);
   MOL.bonds=MOL.bonds.filter(b=>b[0]!==gi&&b[1]!==gi).map(b=>{ const r=[b[0]>gi?b[0]-1:b[0], b[1]>gi?b[1]-1:b[1]]; if(b[2]!=null)r.push(b[2]); return r; });
   builderSel=-1; refreshBuild(); }
 function updateBuildMarker(){ if(buildMarker){ molGroup.remove(buildMarker); buildMarker.geometry.dispose(); buildMarker.material.dispose(); buildMarker=null; }
@@ -1035,6 +1050,16 @@ function recordTurntable(){ const btn=$('turntableBtn'), cvs=renderer.domElement
 // ---------- picking ----------
 const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let downXY=null;
 renderer.domElement.addEventListener('pointerdown',e=>downXY=[e.clientX,e.clientY]);
+// ---------- build-mode: drag an atom to move it (capture phase so it beats OrbitControls) ----------
+let dragAtom=-1, dragMoved=false; const _dplane=new THREE.Plane(), _dpt=new THREE.Vector3();
+renderer.domElement.addEventListener('pointerdown',e=>{ if(!builderOn||e.button!==0||!sphereMesh)return;
+  ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera); const hit=ray.intersectObject(sphereMesh,false);
+  if(hit.length){ dragAtom=pickList[hit[0].instanceId]; dragMoved=false; controls.enableRotate=false;   // drag on an atom → move it; drag on empty → orbit
+    const a=MOL.atoms[dragAtom]; _dplane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(a.x,a.y,a.z)); } }, true);
+renderer.domElement.addEventListener('pointermove',e=>{ if(dragAtom<0)return; ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
+  if(ray.ray.intersectPlane(_dplane,_dpt)){ if(!dragMoved){ pushUndo(); dragMoved=true; } const a=MOL.atoms[dragAtom]; a.x=_dpt.x;a.y=_dpt.y;a.z=_dpt.z; a.r!=null&&delete a.r; rebuild(); updateBuildMarker(); } });
+addEventListener('pointerup',()=>{ if(dragAtom<0)return; if(dragMoved){ const nb=bNeighbors(dragAtom); if(nb.length===1){ const a=MOL.atoms[dragAtom], b=MOL.atoms[nb[0]], d=new THREE.Vector3(a.x-b.x,a.y-b.y,a.z-b.z).setLength(elCov(a.el)+elCov(b.el)); a.x=b.x+d.x;a.y=b.y+d.y;a.z=b.z+d.z; rebuild(); updateBuildMarker(); }
+  builderSel=dragAtom; if($('buildOut'))$('buildOut').textContent=`moved atom #${dragAtom+1}`; } dragAtom=-1; controls.enableRotate=true; });
 renderer.domElement.addEventListener('click',e=>{ if(!sphereMesh||!downXY||Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])>5) return;
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
   const hit=ray.intersectObject(sphereMesh,false);
@@ -1122,7 +1147,9 @@ $('buildBtn').addEventListener('click',()=>{ builderOn=!builderOn; $('buildBtn')
 $('buildEls').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; builderEl=b.dataset.el; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); });
 $('buildFrags').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; builderFragment(b.dataset.frag); });
 $('buildAddBtn').addEventListener('click',()=>builderAdd(builderEl));
-$('buildSetEl').addEventListener('click',()=>{ if(builderSel<0){ $('buildOut').textContent='click an atom first, then Set'; return; } const a=MOL.atoms[builderSel]; a.el=builderEl.toUpperCase(); a.name=builderEl.toUpperCase(); delete a.r; refreshBuild(); });
+$('buildSetEl').addEventListener('click',()=>{ if(builderSel<0){ $('buildOut').textContent='click an atom first, then Set'; return; } pushUndo(); const a=MOL.atoms[builderSel]; a.el=builderEl.toUpperCase(); a.name=builderEl.toUpperCase(); delete a.r; refreshBuild(); });
+$('buildDelMol').addEventListener('click',builderDeleteMol); $('buildUndo').addEventListener('click',undo);
+addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&(e.key==='z'||e.key==='Z')){ const t=(e.target.tagName||''); if(t==='INPUT'||t==='TEXTAREA'||t==='SELECT')return; e.preventDefault(); undo(); } });
 $('buildDel').addEventListener('click',builderDelete);
 $('buildFillH').addEventListener('click',builderFillH);
 $('buildNew').addEventListener('click',()=>{ MOL={atoms:[],bonds:[]}; builderSel=-1; isDNA=false; refreshBuild(); document.title='molWhiz — new'; });
@@ -1293,6 +1320,7 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   surfInfo:()=>surfMesh?{verts:surfMesh.geometry.attributes.position.count, tris:(surfMesh.geometry.index?surfMesh.geometry.index.count/3:0)}:null,
   shownAtoms:()=>sphereMesh?sphereMesh.count:0, showAtomProps,
   builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
+  undo, builderDeleteMol, undoDepth:()=>undoStack.length,
   fetchPdb, fetchAlphaFold, parseCIF, parseMol2, parseGro, parseByName, molToXYZ, molToPDB, molToMol2, exportHTML, snapCfg, applyCfg, loadPreset, loadProject, currentScene, computeSS,
   captureViewPanel, renderFigureCanvas, exportFigSVG, figCount:()=>figPanels.length,
   setZoom, camDist:()=>camera.position.distanceTo(controls.target), colorCtx:()=>_ccx, atomRad, setCol:c=>{curCol=c;[...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===c));rebuild();},
