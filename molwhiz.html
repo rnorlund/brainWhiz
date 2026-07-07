@@ -39,6 +39,8 @@
   #hud.on{opacity:1} #hud .t{font-weight:700} #hud .s{color:var(--muted);font-size:11px}
   #zoomBar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:8px;background:rgba(10,14,22,.72);border:1px solid var(--line);border-radius:20px;padding:5px 14px}
   #zoomBar input{width:200px}
+  #vignette{position:fixed;inset:0;z-index:6;pointer-events:none;display:none;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%)}
+  #vignette.on{display:block}
   #legend{position:fixed;left:290px;bottom:14px;z-index:8;display:none;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
   #legend.on{display:block}
   #seqPanel{position:fixed;top:46px;left:290px;right:290px;z-index:12;background:rgba(12,16,24,.96);border:1px solid var(--line);border-radius:0 0 8px 8px;padding:8px 10px;display:none;max-height:180px;overflow:auto}
@@ -66,6 +68,7 @@
 </style>
 
 <div id="app"></div>
+<div id="vignette"></div>
 <div id="drop">Drop a .pdb · .cif · .mol2 · .sdf/.mol · .xyz · .gro · .pdbqt · or .mwz/.mwzproj</div>
 <div id="hud"><div class="t"></div><div class="s"></div></div>
 <div id="zoomBar"><span title="zoom">🔍</span><input type="range" id="zoom" min="0" max="100" value="30"></div>
@@ -195,7 +198,7 @@
   </div>
   <div class="grp"><div class="lbl">Material / texture</div>
     <div class="row"><label title="15 baked-studio matcaps live in this dropdown (Clay, Chrome, Gold, Pearl…)">Style / matcap ▾</label>
-      <select id="material"><optgroup label="Shaded"><option value="standard">Standard</option><option value="matte">Matte</option><option value="glossy">Glossy</option><option value="metal">Metallic</option><option value="toon">Toon (cel)</option><option value="glass">Glass</option></optgroup>
+      <select id="material"><optgroup label="Shaded"><option value="standard">Standard</option><option value="matte">Matte</option><option value="glossy">Glossy</option><option value="metal">Metallic</option><option value="clearcoat">Clearcoat</option><option value="iridescent">Iridescent</option><option value="toon">Toon (cel)</option><option value="glass">Glass</option></optgroup>
       <optgroup label="Matcap (baked studio)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
     <div class="row"><label class="tog"><input type="checkbox" id="rim"> rim glow</label></div>
     <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
@@ -257,6 +260,8 @@
   </div>
   <div class="grp"><div class="lbl">Scene</div>
     <div class="row"><label>Background</label><input type="color" id="bg" value="#0a0e16"></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="gradBg"> gradient backdrop</label></div>
+    <div class="row"><label class="tog"><input type="checkbox" id="vignetteOn"> vignette</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="shadowsOn"> shadows</label></div>
   </div>
 </div>
 
@@ -308,7 +313,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v2.3'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v2.4'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -336,7 +341,7 @@ function loop(){ requestAnimationFrame(loop); controls.update();
   // adaptive near/far so the molecule never clips out on zoom in/out (proportional near, far past the model)
   const dist=camera.position.distanceTo(controls.target), R=(molR||30)*4+50;
   const nf=Math.max(0.02, dist*0.02), ff=dist+R; if(camera.near!==nf||camera.far!==ff){ camera.near=nf; camera.far=ff; camera.updateProjectionMatrix(); }
-  if($('depthCue')&&$('depthCue').checked){ const mr=(molR||30); if(!scene.fog)scene.fog=new THREE.Fog(0,1,1); scene.fog.color.copy(scene.background); scene.fog.near=Math.max(0.1,dist-mr*0.9); scene.fog.far=dist+mr*1.2; } else if(scene.fog){ scene.fog=null; }
+  if($('depthCue')&&$('depthCue').checked){ const mr=(molR||30); if(!scene.fog)scene.fog=new THREE.Fog(0,1,1); scene.fog.color.copy(bgColor); scene.fog.near=Math.max(0.1,dist-mr*0.9); scene.fog.far=dist+mr*1.2; } else if(scene.fog){ scene.fog=null; }
   const s=+$('spinSpeed').value*0.01;
   if($('rockMode').checked){ rockPhase+=s; const off=Math.sin(rockPhase)*0.6;   // gentle oscillation on active axes
     if(spinAx.x)molGroup.rotation.x=off; if(spinAx.y)molGroup.rotation.y=off; if(spinAx.z)molGroup.rotation.z=off; }
@@ -457,6 +462,8 @@ function makeMat(){ const st=$('material').value; const rim=$('rim').checked;
   else if(st==='metal') m=new THREE.MeshStandardMaterial({roughness:0.3,metalness:0.9,flatShading:flat});
   else if(st==='toon') m=new THREE.MeshToonMaterial({});
   else if(st==='glass') m=new THREE.MeshStandardMaterial({roughness:0.05,metalness:0.0,transparent:true,opacity:0.45,flatShading:flat});
+  else if(st==='clearcoat') m=new THREE.MeshPhysicalMaterial({roughness:0.35,metalness:0.0,clearcoat:1.0,clearcoatRoughness:0.08,flatShading:flat});
+  else if(st==='iridescent') m=new THREE.MeshPhysicalMaterial({roughness:0.25,metalness:0.3,iridescence:1.0,iridescenceIOR:1.3,iridescenceThicknessRange:[100,700],flatShading:flat});
   else m=new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.0,flatShading:flat});
   if(rim && st.indexOf('matcap:')!==0){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
   if(wire) m.wireframe=true;
@@ -634,7 +641,21 @@ function buildResLabels(){ if(!$('resLabels')||!$('resLabels').checked) return; 
   const arr=[...anchors.values()], cap=150, step=arr.length>cap?Math.ceil(arr.length/cap):1; labelsGroup=new THREE.Group();
   for(let i=0;i<arr.length;i+=step){ const a=arr[i], one=AA1[a.resName]?a.resName:(a.resName); const sp=labelSprite(`${one} ${a.resSeq}`,'#e7eefb'); sp.position.set(a.x,a.y,a.z); labelsGroup.add(sp); }
   molGroup.add(labelsGroup); if(step>1&&$('selOut')) $('selOut').textContent=`labels: every ${step}th residue (${Math.ceil(arr.length/step)} shown)`; }
-function decorations(){ buildAura(); buildHBonds(); addOutline(); buildResLabels(); }
+function decorations(){ buildAura(); buildHBonds(); addOutline(); buildResLabels(); applyShadows(); }
+// ---------- scene look: gradient backdrop, shadows, vignette ----------
+const bgColor=new THREE.Color(0x0a0e16);
+function applyBackground(){ bgColor.set($('bg').value);
+  if($('gradBg')&&$('gradBg').checked){ const c=document.createElement('canvas'); c.width=4; c.height=256; const g=c.getContext('2d');
+    const gr=g.createLinearGradient(0,0,0,256); gr.addColorStop(0,bgColor.clone().multiplyScalar(0.45).getStyle()); gr.addColorStop(1,bgColor.clone().lerp(new THREE.Color(0xffffff),0.14).getStyle());
+    g.fillStyle=gr; g.fillRect(0,0,4,256); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; scene.background=t; }
+  else scene.background=bgColor.clone(); }
+function applyShadows(){ const on=$('shadowsOn')&&$('shadowsOn').checked; renderer.shadowMap.enabled=on; renderer.shadowMap.type=THREE.PCFSoftShadowMap; key.castShadow=on;
+  if(on){ const r=(molR||30); key.position.set(1,1,1).normalize().multiplyScalar(r*3); key.shadow.mapSize.set(2048,2048);
+    const c=key.shadow.camera; c.left=-r*1.4;c.right=r*1.4;c.top=r*1.4;c.bottom=-r*1.4;c.near=r*0.5;c.far=r*7; c.updateProjectionMatrix(); key.shadow.bias=-0.0007; }
+  else key.position.set(1,1,1);
+  molGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=on; o.receiveShadow=on; if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.needsUpdate=true);} } }); }
+function compositeVignette(target){ if(!$('vignetteOn')||!$('vignetteOn').checked) return; const x=target.getContext('2d'), w=target.width, h=target.height;
+  const g=x.createRadialGradient(w/2,h/2,Math.min(w,h)*0.42, w/2,h/2,Math.max(w,h)*0.62); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.55)'); x.fillStyle=g; x.fillRect(0,0,w,h); }
 function updateLegend(){ const el=$('legend'); if(!el)return; if(!$('legendOn').checked){ el.classList.remove('on'); return; }
   const c=legendCanvas(1); if(!c){ el.classList.remove('on'); return; } el.width=c.width; el.height=c.height; el.getContext('2d').clearRect(0,0,c.width,c.height); el.getContext('2d').drawImage(c,0,0); el.classList.add('on'); }
 function compositeLegend(target, scale){ if(!$('legendOn')||!$('legendOn').checked) return; const c=legendCanvas(scale||1); if(!c) return; const x=target.getContext('2d'); x.drawImage(c, 10, target.height-c.height-10); }
@@ -1078,7 +1099,10 @@ $('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) retur
   else if(v==='dna:build'){ buildDNA($('dnaSeq').value); }
   else if(v.startsWith('af:')){ const acc=v.slice(3); $('afid').value=acc; fetchAlphaFold(acc); }
   else if(v.startsWith('pdb:')){ const id=v.slice(4); $('pdbid').value=id; fetchPdb(id); } });
-$('bg').addEventListener('input',e=>scene.background=new THREE.Color(e.target.value));
+$('bg').addEventListener('input',applyBackground);
+$('gradBg').addEventListener('change',applyBackground);
+$('vignetteOn').addEventListener('change',()=>$('vignette').classList.toggle('on',$('vignetteOn').checked));
+$('shadowsOn').addEventListener('change',applyShadows);
 $('fitBtn').addEventListener('click',()=>{ fitCamera(); syncZoom(); });
 $('zoom').addEventListener('input',e=>setZoom(+e.target.value));
 controls.addEventListener('change',syncZoom);
@@ -1087,7 +1111,7 @@ renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault(); const z=$(
   const mag=Math.min(5, Math.abs(e.deltaY)*0.08+0.6), v=Math.max(0,Math.min(100, +z.value - Math.sign(e.deltaY)*mag));
   z.value=v; setZoom(v); }, {passive:false});
 $('pngBtn').addEventListener('click',()=>{ renderFrame();
-  const src=renderer.domElement, cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height; const x=cv.getContext('2d'); x.drawImage(src,0,0); compositeLegend(cv, src.width/innerWidth);
+  const src=renderer.domElement, cv=document.createElement('canvas'); cv.width=src.width; cv.height=src.height; const x=cv.getContext('2d'); x.drawImage(src,0,0); compositeVignette(cv); compositeLegend(cv, src.width/innerWidth);
   const a=document.createElement('a'); a.download='molwhiz.png'; a.href=cv.toDataURL('image/png'); a.click(); });
 $('measBtn').addEventListener('click',()=>{ measMode=!measMode; $('measBtn').classList.toggle('acc',measMode); measSel=[]; clearMeasureGeo(); $('measOut').textContent=measMode?'click atoms in sequence · distance each hop, angle at each vertex':''; });
 // builder
@@ -1214,7 +1238,7 @@ let figPanels=[];   // {url, img, caption}
 const _hexRgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
 const _escX=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderFrame(W,H);
-  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeLegend(cv,1.4);   // bake legend into the panel
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeVignette(cv); compositeLegend(cv,1.4);   // bake vignette+legend into the panel
   const url=cv.toDataURL('image/png'); resize(); renderFrame();   // restore live viewport
   const img=new Image(); img.onload=updateFigPreview; img.src=url; figPanels.push({url,img,caption:(document.title||'').replace('molWhiz — ','')}); renderFigList(); updateFigPreview(); }
 function layoutFig(scale){ scale=scale||1; const cols=+$('figCols').value, gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
