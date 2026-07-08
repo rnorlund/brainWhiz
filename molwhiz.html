@@ -348,7 +348,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.9'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.10'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -1014,8 +1014,9 @@ function buildHBonds(){ if(!$('hbondOn')||!$('hbondOn').checked) return; const A
 // ink outline (inverted hull): a slightly-enlarged BackSide black shell behind the meshes
 function inflateGeo(geo,d){ const g=geo.clone(); if(!g.attributes.normal)g.computeVertexNormals(); const p=g.attributes.position,n=g.attributes.normal;
   for(let i=0;i<p.count;i++) p.setXYZ(i, p.getX(i)+n.getX(i)*d, p.getY(i)+n.getY(i)*d, p.getZ(i)+n.getZ(i)*d); p.needsUpdate=true; return g; }
-function addOutline(){ if(!$('outlineOn')||!$('outlineOn').checked) return; const w=+$('outlineW').value, f=1+w*0.06, d=w*0.04;
-  outlineGroup=new THREE.Group(); outlineGroup.renderOrder=-2; const mat=()=>new THREE.MeshBasicMaterial({color:0x05080d,side:THREE.BackSide});
+function addOutline(){ if(!$('outlineOn')||!$('outlineOn').checked) return; const w=+$('outlineW').value, f=1+w*0.032, d=w*0.03;
+  outlineGroup=new THREE.Group(); outlineGroup.renderOrder=-2;
+  const mat=()=>new THREE.MeshBasicMaterial({color:0x05080d,side:THREE.BackSide,depthWrite:true,toneMapped:false,fog:false});   // crisp ink line, not bloomed
   const shell=o=>{ if(!o||!o.isMesh)return; let cm;
     if(o.isInstancedMesh){ cm=new THREE.InstancedMesh(o.geometry.clone().scale(f,f,f),mat(),o.count); cm.instanceMatrix.copy(o.instanceMatrix); cm.instanceMatrix.needsUpdate=true; }
     else cm=new THREE.Mesh(inflateGeo(o.geometry,d),mat()); outlineGroup.add(cm); };
