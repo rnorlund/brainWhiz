@@ -117,8 +117,8 @@
     <optgroup label="🔮 AlphaFold (predicted, by UniProt)"><option value="af:P69905">Hemoglobin α (P69905)</option><option value="af:P01308">Insulin (P01308)</option><option value="af:P04637">p53 tumour suppressor (P04637)</option><option value="af:P00698">Lysozyme C (P00698)</option><option value="af:P0DTC2">SARS-CoV-2 spike (P0DTC2)</option><option value="af:P0DP23">Calmodulin (P0DP23)</option><option value="af:P02769">Serum albumin (P02769)</option></optgroup>
     <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option><option value="pdb:1D66">GAL4–DNA (1D66)</option><option value="pdb:6TNA">tRNA (6TNA)</option></optgroup>
   </select>
-  <input type="text" id="findq" placeholder="Search any molecule — name / SMILES / PDB" autocomplete="off" style="max-width:220px">
-  <button class="tbtn" id="findBtn" title="Search a molecule by name (aspirin), SMILES (CC(=O)O), or 4-char PDB ID (1CRN). Pulls 3D from PubChem / RCSB.">🔎</button>
+  <input type="text" id="findq" placeholder="Search any molecule — name / IUPAC / SMILES / PDB" autocomplete="off" style="max-width:240px">
+  <button class="tbtn" id="findBtn" title="Search by common name (aspirin), systematic IUPAC name (2-acetyloxybenzoic acid), SMILES (CC(=O)O), or 4-char PDB ID (1CRN). 3D from PubChem · OPSIN · CACTUS · RCSB.">🔎</button>
   <input type="text" id="pdbid" placeholder="PDB ID" maxlength="8" style="max-width:96px;text-transform:uppercase">
   <button class="tbtn" id="fetchBtn">Fetch</button>
   <span class="sp"></span>
@@ -368,7 +368,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.12'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.13'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -1470,18 +1470,26 @@ $('figGrid').addEventListener('click',e=>{ const cell=e.target.closest('.figcell
 $('figGrid').addEventListener('input',e=>{ const inp=e.target.closest('.clab'); if(inp){ const i=+inp.closest('.figcell').dataset.i; if(figSlots[i]) figSlots[i].caption=inp.value; } });
 $('figPNG').addEventListener('click',exportFigPNG); $('figPDF').addEventListener('click',exportFigPDF); $('figSVG').addEventListener('click',exportFigSVG);
 // Search any molecule by name / SMILES / PDB. Names & SMILES → 3D SDF from PubChem (fallback NCI CACTUS); 4-char code → RCSB.
-async function fetchChem(qArg){ const q=(typeof qArg==='string'?qArg:$('findq').value).trim(); if(!q){ $('status').textContent='type a molecule name, a SMILES, or a 4-char PDB ID'; return; }
+function _load3D(m,q,src){ if(m&&m.atoms.length){ loadMol(m,q); $('status').textContent=`${q} · ${m.atoms.length} atoms (${src})`; return true; } return false; }
+async function _sdf3dFromSmiles(smi){ const es=encodeURIComponent(smi), P='https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound';   // SMILES → 3D coords
+  try{ const r=await fetch(`${P}/smiles/${es}/SDF?record_type=3d`); if(r.ok){ const m=parseSDF(await r.text()); if(m.atoms.length) return m; } }catch(e){}
+  try{ const r=await fetch(`https://cactus.nci.nih.gov/chemical/structure/${es}/file?format=sdf&get3d=true`); if(r.ok){ const m=parseSDF(await r.text()); if(m.atoms.length) return m; } }catch(e){}
+  return null; }
+// Search any molecule: PDB id → RCSB; SMILES → 3D; a name → common-name (PubChem) then systematic IUPAC (OPSIN) then CACTUS.
+async function fetchChem(qArg){ const q=(typeof qArg==='string'?qArg:$('findq').value).trim(); if(!q){ $('status').textContent='type a molecule name, an IUPAC name, a SMILES, or a 4-char PDB ID'; return; }
   if(/^[0-9][0-9A-Za-z]{3}$/.test(q)){ $('pdbid').value=q.toUpperCase(); return fetchPdb(q.toUpperCase()); }        // looks like a PDB ID (digit + 3 alnum)
   const eq=encodeURIComponent(q), P='https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound';
-  const looksSmiles=/[=#\[\]()@+\\/.%]/.test(q) || (/[A-Za-z]/.test(q)&&/\d/.test(q)&&!/\s/.test(q));            // SMILES has bond/branch chars or fused letters+digits, no spaces
-  const urls = looksSmiles
-    ? [`${P}/smiles/${eq}/SDF?record_type=3d`, `${P}/name/${eq}/SDF?record_type=3d`]
-    : [`${P}/name/${eq}/SDF?record_type=3d`, `${P}/smiles/${eq}/SDF?record_type=3d`];
-  $('status').textContent='searching PubChem for “'+q+'” …';
-  for(const url of urls){ try{ const r=await fetch(url); if(!r.ok) continue; const m=parseSDF(await r.text()); if(m.atoms.length){ loadMol(m,q); $('status').textContent=`${q} · ${m.atoms.length} atoms (PubChem)`; return; } }catch(e){} }
-  $('status').textContent='trying NCI CACTUS for “'+q+'” …';                                                        // fallback: resolves many names/SMILES to 3D
-  try{ const r=await fetch(`https://cactus.nci.nih.gov/chemical/structure/${eq}/file?format=sdf&get3d=true`); if(r.ok){ const m=parseSDF(await r.text()); if(m.atoms.length){ loadMol(m,q); $('status').textContent=`${q} · ${m.atoms.length} atoms (CACTUS)`; return; } } }catch(e){}
-  $('status').textContent='no 3D match for “'+q+'” — try another name, a SMILES, or a PDB ID'; }
+  const looksSmiles=/[=#\[\]()@+\\/.%]/.test(q) || (/[A-Za-z]/.test(q)&&/\d/.test(q)&&!/\s/.test(q)&&!/-/.test(q));   // SMILES: bond/branch chars, or fused letters+digits w/ no spaces or hyphens (hyphens ⇒ likely IUPAC)
+  if(looksSmiles){ $('status').textContent='building 3D from SMILES …'; if(_load3D(await _sdf3dFromSmiles(q),q,'SMILES')) return; }
+  else {
+    $('status').textContent='searching PubChem for “'+q+'” …';                                                      // 1) common / trivial names + many synonyms
+    try{ const r=await fetch(`${P}/name/${eq}/SDF?record_type=3d`); if(r.ok && _load3D(parseSDF(await r.text()),q,'PubChem')) return; }catch(e){}
+    $('status').textContent='parsing IUPAC name …';                                                                 // 2) systematic IUPAC → SMILES via OPSIN → 3D
+    try{ const r=await fetch(`https://www.ebi.ac.uk/opsin/ws/${eq}.smi`); if(r.ok){ const smi=(await r.text()).trim(); if(smi && !/^error|not\s|unparse|<|doctype/i.test(smi) && /[A-Za-z]/.test(smi)){ if(_load3D(await _sdf3dFromSmiles(smi),q,'IUPAC · OPSIN')) return; } } }catch(e){}
+    $('status').textContent='trying NCI CACTUS …';                                                                  // 3) CACTUS resolves many names (incl. IUPAC) to 3D
+    try{ const r=await fetch(`https://cactus.nci.nih.gov/chemical/structure/${eq}/file?format=sdf&get3d=true`); if(r.ok && _load3D(parseSDF(await r.text()),q,'CACTUS')) return; }catch(e){}
+  }
+  $('status').textContent='no 3D match for “'+q+'” — try a common name, an IUPAC name, a SMILES, or a PDB ID'; }
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
   try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); return; }

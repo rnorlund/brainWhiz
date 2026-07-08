@@ -81,6 +81,9 @@ console.log('== name/SMILES → 3D fetch (PubChem) ==');
 await page.evaluate(() => window.__mol.fetchChem('aspirin')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 30000 }); await settle(300);
 const aspStat = await status();
 ok(`fetched aspirin by name ("${aspStat}")`, /aspirin/i.test(aspStat) && /\d+ atoms/.test(aspStat));
+await page.evaluate(() => window.__mol.fetchChem('1,3,7-trimethylpurine-2,6-dione')); await page.waitForFunction(() => /atoms|no 3D/.test(document.getElementById('status').textContent), { timeout: 30000 }); await settle(300);
+const iupacN = await page.evaluate(() => window.__mol.MOL.atoms.length);
+ok(`fetched by IUPAC name (caffeine, ${iupacN} atoms)`, iupacN === 24);
 
 console.log('== one-click active site (1HSG) ==');
 await page.evaluate(() => window.__mol.fetchPdb('1HSG')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 40000 }); await settle(500);
