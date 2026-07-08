@@ -549,6 +549,9 @@
         <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
         <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option><option>Hatching</option><option>Hologram</option></optgroup>
         <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
+    <div class="row"><label title="Drag any image (or a matcap/lit-sphere PNG) onto the brain — or pick one here — to wear it as a material (Unity-style). Matcap images give the most 'material' look.">🎨 Custom material</label>
+      <button class="sm" id="matImgBtn" title="Load an image as a matcap material applied to the brain">＋ Drop / load image…</button>
+      <input type="file" id="matImgFile" accept="image/*" style="display:none"></div>
     <div class="row"><label title="Constant-width black ink outline around the brain (inverted-hull) — composes with any shading/material">✒ Ink outline</label>
       <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
     <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
@@ -885,6 +888,19 @@
       <div class="row"><button class="sm" id="figExportHtml" style="flex:1" title="Export the current visible regions + camera as a self-contained interactive .html">🔗 Export interactive .html</button></div>
       <div id="figExportInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:3px"></div>
     </div>
+  </div></details>
+
+  <details class="acc" id="accMethods"><summary><span class="chev">▸</span>🧾 AutoMethods</summary><div class="accb">
+    <div class="muted" style="font-size:11px;line-height:1.45;margin-bottom:6px">Auto-writes a <b>Methods / figure-caption</b> paragraph describing the atlas, underlay and overlays currently loaded — paste it into a paper. Regenerates as you load scans.</div>
+    <div class="row"><label class="toggle" title="Write as a figure caption (present tense, 'Figure N.') instead of a Methods paragraph"><input type="checkbox" id="amStyleCap"> figure-caption style</label></div>
+    <div class="row"><label class="toggle"><input type="checkbox" id="amCiteSoft" checked> cite brainWhiz</label>
+      <label class="toggle" style="margin-left:10px"><input type="checkbox" id="amCiteAtlas" checked> cite atlas</label></div>
+    <div class="row"><label class="toggle"><input type="checkbox" id="amThresh" checked> thresholds</label>
+      <label class="toggle" style="margin-left:10px"><input type="checkbox" id="amCmap" checked> colourmaps</label>
+      <label class="toggle" style="margin-left:10px"><input type="checkbox" id="amSpace" checked> MNI152 note</label></div>
+    <textarea id="methodsOut" rows="9" readonly style="width:100%;box-sizing:border-box;font-size:11px;line-height:1.45;background:var(--panel,#0f1420);color:inherit;border:1px solid var(--line);border-radius:6px;padding:7px;resize:vertical;margin-top:4px"></textarea>
+    <div class="row" style="margin-top:5px"><button class="sm" id="amGen" style="flex:1">↻ Generate</button><button class="sm" id="amCopy" style="flex:1">⧉ Copy</button></div>
+    <div id="amInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:3px"></div>
   </div></details>
 
   <details class="acc" id="accKeyframe"><summary><span class="chev">▸</span>🎬 Keyframe director</summary><div class="accb">
@@ -1468,6 +1484,17 @@ function setShading(type){
   applySurfStyle(); setOpacities();
   if(overlay.on) recolorOverlay();   // re-apply overlay colors + sparkle-active flags to the new materials
 }
+// ---- Unity-style: drag an image onto the brain (or load one) → wear it as a matcap material ----
+const _matcapLoader = new THREE.TextureLoader();
+function applyDroppedMatcap(url, name){ _matcapLoader.load(url, tex=>{
+  tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
+  const short = (name||'custom').replace(/\.[^.]+$/,'').slice(0,26), key = '✎ '+short; MATCAPS[key] = tex;
+  const sel = $('shading'); let grp = sel.querySelector('optgroup[label="Dropped materials"]');
+  if(!grp){ grp = document.createElement('optgroup'); grp.label = 'Dropped materials'; sel.appendChild(grp); }
+  let opt = [...grp.children].find(o=>o.value === 'matcap:'+key);
+  if(!opt){ opt = document.createElement('option'); opt.value = 'matcap:'+key; grp.appendChild(opt); } opt.textContent = short;
+  sel.value = 'matcap:'+key; setShading('matcap:'+key); requestRender();
+}, undefined, ()=>{ if($('status')) $('status').textContent = 'could not read that image'; }); }
 
 // ---- inverted-hull ink outline (constant-width black border; composes with any shading) ----
 let outlineMeshes=[];
@@ -1797,6 +1824,40 @@ $('saveColored').addEventListener('click', ()=>{
 
 // ---------- render style (shading / vividness / rim glow) ----------
 $('shading').addEventListener('change', e=>setShading(e.target.value));
+$('matImgBtn').addEventListener('click', ()=>$('matImgFile').click());
+$('matImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) applyDroppedMatcap(URL.createObjectURL(f), f.name); e.target.value=''; });
+
+// ---- AutoMethods: auto-write a Methods / figure-caption paragraph from the loaded atlas + underlay + overlays ----
+const ATLAS_CITE = { jhu:'the JHU DTI-based white-matter atlas (Mori et al., 2008)', aal:'the AAL atlas (Tzourio-Mazoyer et al., 2002)', aalcat:'the AAL atlas (Tzourio-Mazoyer et al., 2002)', aal3:'the AAL3 atlas (Rolls et al., 2020)', aicha:'the AICHA atlas (Joliot et al., 2015)', ho:'the Harvard-Oxford atlas (Desikan et al., 2006)', bro:'the Brodmann areas', cobra:'the CoBrA subcortical atlas (Winterburn et al., 2013)', hammers:'the Hammers atlas (Hammers et al., 2003)', lpba40:'the LPBA40 atlas (Shattuck et al., 2008)', neuromorph:'the Neuromorphometrics atlas', xtract:'the XTRACT white-matter atlas (Warrington et al., 2020)', catani:'the Catani white-matter atlas (Catani & Thiebaut de Schotten, 2008)', fox:'the meta-analytic (Fox) atlas', anatomy3:'the SPM Anatomy toolbox atlas (Eickhoff et al., 2005)', hcp:'the HCP-MMP1 atlas (Glasser et al., 2016)' };
+function _amThresh(o){ const t=+o.s.cthresh||0; if(t<=0) return null; return o.s.cthreshMode==='raw' ? `thresholded at ${t}` : `thresholded at ${Math.round(t*100)}% of its dynamic range`; }
+function _amCmap(o){ if(o.s.style==='single') return 'a solid colour'; if(o.s.style!=='cmap') return null; return `the ${o.s.cmap||'hot'} colourmap${o.s.cmapInvert?' (inverted)':''}${o.s.cmapAbs?', |value|':''}`; }
+function _amOv(o){ const nm=o.fileName||o.name||'an overlay';
+  let s = o.kind==='neuro' ? `a NeuroQuery meta-analytic term map ("${o.term||o.name}")` : o.kind==='seed' ? 'a seed-based functional-connectivity map' : `a voxelwise statistical map (${nm})`;
+  if($('amThresh').checked){ const t=_amThresh(o); if(t) s+=', '+t; }
+  if($('amCmap').checked){ const c=_amCmap(o); if(c) s+=`, displayed with ${c}`; }
+  return s; }
+function genMethods(){ if(!$('methodsOut')) return;
+  const cap=$('amStyleCap').checked, soft='brainWhiz (Newman-Norlund, 2026; https://doi.org/10.5281/zenodo.21246441)';
+  const atlasName=(typeof ENTRY!=='undefined'&&ENTRY)?ENTRY.name:(typeof ATLAS_ID!=='undefined'?ATLAS_ID:'a brain atlas');
+  const nroi=(typeof ENTRY!=='undefined'&&ENTRY&&ENTRY.nroi)?ENTRY.nroi:((typeof byId!=='undefined'&&byId.size)?byId.size:null);
+  const ul=(typeof underlayName!=='undefined'&&underlayName)?underlayName:'the MNI152 template';
+  const vis=((typeof overlays!=='undefined')?overlays:[]).filter(o=>o.visible&&(o.vals||o.vol||o.volGrid));
+  const sp=$('amSpace').checked?' in MNI152 stereotaxic space':''; const S=[];
+  S.push((cap?'Brain visualization rendered with ':'Figures were produced with ')+($('amCiteSoft').checked?soft:'brainWhiz')
+    +`. Regions are displayed on ${$('amCiteAtlas').checked?(ATLAS_CITE[typeof ATLAS_ID!=='undefined'?ATLAS_ID:'']||('the '+atlasName+' atlas')):('the '+atlasName+' atlas')}`+(nroi?` (${nroi} regions)`:'')+sp+'.');
+  S.push(`The anatomical underlay is ${ul}.`);
+  if(vis.length===1) S.push(`Overlaid is ${_amOv(vis[0])}.`);
+  else if(vis.length>1) S.push(`Overlaid are ${vis.length} maps: `+vis.map((o,i)=>`(${i+1}) ${_amOv(o)}`).join('; ')+'.');
+  else S.push('No statistical overlay is shown; regions are coloured by the selected scheme.');
+  if(typeof sliceMode!=='undefined'&&(sliceMode||mosaicMode)) S.push('Slices are shown at the native voxel resolution of the source volumes (nearest-neighbour sampling, true voxel aspect ratio; no resampling).');
+  if($('amCiteAtlas').checked) S.push('The bundled atlas, template, and any meta-analytic maps are third-party resources; please also cite their original sources.');
+  const text=(cap?'Figure. ':'')+S.join(' '); $('methodsOut').value=text;
+  if($('amInfo')) $('amInfo').textContent=`${vis.length} overlay${vis.length===1?'':'s'} · ${text.split(/\s+/).length} words`;
+  return text; }
+['amStyleCap','amCiteSoft','amCiteAtlas','amThresh','amCmap','amSpace'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',genMethods); });
+if($('amGen')) $('amGen').addEventListener('click',genMethods);
+if($('amCopy')) $('amCopy').addEventListener('click',()=>{ const t=$('methodsOut').value; if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{ if($('amInfo'))$('amInfo').textContent='copied to clipboard'; }); else { $('methodsOut').select(); document.execCommand('copy'); } });
+if($('accMethods')) $('accMethods').addEventListener('toggle',()=>{ if($('accMethods').open) genMethods(); });
 $('outlineOn').addEventListener('change', refreshOutline);
 $('outlineW').addEventListener('input', e=>{ $('outlineWV').textContent=e.target.value; refreshOutline(); });
 $('edgeOn').addEventListener('change', ()=>{ const on=$('edgeOn').checked; ['edgeRow1','edgeRow2'].forEach(id=>{const e=$(id);if(e)e.style.display=on?'':'none';}); requestRender(); });
@@ -2426,7 +2487,9 @@ window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventD
   let mode=(_bandAt(e.clientY)||{}).dataset ? _bandAt(e.clientY).dataset.mode : 'bg';
   // .bwz / .bwzproj always open as a figure/project regardless of band
   const recipe=files.filter(f=>/\.(bwz|bwzproj|json)$/i.test(f.name));
-  const rest=files.filter(f=>!/\.(bwz|bwzproj|json)$/i.test(f.name));
+  let rest=files.filter(f=>!/\.(bwz|bwzproj|json)$/i.test(f.name));
+  const imgs=rest.filter(f=>/\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(f.name));   // an image → wear it as a material (matcap)
+  if(imgs.length){ imgs.forEach(f=>applyDroppedMatcap(URL.createObjectURL(f), f.name)); rest=rest.filter(f=>!imgs.includes(f)); }
   for(const f of recipe) await handleDroppedFile(f, false);
   // a label .nii dropped together with a labels .txt/.lut/.label is unambiguously an atlas build —
   // honor it regardless of which band it landed on (so the labels file never hits the CSV loader)
@@ -4695,6 +4758,8 @@ let _readyResolve; const _ready = new Promise(r=>_readyResolve=r);
 window.__brainReady = _readyResolve;
 window.brainAPI = {
   ready: _ready,
+  genMethods: genMethods,
+  applyMaterialImage: applyDroppedMatcap,
   atlas: ATLAS_ID,
   atlases: REG.map(a=>({id:a.id,name:a.name,nroi:a.nroi})),
   views: Object.keys(VIEWS),
