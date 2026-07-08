@@ -368,7 +368,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.16'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.17'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -1013,10 +1013,11 @@ function buildAura(){ if(!$('auraOn').checked) return; const reachG=+$('auraSize
   // Cartoon/ribbon aura: glow the ribbon MESH itself (smooth, hugs the ribbon, colour-matched to each segment) rather than
   // per-atom spheres — the sphere aura was lumpy on ribbons (side-chain atoms scattered it) and single-coloured.
   if(curRep==='cartoon' && cartoonGroup){ auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; let n=0;
-    // two soft Fresnel hulls per segment (tight+bright, wide+faint) → a continuous halo that fades outward, no shell bands
-    const shells=[[0.10+(reachG-1)*0.45, intG*0.85, 1.9],[0.42+(reachG-1)*1.5, intG*0.42, 1.25]];
-    cartoonGroup.traverse(o=>{ if(!o.isMesh||!o.geometry||n>200)return; const hex=(o.material&&o.material.color)?o.material.color.getHex():new THREE.Color($('auraColor').value).getHex();
-      for(const [d,str,pw] of shells){ const mat=auraGlowMat(hex,str); mat.uniforms.uPow.value=pw; const mm=new THREE.Mesh(inflateGeo(o.geometry,d),mat); mm.userData.aStr=str; auraGroup.add(mm); n++; } });
+    // ONE modestly-inflated Fresnel hull per segment. A big inflation on a thin, curvy ribbon self-intersects → moiré / black
+    // bands, so keep inflation small and get "reach" from a broader Fresnel falloff (lower uPow) + brightness, not more geometry.
+    const d=0.05+(reachG-1)*0.14, str=intG*1.05, pw=Math.max(1.3, 2.2-(reachG-1)*0.7);
+    cartoonGroup.traverse(o=>{ if(!o.isMesh||!o.geometry||n>160)return; const hex=(o.material&&o.material.color)?o.material.color.getHex():new THREE.Color($('auraColor').value).getHex();
+      const mat=auraGlowMat(hex,str); mat.uniforms.uPow.value=pw; const mm=new THREE.Mesh(inflateGeo(o.geometry,d),mat); mm.userData.aStr=str; auraGroup.add(mm); n++; });
     molGroup.add(auraGroup); return; }
   const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
   const atomic=(curRep==='atomic'), sp=atomic?+$('atSpread').value:1;   // atomic view spreads atoms by 'Spread' — match it
