@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.7'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.8'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -560,6 +560,14 @@ function atomGeom(){ switch($('atomShape').value){
   case 'cyl':     return new THREE.CylinderGeometry(0.95,0.95,1.7,18);
   case 'diamond': return new THREE.OctahedronGeometry(1.25,0);
   default:        return new THREE.SphereGeometry(1,20,16);
+}}
+function nucleonGeom(){ switch($('atomShape').value){   // nucleons follow 'Atom shape' too, but low-poly & ~unit-radius so a big nucleus stays legible
+  case 'cube': case 'diamond': return new THREE.BoxGeometry(1.5,1.5,1.5);
+  case 'ico':    return new THREE.IcosahedronGeometry(1,0);
+  case 'octa':   return new THREE.OctahedronGeometry(1.1,0);
+  case 'tetra':  return new THREE.TetrahedronGeometry(1.3,0);
+  case 'dodeca': return new THREE.DodecahedronGeometry(1,0);
+  default:       return new THREE.SphereGeometry(1,10,8);
 }}
 function bondGeom(){ switch($('bondShape').value){
   case 'box': return new THREE.BoxGeometry(2,1,2);              // square rod
@@ -810,10 +818,10 @@ function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
 // ---------- atomic / electron view (educational Bohr model: nucleus + shells + shared/lone pairs) ----------
 function bohrShells(Z){ let rem=Z, s=[], n=1; while(rem>0){ const cap=2*n*n, c=Math.min(cap,rem); s.push(c); rem-=c; n++; } return s; }   // 2,8,18,… (light-atom teaching model)
 const _perp=a=>{ const t=Math.abs(a.x)<0.9?new THREE.Vector3(1,0,0):new THREE.Vector3(0,1,0); const u=new THREE.Vector3().crossVectors(a,t).normalize(); const v=new THREE.Vector3().crossVectors(a,u).normalize(); return [u,v]; };
-function addOrbit(grp,c,axis,r,electrons,speed,eMat){ const [u,v]=_perp(axis.clone().normalize());
+function addOrbit(grp,c,axis,r,electrons,speed,eMat,meta){ const [u,v]=_perp(axis.clone().normalize());
   if($('atShells').checked){ const ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.018*r+0.01,6,48), new THREE.MeshBasicMaterial({color:0x2d4a6a,transparent:true,opacity:0.6}));
     const m=new THREE.Matrix4().makeBasis(u,v,axis.clone().normalize()); m.setPosition(c); ring.applyMatrix4(m); grp.add(ring); }
-  const es=[]; for(let i=0;i<electrons;i++){ const e=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), eMat); grp.add(e); es.push({mesh:e, ph:i/electrons*Math.PI*2, sp:speed}); }
+  const es=[]; for(let i=0;i<electrons;i++){ const e=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), eMat); e.userData=Object.assign({kind:'e'},meta||{}); grp.add(e); es.push({mesh:e, ph:i/electrons*Math.PI*2, sp:speed}); }
   electronOrbits.push({c:c.clone(), u, v, r, es}); }
 // lone-pair lobes (VSEPR): teardrop clouds pointing away from the bonds, each holding 2 electrons
 const _lobeGeo=new THREE.SphereGeometry(1,16,12), _zAx=new THREE.Vector3(0,0,1);
@@ -825,10 +833,10 @@ function lobeDirs(bondDirs, L){ const anti=new THREE.Vector3(); bondDirs.forEach
   perp.normalize();
   if(L===2) return [anti.clone().applyAxisAngle(perp, 0.96), anti.clone().applyAxisAngle(perp,-0.96)];   // ~55° apart
   const out=[]; for(let k=0;k<L;k++) out.push(anti.clone().applyAxisAngle(perp,0.9).applyAxisAngle(anti,k/L*Math.PI*2)); return out; }
-function addLobe(grp,center,dir,NS,eMat){ dir=dir.clone().normalize(); const len=1.15*NS, wid=0.5*NS;
+function addLobe(grp,center,dir,NS,eMat,meta){ dir=dir.clone().normalize(); const len=1.15*NS, wid=0.5*NS;
   const m=new THREE.Mesh(_lobeGeo, new THREE.MeshStandardMaterial({color:0x9fd0ff,transparent:true,opacity:0.22,roughness:0.6,emissive:0x24406e,emissiveIntensity:0.4,depthWrite:false}));
-  m.quaternion.setFromUnitVectors(_zAx, dir); m.scale.set(wid,wid,len); m.position.copy(center).addScaledVector(dir, 0.9*NS+len*0.5); grp.add(m);
-  for(let e=0;e<2;e++){ const s=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), eMat); s.position.copy(m.position).add(new THREE.Vector3(0.18*NS*(e?1:-1),0,0).applyQuaternion(m.quaternion)); grp.add(s); } }
+  m.quaternion.setFromUnitVectors(_zAx, dir); m.scale.set(wid,wid,len); m.position.copy(center).addScaledVector(dir, 0.9*NS+len*0.5); m.userData=Object.assign({kind:'lobe'},meta||{}); grp.add(m);
+  for(let e=0;e<2;e++){ const s=new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), eMat); s.position.copy(m.position).add(new THREE.Vector3(0.18*NS*(e?1:-1),0,0).applyQuaternion(m.quaternion)); s.userData=Object.assign({kind:'e'},meta||{}); grp.add(s); } }
 function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const A=MOL.atoms, hideSolv=$('hideSolvent').checked, showH=$('showH').checked;
   const SP=+$('atSpread').value, NS=+$('atNuc').value, ESP=+$('atESpeed').value;
   const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; if(ELEM[(a.el||'').replace('BASE_','')]) idx.push(i); }
@@ -843,27 +851,28 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
   for(const i of idx){ const a=A[i], sym=(a.el||'').replace('BASE_',''), e=ELEM[sym], Z=e[1], mass=e[2], N=Math.max(0,Math.round(mass)-Z), pos=P(i);
     // nucleus: pack Z protons + N neutrons (fibonacci sphere), protons/neutrons interleaved
     const T=Z+N, rn=(0.16+0.06*Math.cbrt(T))*NS, nucR=0.5*rn, ga=Math.PI*(3-Math.sqrt(5));
-    const nuc=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8), new THREE.MeshStandardMaterial({roughness:0.5,vertexColors:false}), T);
+    const nuc=new THREE.InstancedMesh(nucleonGeom(), new THREE.MeshStandardMaterial({roughness:0.5,vertexColors:false}), T);   // 'Atom shape' also styles the nucleons
     nuc.material.dispose(); const nucMat=new THREE.MeshStandardMaterial({roughness:0.5}); nuc.material=nucMat;
-    const _mm=new THREE.Matrix4(), _cc=new THREE.Color(); let pc=0,nc=0;
+    const _mm=new THREE.Matrix4(), _cc=new THREE.Color(); let pc=0,nc=0; const ntypes=[];
     for(let k=0;k<T;k++){ const y=T>1?1-2*(k+0.5)/T:0, rr=Math.sqrt(Math.max(0,1-y*y)), th=k*ga, rad=rn*(0.35+0.65*Math.cbrt((k+1)/T));
       const px=pos.x+rad*rr*Math.cos(th), py=pos.y+rad*y, pz=pos.z+rad*rr*Math.sin(th);
       _mm.makeScale(nucR,nucR,nucR); _mm.setPosition(px,py,pz); nuc.setMatrixAt(k,_mm);
-      const proton=(k%2===0 && pc<Z)|| nc>=N; if(proton){ _cc.set('#ff4a4a'); pc++; } else { _cc.set('#b8bcc4'); nc++; } nuc.setColorAt(k,_cc); }
-    nuc.instanceMatrix.needsUpdate=true; if(nuc.instanceColor)nuc.instanceColor.needsUpdate=true; atomicGroup.add(nuc);
+      const proton=(k%2===0 && pc<Z)|| nc>=N; if(proton){ _cc.set('#ff4a4a'); pc++; ntypes.push('p'); } else { _cc.set('#b8bcc4'); nc++; ntypes.push('n'); } nuc.setColorAt(k,_cc); }
+    nuc.instanceMatrix.needsUpdate=true; if(nuc.instanceColor)nuc.instanceColor.needsUpdate=true;
+    nuc.userData={kind:'nuc', atom:i, sym, Z, N, types:ntypes}; atomicGroup.add(nuc);   // pickable: click a nucleon → proton/neutron info
     // shells: core shells drawn full; valence shell holds only the NON-bonding (lone) electrons
     const sh=bohrShells(Z), nb=bondsOf[i]||0, valIdx=sh.length-1, lobesOn=$('atLobes')&&$('atLobes').checked;
     const nbDirs=[]; for(const b of useBonds){ if(b[0]===i)nbDirs.push(P(b[1]).sub(pos).normalize()); else if(b[1]===i)nbDirs.push(P(b[0]).sub(pos).normalize()); }
     for(let s=0;s<sh.length;s++){ let cnt=sh[s]; if(s===valIdx) cnt=Math.max(0, sh[s]-Math.min(nb,sh[s]));   // bonding e⁻ move into shared pairs
       if(cnt<=0 && s===valIdx) continue;
-      if(s===valIdx && lobesOn && cnt>=2){ const L=Math.floor(cnt/2), dirs=lobeDirs(nbDirs,L); dirs.forEach(d=>addLobe(atomicGroup,pos,d,NS,eMat));   // lone pairs → VSEPR lobes
-        const rem=cnt-2*L; if(rem>0){ const ax=new THREE.Vector3(Math.sin(valIdx*1.3),Math.cos(valIdx*2.1),0.4).normalize(); addOrbit(atomicGroup,pos,ax,rn+(0.9+0.7*valIdx)*NS*0.9,rem,ESP*(1.6/(valIdx+1)),eMat); } continue; }
+      if(s===valIdx && lobesOn && cnt>=2){ const L=Math.floor(cnt/2), dirs=lobeDirs(nbDirs,L); dirs.forEach(d=>addLobe(atomicGroup,pos,d,NS,eMat,{atom:i,sym,lone:true}));   // lone pairs → VSEPR lobes
+        const rem=cnt-2*L; if(rem>0){ const ax=new THREE.Vector3(Math.sin(valIdx*1.3),Math.cos(valIdx*2.1),0.4).normalize(); addOrbit(atomicGroup,pos,ax,rn+(0.9+0.7*valIdx)*NS*0.9,rem,ESP*(1.6/(valIdx+1)),eMat,{atom:i,sym,shell:valIdx+1}); } continue; }
       const axis=new THREE.Vector3(Math.sin(s*1.3),Math.cos(s*2.1),Math.sin(s*0.7)+0.4).normalize();
-      addOrbit(atomicGroup,pos,axis,rn+ (0.9+0.7*s)*NS*0.9, cnt, ESP*(1.6/(s+1)), eMat); }
+      addOrbit(atomicGroup,pos,axis,rn+ (0.9+0.7*s)*NS*0.9, cnt, ESP*(1.6/(s+1)), eMat, {atom:i,sym,shell:s+1}); }
   }
   // bonding electron PAIRS: 2 shared e⁻ orbit the bond midpoint (perpendicular ring)
   for(const b of useBonds){ const p0=P(b[0]),p1=P(b[1]), mid=p0.clone().add(p1).multiplyScalar(0.5), axis=p1.clone().sub(p0).normalize();
-    addOrbit(atomicGroup, mid, axis, 0.42*NS+0.1, 2, ESP*1.4, eMat); }
+    addOrbit(atomicGroup, mid, axis, 0.42*NS+0.1, 2, ESP*1.4, eMat, {bond:true, a:b[0], b:b[1]}); }
   molGroup.add(atomicGroup);
   $('status').textContent=`${idx.length} atoms · atomic (Bohr) view · ${electronOrbits.reduce((s,o)=>s+o.es.length,0)} e⁻`; }
 // ---------- aura glow: additive BackSide shells around each atom (Unity-style bloom; ported from brainWhiz) ----------
@@ -1159,6 +1168,25 @@ renderer.domElement.addEventListener('click',e=>{ if(!sphereMesh||!downXY||Math.
     const hud=$('hud'); hud.querySelector('.t').textContent=`${a.name||a.el} · ${a.el.replace('BASE_','')}`;
     hud.querySelector('.s').textContent=`${a.resName} ${a.resSeq} · chain ${a.chain} · #${a.serial} · shift-click for details`; hud.classList.add('on'); }
   else { $('hud').classList.remove('on'); $('atomProps').classList.remove('on'); } });
+// ---------- ⚛ Atoms-view picking: click a proton / neutron / electron / lone pair for info; shift-click adds full atom details ----------
+const _elNm=s=>{ const x=ELEM[s]; return x?x[0]:s; };
+renderer.domElement.addEventListener('click',e=>{ if(curRep!=='atomic'||!atomicGroup||builderOn||measMode) return;
+  if(!downXY||Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1])>5) return;                    // ignore drags (camera rotate)
+  ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1; ray.setFromCamera(ndc,camera);
+  const hits=ray.intersectObjects(atomicGroup.children,true);
+  let h=null; for(const it of hits){ if(it.object.userData&&it.object.userData.kind){ h=it; break; } }
+  if(!h){ $('hud').classList.remove('on'); if(!e.shiftKey)$('atomProps').classList.remove('on'); return; }
+  const ud=h.object.userData; let title='', sub='', atomIdx=-1;
+  if(ud.kind==='nuc'){ const t=ud.types&&ud.types[h.instanceId]; atomIdx=ud.atom;
+    if(t==='p'){ title='Proton  (p⁺)'; sub=`charge +1 · one of ${ud.Z} in the ${_elNm(ud.sym)} nucleus (Z=${ud.Z})`; }
+    else if(t==='n'){ title='Neutron  (n⁰)'; sub=`no charge · one of ${ud.N} in the ${_elNm(ud.sym)} nucleus`; }
+    else { title=`${_elNm(ud.sym)} nucleus`; sub=`${ud.Z} protons + ${ud.N} neutrons`; } }
+  else if(ud.kind==='e'){ if(ud.bond){ const s0=(MOL.atoms[ud.a].el||'').replace('BASE_',''), s1=(MOL.atoms[ud.b].el||'').replace('BASE_',''); title='Bonding electron  (e⁻)'; sub=`shared pair in the ${s0}–${s1} covalent bond`; atomIdx=ud.a; }
+    else if(ud.lone){ title='Electron  (e⁻)'; sub=`lone-pair electron · ${_elNm(ud.sym)} valence shell`; atomIdx=ud.atom; }
+    else { title='Electron  (e⁻)'; sub=`charge −1 · shell ${ud.shell} of ${_elNm(ud.sym)}`; atomIdx=ud.atom; } }
+  else if(ud.kind==='lobe'){ title='Lone pair'; sub=`2 non-bonding electrons · ${_elNm(ud.sym)} (VSEPR lobe)`; atomIdx=ud.atom; }
+  const hud=$('hud'); hud.querySelector('.t').textContent=title; hud.querySelector('.s').textContent=e.shiftKey?sub:sub+' · shift-click for atom details'; hud.classList.add('on');
+  if(e.shiftKey && atomIdx>=0) showAtomProps(atomIdx); });
 
 // ---------- UI wiring ----------
 $('tglL').addEventListener('click',()=>{ $('sidebar').classList.toggle('hidden'); $('tglL').classList.toggle('on',!$('sidebar').classList.contains('hidden')); });
@@ -1457,5 +1485,6 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   hasHBonds:()=>!!hbondGroup, hasOutline:()=>!!outlineGroup, hasNucleic:structHasNucleic,
   pushMeas:i=>{measMode=true;measSel.push(i);drawMeasure();}, keepMeas:()=>{if(measSel.length>=2){savedMeasures.push(measSel.slice());measSel=[];drawMeasure();}}, measCounts:()=>({active:measSel.length,saved:savedMeasures.length}),
   selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas,
-  dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup};
+  dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup,
+  atomicKinds:()=>{ const s={}; if(atomicGroup) atomicGroup.traverse(o=>{ const k=o.userData&&o.userData.kind; if(k) s[k]=(s[k]||0)+1; }); return s; }};
 </script>

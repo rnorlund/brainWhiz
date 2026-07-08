@@ -53,6 +53,13 @@ for (const r of ['bas','space','stick','surface','atomic']) {
 }
 ok(`surface produced triangles (${surfTris})`, surfTris > 0);
 
+console.log('== ⚛ Atoms view: pickable particles ==');
+await load('water'); await settle(150); await rep('atomic'); await settle(500);
+const akinds = await page.evaluate(() => window.__mol.atomicKinds());
+ok(`nucleons pickable (nuc groups: ${akinds.nuc||0})`, (akinds.nuc||0) >= 1);
+ok(`electrons pickable (e⁻ meshes: ${akinds.e||0})`, (akinds.e||0) >= 1);
+await rep('bas'); await settle(150);
+
 console.log('== colouring + zoom + rep sizing ==');
 await load('caffeine'); await settle(150);
 await rep('bas'); const rBas = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'bas'));
