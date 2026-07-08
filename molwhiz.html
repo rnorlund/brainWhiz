@@ -53,7 +53,7 @@
   .suggest .afitem:hover{background:#243248} .suggest .afitem b{color:var(--acc)}
   @keyframes blipred{0%,100%{background:#141a24}50%{background:#5a1620;border-color:#ff5b6e}}
   .blip{animation:blipred .4s ease 2}
-  #atomProps{position:fixed;right:14px;bottom:14px;width:260px;background:rgba(10,14,22,.95);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:11;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
+  #atomProps{position:fixed;left:290px;bottom:14px;width:264px;max-width:calc(100vw - 320px);background:rgba(10,14,22,.96);border:1px solid var(--acc);border-radius:10px;padding:12px 14px;z-index:30;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
   #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px}
   #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
   #atomProps .x{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.3'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.4'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
