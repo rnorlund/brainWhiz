@@ -901,6 +901,14 @@
     <textarea id="methodsOut" rows="9" readonly style="width:100%;box-sizing:border-box;font-size:11px;line-height:1.45;background:var(--panel,#0f1420);color:inherit;border:1px solid var(--line);border-radius:6px;padding:7px;resize:vertical;margin-top:4px"></textarea>
     <div class="row" style="margin-top:5px"><button class="sm" id="amGen" style="flex:1">↻ Generate</button><button class="sm" id="amCopy" style="flex:1">⧉ Copy</button></div>
     <div id="amInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:3px"></div>
+    <div style="border-top:1px solid var(--line);margin-top:9px;padding-top:8px">
+      <div class="row"><label style="font-weight:600">📚 Citation</label>
+        <select id="amCiteFmt" title="Reference format"><option>APA</option><option>BibTeX</option><option>RIS</option><option value="ENW">EndNote</option></select></div>
+      <div class="row"><label class="toggle"><input type="checkbox" id="amCiteInclAtlas" checked> include atlas reference</label></div>
+      <textarea id="amCiteOut" rows="7" readonly style="width:100%;box-sizing:border-box;font-size:11px;line-height:1.4;font-family:ui-monospace,Menlo,monospace;background:var(--panel,#0f1420);color:inherit;border:1px solid var(--line);border-radius:6px;padding:7px;resize:vertical;margin-top:4px"></textarea>
+      <div class="row" style="margin-top:5px"><button class="sm" id="amCiteCopy" style="flex:1">⧉ Copy</button><button class="sm" id="amCiteDl" style="flex:1">⤓ Download</button></div>
+      <div style="font-size:10px;opacity:.65;line-height:1.35;margin-top:3px">Software ref is exact; atlas refs are the canonical source for the bundled atlases — verify against the atlas's official citation before submission.</div>
+    </div>
   </div></details>
 
   <details class="acc" id="accKeyframe"><summary><span class="chev">▸</span>🎬 Keyframe director</summary><div class="accb">
@@ -1857,7 +1865,46 @@ function genMethods(){ if(!$('methodsOut')) return;
 ['amStyleCap','amCiteSoft','amCiteAtlas','amThresh','amCmap','amSpace'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',genMethods); });
 if($('amGen')) $('amGen').addEventListener('click',genMethods);
 if($('amCopy')) $('amCopy').addEventListener('click',()=>{ const t=$('methodsOut').value; if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{ if($('amInfo'))$('amInfo').textContent='copied to clipboard'; }); else { $('methodsOut').select(); document.execCommand('copy'); } });
-if($('accMethods')) $('accMethods').addEventListener('toggle',()=>{ if($('accMethods').open) genMethods(); });
+if($('accMethods')) $('accMethods').addEventListener('toggle',()=>{ if($('accMethods').open){ genMethods(); genCites(); } });
+
+// ---- importable citations (APA / BibTeX / RIS / EndNote) for brainWhiz + the bundled atlas ----
+const REFS_BWZ = { type:'software', key:'newmannorlund_brainwhiz_2026', authors:['Newman-Norlund, R.'], year:2026,
+  title:'brainWhiz: interactive multi-atlas visualization of brain parcellations and region-mapped data',
+  publisher:'Zenodo', version:'1.2', doi:'10.5281/zenodo.21246441', url:'https://github.com/rnorlund/brainWhiz' };
+const ATLAS_REFS = {
+  jhu:{key:'hua_jhu_2008',authors:['Hua, K.','Zhang, J.','Wakana, S.','Jiang, H.','Li, X.','Reich, D. S.','Calabresi, P. A.','Pekar, J. J.','van Zijl, P. C. M.','Mori, S.'],year:2008,title:'Tract probability maps in stereotaxic spaces: Analyses of white matter anatomy and tract-specific quantification',journal:'NeuroImage',volume:'39',number:'1',pages:'336–347',doi:'10.1016/j.neuroimage.2007.07.053'},
+  aal:{key:'tzouriomazoyer_aal_2002',authors:['Tzourio-Mazoyer, N.','Landeau, B.','Papathanassiou, D.','Crivello, F.','Etard, O.','Delcroix, N.','Mazoyer, B.','Joliot, M.'],year:2002,title:'Automated anatomical labeling of activations in SPM using a macroscopic anatomical parcellation of the MNI MRI single-subject brain',journal:'NeuroImage',volume:'15',number:'1',pages:'273–289',doi:'10.1006/nimg.2001.0978'},
+  aal3:{key:'rolls_aal3_2020',authors:['Rolls, E. T.','Huang, C.-C.','Lin, C.-P.','Feng, J.','Joliot, M.'],year:2020,title:'Automated anatomical labelling atlas 3',journal:'NeuroImage',volume:'206',pages:'116189',doi:'10.1016/j.neuroimage.2019.116189'},
+  aicha:{key:'joliot_aicha_2015',authors:['Joliot, M.','Jobard, G.','Naveau, M.','Delcroix, N.','Petit, L.','Zago, L.','Crivello, F.','Mellet, E.','Mazoyer, B.','Tzourio-Mazoyer, N.'],year:2015,title:'AICHA: An atlas of intrinsic connectivity of homotopic areas',journal:'Journal of Neuroscience Methods',volume:'254',pages:'46–59',doi:'10.1016/j.jneumeth.2015.07.013'},
+  ho:{key:'desikan_2006',authors:['Desikan, R. S.','Ségonne, F.','Fischl, B.','Quinn, B. T.','Dickerson, B. C.','Blacker, D.','Buckner, R. L.','Dale, A. M.','Maguire, R. P.','Hyman, B. T.','Albert, M. S.','Killiany, R. J.'],year:2006,title:'An automated labeling system for subdividing the human cerebral cortex on MRI scans into gyral based regions of interest',journal:'NeuroImage',volume:'31',number:'3',pages:'968–980',doi:'10.1016/j.neuroimage.2006.01.021'},
+  lpba40:{key:'shattuck_lpba40_2008',authors:['Shattuck, D. W.','Mirza, M.','Adisetiyo, V.','Hojatkashani, C.','Salamon, G.','Narr, K. L.','Poldrack, R. A.','Bilder, R. M.','Toga, A. W.'],year:2008,title:'Construction of a 3D probabilistic atlas of human cortical structures',journal:'NeuroImage',volume:'39',number:'3',pages:'1064–1080',doi:'10.1016/j.neuroimage.2007.09.031'},
+  hammers:{key:'hammers_2003',authors:['Hammers, A.','Allom, R.','Koepp, M. J.','Free, S. L.','Myers, R.','Lemieux, L.','Mitchell, T. N.','Brooks, D. J.','Duncan, J. S.'],year:2003,title:'Three-dimensional maximum probability atlas of the human brain, with particular reference to the temporal lobe',journal:'Human Brain Mapping',volume:'19',number:'4',pages:'224–247',doi:'10.1002/hbm.10123'},
+  catani:{key:'catani_2008',authors:['Catani, M.','Thiebaut de Schotten, M.'],year:2008,title:'A diffusion tensor imaging tractography atlas for virtual in vivo dissections',journal:'Cortex',volume:'44',number:'8',pages:'1105–1132',doi:'10.1016/j.cortex.2008.05.004'},
+  xtract:{key:'warrington_xtract_2020',authors:['Warrington, S.','Bryant, K. L.','Khrapitchev, A. A.','Sallet, J.','Charquero-Ballester, M.','Douaud, G.','Jbabdi, S.','Mars, R. B.','Sotiropoulos, S. N.'],year:2020,title:'XTRACT – Standardised protocols for automated tractography in the human and macaque brain',journal:'NeuroImage',volume:'217',pages:'116923',doi:'10.1016/j.neuroimage.2020.116923'},
+  anatomy3:{key:'eickhoff_2005',authors:['Eickhoff, S. B.','Stephan, K. E.','Mohlberg, H.','Grefkes, C.','Fink, G. R.','Amunts, K.','Zilles, K.'],year:2005,title:'A new SPM toolbox for combining probabilistic cytoarchitectonic maps and functional imaging data',journal:'NeuroImage',volume:'25',number:'4',pages:'1325–1335',doi:'10.1016/j.neuroimage.2004.12.034'},
+  cobra:{key:'winterburn_cobra_2013',authors:['Winterburn, J. L.','Pruessner, J. C.','Chavez, S.','Schira, M. M.','Lobaugh, N. J.','Voineskos, A. N.','Chakravarty, M. M.'],year:2013,title:'A novel in vivo atlas of human hippocampal subfields using high-resolution 3 T magnetic resonance imaging',journal:'NeuroImage',volume:'74',pages:'254–265',doi:'10.1016/j.neuroimage.2013.02.003'},
+  hcp:{key:'glasser_mmp1_2016',authors:['Glasser, M. F.','Coalson, T. S.','Robinson, E. C.','Hacker, C. D.','Harwell, J.','Yacoub, E.','Ugurbil, K.','Andersson, J.','Beckmann, C. F.','Jenkinson, M.','Smith, S. M.','Van Essen, D. C.'],year:2016,title:'A multi-modal parcellation of human cerebral cortex',journal:'Nature',volume:'536',number:'7615',pages:'171–178',doi:'10.1038/nature18933'} };
+ATLAS_REFS.aalcat = ATLAS_REFS.aal;
+function _apaAu(a){ if(a.length===1) return a[0]; if(a.length===2) return a[0]+', & '+a[1]; return a.slice(0,-1).join(', ')+', & '+a[a.length-1]; }
+function _fmtAPA(r){ const au=_apaAu(r.authors); if(r.type==='software') return `${au} (${r.year}). ${r.title} (Version ${r.version}) [Computer software]. ${r.publisher}. https://doi.org/${r.doi}`;
+  let s=`${au} (${r.year}). ${r.title}. ${r.journal}`; if(r.volume) s+=`, ${r.volume}`; if(r.number) s+=`(${r.number})`; if(r.pages) s+=`, ${r.pages}`; s+='.'; if(r.doi) s+=` https://doi.org/${r.doi}`; return s; }
+function _fmtBib(r){ const L=[`@${r.type==='software'?'software':'article'}{${r.key},`], f=(k,v)=>{ if(v) L.push(`  ${k} = {${v}},`); };
+  f('author', r.authors.join(' and ')); f('title', r.title); f('year', r.year);
+  if(r.type==='software'){ f('publisher', r.publisher); f('version', r.version); } else { f('journal', r.journal); f('volume', r.volume); f('number', r.number); f('pages', r.pages); }
+  f('doi', r.doi); f('url', r.url||(r.doi?'https://doi.org/'+r.doi:'')); L[L.length-1]=L[L.length-1].replace(/,$/,''); L.push('}'); return L.join('\n'); }
+function _fmtRIS(r){ const L=[`TY  - ${r.type==='software'?'COMP':'JOUR'}`]; r.authors.forEach(a=>L.push('AU  - '+a)); L.push('PY  - '+r.year); L.push('TI  - '+r.title);
+  if(r.type==='software'){ if(r.publisher) L.push('PB  - '+r.publisher); } else { if(r.journal) L.push('JO  - '+r.journal); if(r.volume) L.push('VL  - '+r.volume); if(r.number) L.push('IS  - '+r.number); if(r.pages){ const pp=r.pages.split(/[–-]/); L.push('SP  - '+pp[0]); if(pp[1]) L.push('EP  - '+pp[1]); } }
+  if(r.doi) L.push('DO  - '+r.doi); L.push('UR  - '+(r.url||('https://doi.org/'+r.doi))); L.push('ER  - '); return L.join('\n'); }
+function _fmtENW(r){ const L=['%0 '+(r.type==='software'?'Computer Program':'Journal Article')]; r.authors.forEach(a=>L.push('%A '+a)); L.push('%D '+r.year); L.push('%T '+r.title);
+  if(r.type==='software'){ if(r.publisher) L.push('%I '+r.publisher); } else { if(r.journal) L.push('%J '+r.journal); if(r.volume) L.push('%V '+r.volume); if(r.number) L.push('%N '+r.number); if(r.pages) L.push('%P '+r.pages); }
+  if(r.doi) L.push('%R '+r.doi); L.push('%U '+(r.url||('https://doi.org/'+r.doi))); return L.join('\n'); }
+function genCites(){ if(!$('amCiteOut')) return; const fmt=$('amCiteFmt').value, F={APA:_fmtAPA,BibTeX:_fmtBib,RIS:_fmtRIS,ENW:_fmtENW}[fmt]||_fmtAPA;
+  const refs=[REFS_BWZ]; if($('amCiteInclAtlas').checked){ const ar=ATLAS_REFS[typeof ATLAS_ID!=='undefined'?ATLAS_ID:'']; if(ar) refs.push(ar); }
+  $('amCiteOut').value=refs.map(F).join('\n\n'); return $('amCiteOut').value; }
+['amCiteFmt','amCiteInclAtlas'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',genCites); });
+if($('amCiteCopy')) $('amCiteCopy').addEventListener('click',()=>{ const t=$('amCiteOut').value; if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{ if($('amInfo'))$('amInfo').textContent='citation copied'; }); else { $('amCiteOut').select(); document.execCommand('copy'); } });
+if($('amCiteDl')) $('amCiteDl').addEventListener('click',()=>{ const fmt=$('amCiteFmt').value, ext={APA:'txt',BibTeX:'bib',RIS:'ris',ENW:'enw'}[fmt]||'txt';
+  const blob=new Blob([$('amCiteOut').value],{type:'text/plain'}), a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='brainwhiz_citation.'+ext; a.click(); });
 $('outlineOn').addEventListener('change', refreshOutline);
 $('outlineW').addEventListener('input', e=>{ $('outlineWV').textContent=e.target.value; refreshOutline(); });
 $('edgeOn').addEventListener('change', ()=>{ const on=$('edgeOn').checked; ['edgeRow1','edgeRow2'].forEach(id=>{const e=$(id);if(e)e.style.display=on?'':'none';}); requestRender(); });
@@ -4759,6 +4806,7 @@ window.__brainReady = _readyResolve;
 window.brainAPI = {
   ready: _ready,
   genMethods: genMethods,
+  genCitations: (fmt)=>{ if(fmt&&$('amCiteFmt')){ $('amCiteFmt').value=fmt; } return genCites(); },
   applyMaterialImage: applyDroppedMatcap,
   atlas: ATLAS_ID,
   atlases: REG.map(a=>({id:a.id,name:a.name,nroi:a.nroi})),
