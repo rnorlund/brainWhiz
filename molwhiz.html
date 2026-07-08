@@ -54,7 +54,7 @@
   @keyframes blipred{0%,100%{background:#141a24}50%{background:#5a1620;border-color:#ff5b6e}}
   .blip{animation:blipred .4s ease 2}
   #atomProps{position:fixed;left:290px;bottom:14px;width:264px;max-width:calc(100vw - 320px);background:rgba(10,14,22,.96);border:1px solid var(--acc);border-radius:10px;padding:12px 14px;z-index:30;opacity:0;transition:opacity .15s;pointer-events:none;font-size:12px;line-height:1.55}
-  #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px}
+  #atomProps.on{opacity:1;pointer-events:auto} #atomProps .hd{font-weight:700;font-size:14px;margin-bottom:6px;padding-right:16px;cursor:move;user-select:none}
   #atomProps .bd b{color:#eaf2ff;font-weight:600} #atomProps .bd .k{color:var(--muted);display:inline-block;min-width:96px}
   #atomProps .x{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
   #atomProps .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.4'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.5'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -1214,6 +1214,11 @@ $('clipAxis').addEventListener('click',e=>{ const b=e.target.closest('button'); 
 $('rockMode').addEventListener('change',()=>{ if(!$('rockMode').checked){ rockPhase=0; } });
 $('spinStop').addEventListener('click',()=>{ spinAx.x=spinAx.y=spinAx.z=false; [...$('spinSeg').children].forEach(x=>x.classList.remove('on')); $('rockMode').checked=false; });
 $('apX').addEventListener('click',()=>$('atomProps').classList.remove('on'));
+(function(){ const el=$('atomProps'); if(!el)return; let drag=false,ox=0,oy=0;   // drag the details box by its header
+  const hd=el.querySelector('.hd');
+  hd.addEventListener('pointerdown',e=>{ drag=true; const r=el.getBoundingClientRect(); ox=e.clientX-r.left; oy=e.clientY-r.top; el.style.bottom='auto'; el.style.left=r.left+'px'; el.style.top=r.top+'px'; try{hd.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault(); });
+  hd.addEventListener('pointermove',e=>{ if(!drag)return; el.style.left=Math.max(0,Math.min(innerWidth-40,e.clientX-ox))+'px'; el.style.top=Math.max(46,Math.min(innerHeight-30,e.clientY-oy))+'px'; });
+  hd.addEventListener('pointerup',()=>{ drag=false; }); })();
 $('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) return;
   if(v.startsWith('ex:')){ const k=v.slice(3); if(EX[k]) loadMol(EX[k](),k); }
   else if(v==='dna:build'){ buildDNA($('dnaSeq').value); }
