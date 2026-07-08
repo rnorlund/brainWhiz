@@ -142,6 +142,12 @@ const meas = await page.evaluate(() => {
 ok('measure mode toggled', await page.$eval('#measBtn', e => e.classList.contains('acc')));
 await page.click('#measBtn');
 
+console.log('== measurement persistence ==');
+await load('caffeine'); await settle(150);
+await page.evaluate(() => { window.__mol.pushMeas(0); window.__mol.pushMeas(1); window.__mol.keepMeas(); window.__mol.pushMeas(2); window.__mol.pushMeas(3); });
+const mc = await page.evaluate(() => window.__mol.measCounts());
+ok(`kept 1 measurement + active chain (saved ${mc.saved}, active ${mc.active})`, mc.saved === 1 && mc.active === 2);
+
 console.log('== shift-click atom properties ==');
 await load('water'); await settle(200);
 await rep('bas'); await settle(300);

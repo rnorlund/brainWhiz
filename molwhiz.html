@@ -142,7 +142,7 @@
     <div class="row"><span style="font-size:11px;color:var(--muted)">Appearance (radius, ball size, base colours…) is in the 🎨 panel.</span></div>
   </div>
   <div class="grp"><div class="lbl">📏 Measure</div>
-    <div class="row"><button id="measBtn" style="flex:1">Distance / angle</button><button id="measClear" title="clear">✕</button></div>
+    <div class="row"><button id="measBtn" style="flex:1">Distance / angle</button><button id="measKeep" title="keep this measurement & start a new one">📌</button><button id="measClear" title="clear all">✕</button></div>
     <div id="measOut" style="font-size:11px;color:var(--muted);min-height:14px"></div>
   </div>
   <div class="grp"><div class="lbl">🔗 Contacts</div>
@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.1'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.2'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -970,7 +970,7 @@ function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms
   for(const a of m.atoms){a.x-=cx;a.y-=cy;a.z-=cz;} MOL=m; isDNA=!!m._dna;
   if((!m.ss || (m.ss.helix.size===0 && m.ss.sheet.size===0)) && m.atoms.some(a=>a.name==='CA')) m.ss=computeSS(m.atoms);   // AlphaFold/mmCIF have no SS records
   molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z)));   // radius for clip-plane range
-  measSel=[]; if(measGroup){ molGroup.remove(measGroup); measGroup=null; } if($('measOut'))$('measOut').textContent='';
+  measSel=[]; savedMeasures=[]; if(measGroup){ molGroup.remove(measGroup); measGroup=null; } if($('measOut'))$('measOut').textContent='';
   if($('atomProps'))$('atomProps').classList.remove('on');
   populateChains(); selKind=''; if($('selKind'))[...$('selKind').children].forEach(x=>x.classList.remove('on'));
   resSel.clear(); if($('seqPanel')&&$('seqPanel').classList.contains('on')) buildSeqPanel();
@@ -1073,7 +1073,7 @@ function updateBuildMarker(){ if(buildMarker){ molGroup.remove(buildMarker); bui
 function refreshBuild(){ rebuild(); updateBuildMarker(); if($('buildOut')) $('buildOut').textContent = builderSel>=0 ? `selected: ${MOL.atoms[builderSel].el} #${builderSel+1} · ${bNeighbors(builderSel).length} bonds` : 'selected: none · '+MOL.atoms.length+' atoms'; }
 
 // ---------- measurements (distance / angle) ----------
-let measMode=false, measSel=[], measGroup=null;
+let measMode=false, measSel=[], measGroup=null, savedMeasures=[];
 function labelSprite(text,color){ const fs=48,pad=6, c=document.createElement('canvas'), x=c.getContext('2d'); x.font=`bold ${fs}px system-ui`;
   c.width=Math.ceil(x.measureText(text).width)+pad*2; c.height=fs+pad*2; x.font=`bold ${fs}px system-ui`; x.textBaseline='middle'; x.lineJoin='round';
   x.strokeStyle='rgba(0,0,0,0.9)'; x.lineWidth=7; x.strokeText(text,pad,c.height/2);   // transparent bg + dark outline for legibility (no box)
@@ -1081,14 +1081,17 @@ function labelSprite(text,color){ const fs=48,pad=6, c=document.createElement('c
   const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:true}));
   const h=1.5; sp.scale.set(h*c.width/c.height, h, 1); sp.renderOrder=6; return sp; }   // world-sized → scales with the molecule as you zoom
 function clearMeasureGeo(){ if(measGroup){ molGroup.remove(measGroup); measGroup.traverse(o=>{ if(o.material){o.material.map&&o.material.map.dispose(); o.material.dispose();} if(o.geometry)o.geometry.dispose(); }); } measGroup=new THREE.Group(); molGroup.add(measGroup); }
-function drawMeasure(){ clearMeasureGeo(); const A=MOL.atoms, pts=measSel.map(i=>new THREE.Vector3(A[i].x,A[i].y,A[i].z)); let out='';
-  for(let i=0;i<pts.length-1;i++){ const gg=new THREE.BufferGeometry().setFromPoints([pts[i],pts[i+1]]);   // running distance on every segment
-    const ln=new THREE.LineSegments(gg,new THREE.LineDashedMaterial({color:0xffe066,dashSize:0.6,gapSize:0.3,depthTest:false})); ln.computeLineDistances(); measGroup.add(ln);
+function drawChainGeo(pts, dashCol){ for(let i=0;i<pts.length-1;i++){ const gg=new THREE.BufferGeometry().setFromPoints([pts[i],pts[i+1]]);
+    const ln=new THREE.LineSegments(gg,new THREE.LineDashedMaterial({color:dashCol,dashSize:0.6,gapSize:0.3,depthTest:false})); ln.computeLineDistances(); measGroup.add(ln);
     const sp=labelSprite(pts[i].distanceTo(pts[i+1]).toFixed(2)+' Å','#ffe066'); sp.position.copy(pts[i].clone().add(pts[i+1]).multiplyScalar(0.5)); measGroup.add(sp); }
-  for(let i=1;i<pts.length-1;i++){ const a=pts[i-1].clone().sub(pts[i]), b=pts[i+1].clone().sub(pts[i]), ang=a.angleTo(b)*180/Math.PI;   // angle at each interior vertex
+  for(let i=1;i<pts.length-1;i++){ const a=pts[i-1].clone().sub(pts[i]), b=pts[i+1].clone().sub(pts[i]), ang=a.angleTo(b)*180/Math.PI;
     const sp=labelSprite(ang.toFixed(1)+'°','#8fff88'); sp.position.copy(pts[i]); measGroup.add(sp); }
-  if(pts.length>=4){ const q=pts.slice(-4), dh=dihedral(q[0],q[1],q[2],q[3]);   // dihedral / torsion of the last 4 atoms
-    const sp=labelSprite(dh.toFixed(1)+'° ⟳','#ffa8f0'); sp.position.copy(q[1].clone().add(q[2]).multiplyScalar(0.5)); measGroup.add(sp); }
+  if(pts.length>=4){ const q=pts.slice(-4), dh=dihedral(q[0],q[1],q[2],q[3]);
+    const sp=labelSprite(dh.toFixed(1)+'° ⟳','#ffa8f0'); sp.position.copy(q[1].clone().add(q[2]).multiplyScalar(0.5)); measGroup.add(sp); } }
+function drawMeasure(){ clearMeasureGeo(); const A=MOL.atoms; let out='';
+  const V=chain=>chain.map(i=>new THREE.Vector3(A[i].x,A[i].y,A[i].z));
+  for(const chain of savedMeasures){ if(chain.every(i=>A[i])) drawChainGeo(V(chain), 0x89c2ff); }   // kept measurements (blue-ish)
+  const pts=V(measSel); drawChainGeo(pts, 0xffe066);                                                 // active chain (yellow)
   if(pts.length>=2){ out=`last ${pts[pts.length-2].distanceTo(pts[pts.length-1]).toFixed(2)} Å`;
     if(pts.length>=3){ const a=pts[pts.length-3].clone().sub(pts[pts.length-2]), b=pts[pts.length-1].clone().sub(pts[pts.length-2]); out+=` · ∠ ${(a.angleTo(b)*180/Math.PI).toFixed(1)}°`; }
     if(pts.length>=4){ const q=pts.slice(-4); out+=` · ⟳ ${dihedral(q[0],q[1],q[2],q[3]).toFixed(1)}°`; }
@@ -1226,7 +1229,8 @@ addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&(e.key==='z'||e.key==
 $('buildDel').addEventListener('click',builderDelete);
 $('buildFillH').addEventListener('click',builderFillH);
 $('buildNew').addEventListener('click',()=>{ MOL={atoms:[],bonds:[]}; builderSel=-1; isDNA=false; refreshBuild(); document.title='molWhiz — new'; });
-$('measClear').addEventListener('click',()=>{ measSel=[]; clearMeasureGeo(); $('measOut').textContent=''; });
+$('measKeep').addEventListener('click',()=>{ if(measSel.length>=2){ savedMeasures.push(measSel.slice()); measSel=[]; drawMeasure(); $('measOut').textContent=savedMeasures.length+' kept · click atoms for a new one'; } });
+$('measClear').addEventListener('click',()=>{ measSel=[]; savedMeasures=[]; clearMeasureGeo(); $('measOut').textContent=''; });
 $('dnaBtn').addEventListener('click',()=>buildDNA($('dnaSeq').value));
 $('dnaRand').addEventListener('click',()=>{ const b='ATGC'; let s=''; for(let i=0;i<18+Math.floor(Math.random()*10);i++) s+=b[Math.floor(Math.random()*4)]; $('dnaSeq').value=s; buildDNA(s); });
 $('openBtn').addEventListener('click',()=>$('file').click());
@@ -1426,6 +1430,7 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   captureViewPanel, renderFigureCanvas, exportFigSVG, figFill6, figGridRender, figCount:()=>figSlots.filter(Boolean).length,
   setZoom, camDist:()=>camera.position.distanceTo(controls.target), colorCtx:()=>_ccx, atomRad, setCol:c=>{curCol=c;[...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===c));rebuild();},
   hasHBonds:()=>!!hbondGroup, hasOutline:()=>!!outlineGroup, hasNucleic:structHasNucleic,
+  pushMeas:i=>{measMode=true;measSel.push(i);drawMeasure();}, keepMeas:()=>{if(measSel.length>=2){savedMeasures.push(measSel.slice());measSel=[];drawMeasure();}}, measCounts:()=>({active:measSel.length,saved:savedMeasures.length}),
   selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas,
   dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup};
 </script>
