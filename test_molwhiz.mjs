@@ -84,6 +84,11 @@ ok(`fetched aspirin by name ("${aspStat}")`, /aspirin/i.test(aspStat) && /\d+ at
 await page.evaluate(() => window.__mol.fetchChem('1,3,7-trimethylpurine-2,6-dione')); await page.waitForFunction(() => /atoms|no 3D/.test(document.getElementById('status').textContent), { timeout: 30000 }); await settle(300);
 const iupacN = await page.evaluate(() => window.__mol.MOL.atoms.length);
 ok(`fetched by IUPAC name (caffeine, ${iupacN} atoms)`, iupacN === 24);
+await page.click('#findq'); await page.type('#findq', 'ibupro', { delay: 30 });
+await page.waitForFunction(() => document.getElementById('findSuggest').style.display === 'block', { timeout: 8000 }).catch(()=>{});
+const suggN = await page.$$eval('#findSuggest .afitem', els => els.length);
+ok(`molecule-search autocomplete populates (${suggN} suggestions)`, suggN > 0);
+await page.evaluate(() => { document.getElementById('findq').value=''; document.getElementById('findSuggest').style.display='none'; });
 
 console.log('== one-click active site (1HSG) ==');
 await page.evaluate(() => window.__mol.fetchPdb('1HSG')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 40000 }); await settle(500);
