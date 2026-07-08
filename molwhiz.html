@@ -334,12 +334,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// Cinematic post-FX (SSAO/bloom/SMAA) are loaded LAZILY on first enable — see ensureFX(). They must NOT be static imports:
+// vendor/jsm/postprocessing/ isn't vendored, so a static import 404s on the served site and kills the whole module (blank canvas).
 const $ = id=>document.getElementById(id);
 
 // ---------- public reference DATA (not code): CPK colours + covalent + vdW radii (Å) ----------
@@ -369,7 +365,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.18'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.19'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -392,16 +388,24 @@ gizmo.addEventListener('dragging-changed',e=>{ controls.enableRotate=!e.value; }
 gizmo.addEventListener('mouseDown',()=>{ if(typeof builderSel!=='undefined'&&builderSel>=0) pushUndo(); });
 gizmo.addEventListener('objectChange',()=>{ if(builderSel<0||!MOL.atoms[builderSel])return; const l=molGroup.worldToLocal(gizmoProxy.position.clone()); const a=MOL.atoms[builderSel]; a.x=l.x;a.y=l.y;a.z=l.z; delete a.r; rebuild(); if(buildMarker)buildMarker.position.set(a.x,a.y,a.z); });
 function updateGizmo(){ if(builderOn && builderSel>=0 && MOL.atoms[builderSel]){ const a=MOL.atoms[builderSel]; molGroup.updateMatrixWorld(); gizmoProxy.position.copy(molGroup.localToWorld(new THREE.Vector3(a.x,a.y,a.z))); gizmo.attach(gizmoProxy); gizmo.visible=true; } else { gizmo.detach(); gizmo.visible=false; } }
-// ---------- optional cinematic post-processing (SSAO + bloom + SMAA), built lazily on first enable ----------
-let composer=null, ssaoPass=null, bloomPass=null;
-function buildComposer(){ if(composer) return; composer=new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene,camera));
-  ssaoPass=new SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=6; ssaoPass.minDistance=0.001; ssaoPass.maxDistance=0.08; composer.addPass(ssaoPass);
-  bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.5,0.85); composer.addPass(bloomPass);
-  composer.addPass(new SMAAPass(innerWidth,innerHeight));
-  composer.addPass(new OutputPass()); }
+// ---------- optional cinematic post-processing (SSAO + bloom + SMAA), loaded lazily on first enable ----------
+let composer=null, ssaoPass=null, bloomPass=null, _fxMods=null, _fxLoading=false;
+// Load the postprocessing passes from the CDN on demand. Explicit CDN URLs (not the import map) so relative deps (./Pass.js,
+// ../shaders/…) resolve from the CDN too, while their bare `three` import still maps to the app's three — works served & file://.
+async function ensureFX(){ if(_fxMods) return _fxMods; const B='https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/';
+  const m=await Promise.all([ import(B+'EffectComposer.js'), import(B+'RenderPass.js'), import(B+'SSAOPass.js'), import(B+'UnrealBloomPass.js'), import(B+'SMAAPass.js'), import(B+'OutputPass.js') ]);
+  _fxMods={ EffectComposer:m[0].EffectComposer, RenderPass:m[1].RenderPass, SSAOPass:m[2].SSAOPass, UnrealBloomPass:m[3].UnrealBloomPass, SMAAPass:m[4].SMAAPass, OutputPass:m[5].OutputPass }; return _fxMods; }
+function buildComposer(){ if(composer||!_fxMods) return; const F=_fxMods; composer=new F.EffectComposer(renderer);
+  composer.addPass(new F.RenderPass(scene,camera));
+  ssaoPass=new F.SSAOPass(scene,camera,innerWidth,innerHeight); ssaoPass.kernelRadius=6; ssaoPass.minDistance=0.001; ssaoPass.maxDistance=0.08; composer.addPass(ssaoPass);
+  bloomPass=new F.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.5,0.5,0.85); composer.addPass(bloomPass);
+  composer.addPass(new F.SMAAPass(innerWidth,innerHeight));
+  composer.addPass(new F.OutputPass()); }
 const fxOn=()=>$('fxOn')&&$('fxOn').checked;
-function renderFrame(w,h){ if(fxOn()){ buildComposer(); if(bloomPass){ bloomPass.strength=+($('fxBloom')?.value ?? 0.5); bloomPass.threshold=+($('fxThresh')?.value ?? 0.85); } if(w){composer.setSize(w,h);} composer.render(); if(w){composer.setSize(innerWidth,innerHeight);} }
+function renderFrame(w,h){
+  if(fxOn()){ if(!_fxMods){ if(!_fxLoading){ _fxLoading=true; ensureFX().then(()=>{buildComposer();}).catch(e=>{ if($('fxOn'))$('fxOn').checked=false; if($('status'))$('status').textContent='cinematic FX need internet (CDN) — disabled'; }); } renderer.render(scene,camera); return; }   // still loading → plain render this frame
+    buildComposer(); if(!composer){ renderer.render(scene,camera); return; }
+    if(bloomPass){ bloomPass.strength=+($('fxBloom')?.value ?? 0.5); bloomPass.threshold=+($('fxThresh')?.value ?? 0.85); } if(w){composer.setSize(w,h);} composer.render(); if(w){composer.setSize(innerWidth,innerHeight);} }
   else renderer.render(scene,camera); }
 function resize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); if(composer) composer.setSize(innerWidth,innerHeight); }
 addEventListener('resize',resize); resize();

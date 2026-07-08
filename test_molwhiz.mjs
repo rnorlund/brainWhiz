@@ -395,6 +395,26 @@ console.log('\n== page errors ==');
 ok('no uncaught page errors', errs.length === 0);
 if (errs.length) errs.slice(0,5).forEach(e => console.log('   !', e.slice(0,120)));
 
+// SERVED-MODE SMOKE TEST — the live site is served over http and uses ./vendor/ (not the CDN). file:// tests can't catch a
+// missing vendored module (e.g. postprocessing 404 → blank canvas). Boot the app over a real http server and require it to run.
+console.log('\n== served mode (http + ./vendor) boots ==');
+{ const http = require('http'), fs = require('fs');
+  const types = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.json':'application/json', '.css':'text/css' };
+  const srv = http.createServer((req, res) => { let f = decodeURIComponent(req.url.split('?')[0]); if (f === '/') f = '/molwhiz.html';
+    const fp = path.join(__dirname, f); fs.readFile(fp, (e, data) => { if (e) { res.statusCode = 404; res.end('404'); return; }
+      res.setHeader('Content-Type', types[path.extname(fp)] || 'application/octet-stream'); res.end(data); }); });
+  await new Promise(r => srv.listen(8791, r));
+  const sp = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  const sErr = []; sp.on('pageerror', e => sErr.push(String(e)));
+  await sp.goto('http://localhost:8791/molwhiz.html', { waitUntil: 'load' });
+  const sReady = await sp.waitForFunction(() => typeof window.__mol === 'object', { timeout: 15000 }).then(()=>true).catch(()=>false);
+  ok('served: module initialises (window.__mol)', sReady);
+  if (sReady) { await sp.evaluate(() => window.__mol.loadMol(window.__mol.EX.caffeine(), 'caffeine')); await sp.waitForTimeout(400);
+    ok('served: molecule renders', (await sp.evaluate(() => window.__mol.shownAtoms())) === 24); }
+  ok('served: no boot page errors', sErr.length === 0);
+  if (sErr.length) sErr.slice(0,4).forEach(e => console.log('   !', e.slice(0,120)));
+  await sp.close(); await new Promise(r => srv.close(r)); }
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed  (network ${netOK?'ok':'skipped'})`);
 await browser.close();
 process.exit(fail ? 1 : 0);
