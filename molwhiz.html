@@ -292,6 +292,7 @@
   </div>
   <div class="grp"><div class="lbl">Surface</div>
     <div class="row"><label>Detail</label><input type="range" id="surfQual" min="0.35" max="1.6" step="0.05" value="0.75"><span class="num" id="surfQualV">0.75</span></div>
+    <div class="row"><label title="Laplacian relaxation passes — higher = smoother, less blocky">Smoothing</label><input type="range" id="surfSmooth" min="0" max="8" step="1" value="3"><span class="num" id="surfSmoothV">3</span></div>
     <div class="row"><label>Inflate</label><input type="range" id="surfProbe" min="0" max="1.6" step="0.1" value="0.4"><span class="num" id="surfProbeV">0.4</span></div>
     <div class="row"><label>Opacity</label><input type="range" id="surfOpac" min="0.15" max="1" step="0.05" value="1"><span class="num" id="surfOpacV">1.0</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="surfLig" checked> show ligands</label></div>
@@ -367,7 +368,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.11'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.12'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -866,9 +867,9 @@ function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
     if(a.x<mn[0])mn[0]=a.x; if(a.y<mn[1])mn[1]=a.y; if(a.z<mn[2])mn[2]=a.z;
     if(a.x>mx[0])mx[0]=a.x; if(a.y>mx[1])mx[1]=a.y; if(a.z>mx[2])mx[2]=a.z; }
   const pad=rmax*1.5; for(let k=0;k<3;k++){ mn[k]-=pad; mx[k]+=pad; }
-  let sp=+$('surfQual').value; const NMAX=120;
+  let sp=+$('surfQual').value; const NMAX=144;
   const maxExt=Math.max(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]);
-  sp=Math.min(sp, maxExt/48);                                   // guarantee a smooth grid on small molecules (≥~48 cells across)
+  sp=Math.min(sp, maxExt/64);                                   // finer base grid (≥~64 cells across) so the envelope isn't blocky
   const dimOf=k=>Math.ceil((mx[k]-mn[k])/sp)+1;
   while(Math.max(dimOf(0),dimOf(1),dimOf(2))>NMAX) sp*=1.15;
   const nx=dimOf(0),ny=dimOf(1),nz=dimOf(2), field=new Float32Array(nx*ny*nz);
@@ -902,6 +903,16 @@ function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
     if(x+1<nx && (field[idx(x+1,y,z)]>=iso)!==in0) quad(cell(x,y-1,z-1),cell(x,y,z-1),cell(x,y,z),cell(x,y-1,z));
     if(y+1<ny && (field[idx(x,y+1,z)]>=iso)!==in0) quad(cell(x-1,y,z-1),cell(x,y,z-1),cell(x,y,z),cell(x-1,y,z));
     if(z+1<nz && (field[idx(x,y,z+1)]>=iso)!==in0) quad(cell(x-1,y-1,z),cell(x,y-1,z),cell(x,y,z),cell(x-1,y,z)); }
+  // Laplacian smoothing — Surface Nets is faceted at grid resolution. Relax POSITIONS *and* NORMALS toward neighbour
+  // averages: the per-atom metaball bumps live mostly in the (field-gradient) normals, so smoothing normals is what
+  // actually removes the "chunky" look. Adjacency (_smAdj) is reused for the normal pass below.
+  const _smN=pos.length/3, _smIt=Math.round(+($('surfSmooth')?$('surfSmooth').value:3)); let _smAdj=null;
+  if(_smIt>0 && _smN>3){ _smAdj=Array.from({length:_smN},()=>new Set());
+    for(let t=0;t<tris.length;t+=3){ const a=tris[t],b=tris[t+1],c=tris[t+2]; _smAdj[a].add(b);_smAdj[a].add(c);_smAdj[b].add(a);_smAdj[b].add(c);_smAdj[c].add(a);_smAdj[c].add(b); }
+    const lam=0.6; for(let it=0;it<_smIt;it++){ const np=pos.slice();
+      for(let v=0;v<_smN;v++){ const ns=_smAdj[v]; if(ns.size<3)continue; let sx=0,sy=0,sz=0; for(const j of ns){ sx+=pos[j*3];sy+=pos[j*3+1];sz+=pos[j*3+2]; } const k=ns.size;
+        np[v*3]+=lam*(sx/k-pos[v*3]); np[v*3+1]+=lam*(sy/k-pos[v*3+1]); np[v*3+2]+=lam*(sz/k-pos[v*3+2]); }
+      for(let i=0;i<pos.length;i++) pos[i]=np[i]; } }
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setIndex(tris);
   // analytic per-vertex NORMALS (−∇field, winding-independent → no speckle) + nearest-atom COLOUR, one grid pass
   { const gc=4.0, gh=new Map(), gk=(a,b,c)=>a+','+b+','+c;
@@ -915,6 +926,10 @@ function buildSurface(){ const AG=2.2, iso=Math.exp(-AG);
       let ln=Math.hypot(nxg,nyg,nzg)||1; nrm[v]=nxg/ln; nrm[v+1]=nyg/ln; nrm[v+2]=nzg/ln;   // outward = away from atoms
       if(doCol){ if(best<0){ for(let i=0;i<A.length;i++){ const a=A[i], dd=(a.x-px)**2+(a.y-py)**2+(a.z-pz)**2; if(dd<bd){bd=dd;best=i;} } }
         tmp.set(atomColor(A[best])); col[v]=tmp.r; col[v+1]=tmp.g; col[v+2]=tmp.b; } }
+    if(_smAdj){ for(let it=0;it<_smIt;it++){ const nn=nrm.slice();   // smooth the shading normals → blurs per-atom bumps into a smooth envelope
+      for(let v=0;v<_smN;v++){ const ns=_smAdj[v]; if(ns.size<3)continue; let sx=0,sy=0,sz=0; for(const j of ns){ sx+=nrm[j*3];sy+=nrm[j*3+1];sz+=nrm[j*3+2]; } const k=ns.size;
+        let lx=nrm[v*3]+0.75*(sx/k-nrm[v*3]), ly=nrm[v*3+1]+0.75*(sy/k-nrm[v*3+1]), lz=nrm[v*3+2]+0.75*(sz/k-nrm[v*3+2]); const l=Math.hypot(lx,ly,lz)||1; nn[v*3]=lx/l; nn[v*3+1]=ly/l; nn[v*3+2]=lz/l; }
+      nrm.set(nn); } }
     g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
     if(doCol) g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); }
   const mat=makeMat(); mat.side=THREE.DoubleSide; mat.flatShading=false;
@@ -1315,7 +1330,7 @@ $('dataCsv').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)ret
 $('spinSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; const ax=b.dataset.ax; spinAx[ax]=!spinAx[ax]; b.classList.toggle('on',spinAx[ax]); });
 const bindRange=(id,fn)=>{ const el=$(id), v=$(id+'V'); el.addEventListener('input',()=>{ if(v)v.textContent=(+el.value).toFixed(el.step&&+el.step<0.1?2:1); (fn||rebuild)(); }); };
 bindRange('atomScale'); bindRange('bondR'); bindRange('spinSpeed',()=>{});
-bindRange('surfQual'); bindRange('surfProbe'); bindRange('surfOpac'); $('surfLig').addEventListener('change',rebuild);
+bindRange('surfQual'); bindRange('surfSmooth'); bindRange('surfProbe'); bindRange('surfOpac'); $('surfLig').addEventListener('change',rebuild);
 const rebuildIfAtomic=()=>{ if(curRep==='atomic') rebuild(); };
 bindRange('atSpread',rebuildIfAtomic); bindRange('atNuc',rebuildIfAtomic); bindRange('atESpeed',rebuildIfAtomic); $('atShells').addEventListener('change',rebuildIfAtomic); $('atLobes').addEventListener('change',rebuildIfAtomic);
 ['dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung'].forEach(id=>bindRange(id, rebuildDNAIfActive));
@@ -1490,7 +1505,7 @@ async function afSuggest(q){ const el=$('afSuggest'); if(!el)return;
       const d=document.createElement('div'); d.className='afitem'; d.innerHTML=`<b>${acc}</b> ${gene?gene+' · ':''}${nm} — <span style="color:var(--muted)">${org}</span>`; d.title=`${acc} · ${gene} ${nm} (${org})`;
       d.addEventListener('click',()=>{ $('afid').value=acc; el.innerHTML=''; fetchAlphaFold(acc); }); el.appendChild(d); }); }catch(e){ el.innerHTML=''; } }
 // ---------- export / presets ----------
-const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB','ltExposure','ltEnv','ltTone','ltAmb','ltSky','ltGround','ltKey','ltKeyCol','ltKeyAz','ltKeyEl','ltFill','ltFillCol','ltBack','ltBackCol','ltFinish','ltRough','ltMetal'];
+const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfSmooth','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB','ltExposure','ltEnv','ltTone','ltAmb','ltSky','ltGround','ltKey','ltKeyCol','ltKeyAz','ltKeyEl','ltFill','ltFillCol','ltBack','ltBackCol','ltFinish','ltRough','ltMetal'];
 function snapCfg(){ const c={rep:curRep,col:curCol,clipAxis:curClipAxis,cam:{p:camera.position.toArray(),t:controls.target.toArray()}};
   for(const id of CFG_IDS){ const e=$(id); if(!e)continue; c[id]=e.type==='checkbox'?e.checked:e.value; } return c; }
 function applyCfg(c){ if(!c)return; for(const id of CFG_IDS){ const e=$(id); if(!e||c[id]==null)continue; if(e.type==='checkbox')e.checked=c[id]; else e.value=c[id];
