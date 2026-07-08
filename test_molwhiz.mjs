@@ -60,6 +60,35 @@ ok(`nucleons pickable (nuc groups: ${akinds.nuc||0})`, (akinds.nuc||0) >= 1);
 ok(`electrons pickable (e⁻ meshes: ${akinds.e||0})`, (akinds.e||0) >= 1);
 await rep('bas'); await settle(150);
 
+console.log('== ⚛ Atoms view: size guard (no freeze on big structures) ==');
+await page.evaluate(() => window.__mol.fetchPdb('1CRN')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 30000 }); await settle(400);
+await rep('atomic'); await settle(500);
+const guardStatus = await status();
+ok(`big structure falls back from ⚛ Atoms ("${guardStatus.slice(0,40)}…")`, /ball & stick|≤60/.test(guardStatus));
+ok('rep reverted to ball & stick', await page.$eval('#repSeg [data-rep=bas]', b => b.classList.contains('on')));
+await rep('bas'); await settle(150);
+
+console.log('== colour by CSV data (per-atom) ==');
+await load('caffeine'); await settle(150);
+const csv = await page.evaluate(() => window.__mol.MOL.atoms.map(a => `${a.serial},${(a.serial%5)/4}`).join('\n'));
+await page.evaluate(t => window.__mol.loadDataCSV('serial,value\n'+t, 'demo.csv'), csv);
+await settle(200);
+const dinfo = await page.evaluate(() => window.__mol.dataInfo());
+ok(`CSV coloured atoms (matched ${dinfo.matched}, mode ${dinfo.mode})`, dinfo.matched > 0 && dinfo.mode === 'atom');
+ok('Data colour mode active', await page.$eval('#colSeg [data-col=data]', b => b.classList.contains('on')));
+
+console.log('== name/SMILES → 3D fetch (PubChem) ==');
+await page.evaluate(() => window.__mol.fetchChem('aspirin')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 30000 }); await settle(300);
+const aspStat = await status();
+ok(`fetched aspirin by name ("${aspStat}")`, /aspirin/i.test(aspStat) && /\d+ atoms/.test(aspStat));
+
+console.log('== one-click active site (1HSG) ==');
+await page.evaluate(() => window.__mol.fetchPdb('1HSG')); await page.waitForFunction(() => /atoms/.test(document.getElementById('status').textContent), { timeout: 40000 }); await settle(500);
+await page.evaluate(() => window.__mol.activeSite(4.5)); await settle(400);
+const asOut = await page.$eval('#selOut', e => e.textContent);
+ok(`active site isolated pocket ("${asOut.slice(0,44)}…")`, /Active site: ligand/.test(asOut));
+ok('active site hid the bulk of the protein', (await page.evaluate(() => window.__mol.countHidden())) > 1000);
+
 console.log('== colouring + zoom + rep sizing ==');
 await load('caffeine'); await settle(150);
 await rep('bas'); const rBas = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'bas'));

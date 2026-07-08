@@ -108,14 +108,18 @@
 <div id="topbar">
   <button class="tbtn" id="tglL" title="show / hide functions">☰</button>
   <h1>mol<b>Whiz</b></h1><span id="verPill" title="build version"></span>
-  <select id="example" style="max-width:200px"><option value="">Gallery…</option>
+  <select id="example" style="max-width:210px"><option value="">Gallery…</option>
     <optgroup label="Small molecules (offline)"><option value="ex:caffeine">Caffeine</option><option value="ex:benzene">Benzene</option><option value="ex:ethanol">Ethanol</option><option value="ex:water">Water</option><option value="ex:methane">Methane</option></optgroup>
-    <optgroup label="Proteins"><option value="pdb:1CRN">Crambin (1CRN)</option><option value="pdb:1UBQ">Ubiquitin (1UBQ)</option><option value="pdb:3I40">Insulin (3I40)</option><option value="pdb:1HHO">Hemoglobin (1HHO)</option><option value="pdb:1IGT">Antibody IgG (1IGT)</option></optgroup>
-    <optgroup label="Bound complexes (+ ligand)"><option value="pdb:1HSG">HIV protease + drug (1HSG)</option><option value="pdb:6LU7">SARS-CoV-2 Mpro + inhibitor (6LU7)</option><option value="pdb:1STP">Streptavidin + biotin (1STP)</option><option value="pdb:2HHB">Hemoglobin + heme (2HHB)</option></optgroup>
-    <optgroup label="🔮 AlphaFold (predicted, by UniProt)"><option value="af:P69905">Hemoglobin α (P69905)</option><option value="af:P01308">Insulin (P01308)</option><option value="af:P04637">p53 tumour suppressor (P04637)</option><option value="af:P00698">Lysozyme C (P00698)</option><option value="af:P0DTC2">SARS-CoV-2 spike (P0DTC2)</option></optgroup>
-    <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option></optgroup>
+    <optgroup label="Drugs (online · PubChem)"><option value="chem:aspirin">Aspirin</option><option value="chem:ibuprofen">Ibuprofen</option><option value="chem:acetaminophen">Acetaminophen (Tylenol)</option><option value="chem:penicillin g">Penicillin G</option><option value="chem:morphine">Morphine</option><option value="chem:dopamine">Dopamine</option><option value="chem:serotonin">Serotonin</option><option value="chem:nicotine">Nicotine</option><option value="chem:aspartame">Aspartame</option><option value="chem:sildenafil">Sildenafil (Viagra)</option><option value="chem:atorvastatin">Atorvastatin (Lipitor)</option><option value="chem:penicillin">Penicillin</option></optgroup>
+    <optgroup label="Biochemistry (online · PubChem)"><option value="chem:glucose">Glucose</option><option value="chem:sucrose">Sucrose</option><option value="chem:cholesterol">Cholesterol</option><option value="chem:ATP">ATP</option><option value="chem:NAD+">NAD⁺</option><option value="chem:heme b">Heme B</option><option value="chem:retinol">Retinol (vit A)</option><option value="chem:ascorbic acid">Vitamin C</option><option value="chem:citric acid">Citric acid</option><option value="chem:testosterone">Testosterone</option><option value="chem:estradiol">Estradiol</option><option value="chem:cortisol">Cortisol</option><option value="chem:glycine">Glycine</option><option value="chem:L-tryptophan">Tryptophan</option></optgroup>
+    <optgroup label="Proteins"><option value="pdb:1CRN">Crambin (1CRN)</option><option value="pdb:1UBQ">Ubiquitin (1UBQ)</option><option value="pdb:3I40">Insulin (3I40)</option><option value="pdb:1HHO">Hemoglobin (1HHO)</option><option value="pdb:1IGT">Antibody IgG (1IGT)</option><option value="pdb:1GFL">Green fluorescent protein (1GFL)</option><option value="pdb:2LYZ">Lysozyme (2LYZ)</option><option value="pdb:1MBN">Myoglobin (1MBN)</option><option value="pdb:4HHB">Deoxyhaemoglobin (4HHB)</option><option value="pdb:1ATP">Protein kinase A (1ATP)</option></optgroup>
+    <optgroup label="Bound complexes (+ ligand)"><option value="pdb:1HSG">HIV protease + drug (1HSG)</option><option value="pdb:6LU7">SARS-CoV-2 Mpro + inhibitor (6LU7)</option><option value="pdb:1STP">Streptavidin + biotin (1STP)</option><option value="pdb:2HHB">Hemoglobin + heme (2HHB)</option><option value="pdb:3PTB">Trypsin + benzamidine (3PTB)</option><option value="pdb:1M17">EGFR kinase + erlotinib (1M17)</option><option value="pdb:2XYT">COX-2 + ibuprofen-like (2XYT)</option><option value="pdb:4DFR">DHFR + methotrexate (4DFR)</option></optgroup>
+    <optgroup label="🔮 AlphaFold (predicted, by UniProt)"><option value="af:P69905">Hemoglobin α (P69905)</option><option value="af:P01308">Insulin (P01308)</option><option value="af:P04637">p53 tumour suppressor (P04637)</option><option value="af:P00698">Lysozyme C (P00698)</option><option value="af:P0DTC2">SARS-CoV-2 spike (P0DTC2)</option><option value="af:P0DP23">Calmodulin (P0DP23)</option><option value="af:P02769">Serum albumin (P02769)</option></optgroup>
+    <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option><option value="pdb:1D66">GAL4–DNA (1D66)</option><option value="pdb:6TNA">tRNA (6TNA)</option></optgroup>
   </select>
-  <input type="text" id="pdbid" placeholder="PDB ID (1CRN)" maxlength="8" style="max-width:130px;text-transform:uppercase">
+  <input type="text" id="findq" placeholder="Search any molecule — name / SMILES / PDB" autocomplete="off" style="max-width:220px">
+  <button class="tbtn" id="findBtn" title="Search a molecule by name (aspirin), SMILES (CC(=O)O), or 4-char PDB ID (1CRN). Pulls 3D from PubChem / RCSB.">🔎</button>
+  <input type="text" id="pdbid" placeholder="PDB ID" maxlength="8" style="max-width:96px;text-transform:uppercase">
   <button class="tbtn" id="fetchBtn">Fetch</button>
   <span class="sp"></span>
   <button class="tbtn" id="fitBtn" title="fit to view">⤢ Fit</button>
@@ -160,6 +164,8 @@
     <div class="row"><button id="selIsolate" style="flex:1">Isolate</button><button id="selHide" style="flex:1">Hide</button></div>
     <div class="row"><input type="color" id="selColor" value="#ff3b30"><button id="selColorBtn" style="flex:1">Colour selection</button></div>
     <div class="row"><button id="selReset" style="flex:1">Show all · reset colours</button></div>
+    <div class="row" style="margin-top:5px"><button id="activeSiteBtn" class="acc" style="flex:1" title="Find the bound ligand and isolate it with the residues that line its pocket + H-bonds + labels">🎯 Active site (ligand pocket)</button>
+      <input type="number" id="pocketR" value="4.5" min="2" max="8" step="0.5" style="width:52px" title="pocket radius (Å)"></div>
     <div class="row"><label class="tog"><input type="checkbox" id="resLabels"> residue labels (selection)</label></div>
     <div id="selOut" style="font-size:11px;color:var(--muted);min-height:14px"></div>
   </div>
@@ -259,7 +265,10 @@
     <div class="row"><label class="tog"><input type="checkbox" id="clipFlip"> flip side</label></div>
   </div>
   <div class="grp"><div class="lbl">Colour by</div>
-    <div class="seg" id="colSeg"><button data-col="element" class="on">Element</button><button data-col="chain">Chain</button><button data-col="residue">Residue</button><button data-col="rainbow">Rainbow</button><button data-col="bfactor" title="B-factor, or pLDDT confidence for AlphaFold models">B / pLDDT</button></div>
+    <div class="seg" id="colSeg"><button data-col="element" class="on">Element</button><button data-col="chain">Chain</button><button data-col="residue">Residue</button><button data-col="rainbow">Rainbow</button><button data-col="bfactor" title="B-factor, or pLDDT confidence for AlphaFold models">B / pLDDT</button><button data-col="data" title="Colour by values from a CSV you load (per residue or per atom)">📊 Data</button></div>
+    <div class="row" style="margin-top:6px"><button id="dataCsvBtn" style="flex:1" title="CSV/TSV columns: chain,res,value · or res,value · or serial,value (per atom). Header row optional.">📊 Colour by CSV values…</button>
+      <input type="file" id="dataCsv" accept=".csv,.tsv,.txt" style="display:none"></div>
+    <div id="dataOut" style="font-size:11px;color:var(--muted);min-height:13px"></div>
     <div class="row" style="margin-top:6px"><label class="tog"><input type="checkbox" id="legendOn"> show colour legend</label></div>
   </div>
   <div class="grp"><div class="lbl">Surface</div>
@@ -339,12 +348,17 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.8'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.9'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
 const camera=new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 5000); camera.position.set(0,0,60);
 const controls=new OrbitControls(camera, renderer.domElement); controls.enableDamping=true; controls.enableZoom=false;   // wheel/trackpad routed through the zoom slider instead (see below)
+// Always orbit about the (visible) centre of mass — even after panning/moving the model, so it never spins about a distant point.
+function molWorldCOM(){ const A=MOL.atoms; if(!A.length) return new THREE.Vector3(); let x=0,y=0,z=0,n=0;
+  for(const a of A){ if(a.hidden)continue; x+=a.x;y+=a.y;z+=a.z;n++; } if(!n){ for(const a of A){x+=a.x;y+=a.y;z+=a.z;} n=A.length; }
+  return molGroup.localToWorld(new THREE.Vector3(x/n,y/n,z/n)); }
+controls.addEventListener('start',()=>{ if(_lastBtn===0 && dragAtom<0 && !builderOn && !measMode) controls.target.copy(molWorldCOM()); });   // left-drag = rotate → recentre pivot on COM
 scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
 const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
 const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
@@ -608,6 +622,25 @@ function selAct(action){ const p=selPred(); let n=0;
   else if(action==='colour'){ const c=$('selColor').value; MOL.atoms.forEach(a=>{ if(p(a)){a.ovcol=c;n++;} }); }
   else { MOL.atoms.forEach(a=>{ a.hidden=false; a.ovcol=null; }); }
   rebuild(); if($('selOut'))$('selOut').textContent = action==='reset' ? 'all shown · colours reset' : `${n} atoms ${action==='colour'?'coloured':action+'d'}`; }
+// ---------- one-click active site: find the bound ligand, isolate it + the residues lining its pocket, with H-bonds + labels ----------
+function activeSite(radiusArg){ const A=MOL.atoms, radius=+radiusArg || +($('pocketR')&&$('pocketR').value) || 4.5;
+  const groups={}; for(let i=0;i<A.length;i++){ const a=A[i]; if(a.het && !isSolvent(a)){ const k=a.chain+'|'+a.resSeq+'|'+a.resName; (groups[k]=groups[k]||[]).push(i); } }
+  const keys=Object.keys(groups);
+  if(!keys.length){ const b=$('activeSiteBtn'); if(b){ b.classList.remove('blip'); void b.offsetWidth; b.classList.add('blip'); } if($('selOut'))$('selOut').textContent='no ligand found — need a bound non-water HETATM (try 1HSG, 3PTB, 4DFR…)'; return; }
+  keys.sort((x,y)=>groups[y].length-groups[x].length); const ligKey=keys[0], ligIdx=groups[ligKey], R2=radius*radius;   // biggest non-solvent HETATM = the ligand
+  const pocket=new Set();
+  for(let i=0;i<A.length;i++){ const a=A[i]; if(isSolvent(a))continue; if(a.chain+'|'+a.resSeq+'|'+a.resName===ligKey)continue;
+    for(const j of ligIdx){ const dx=a.x-A[j].x,dy=a.y-A[j].y,dz=a.z-A[j].z; if(dx*dx+dy*dy+dz*dz<=R2){ pocket.add(a.chain+'|'+a.resSeq); break; } } }
+  const keep=new Set(ligIdx); for(let i=0;i<A.length;i++){ if(pocket.has(A[i].chain+'|'+A[i].resSeq)) keep.add(i); }
+  A.forEach((a,i)=>{ a.hidden=!keep.has(i); a.ovcol=null; });
+  if($('hbondOn'))$('hbondOn').checked=true; if($('resLabels'))$('resLabels').checked=true;
+  if(curRep!=='bas'){ curRep='bas'; [...$('repSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.rep==='bas')); }
+  rebuild();
+  let cx=0,cy=0,cz=0; ligIdx.forEach(j=>{cx+=A[j].x;cy+=A[j].y;cz+=A[j].z;}); cx/=ligIdx.length;cy/=ligIdx.length;cz/=ligIdx.length;   // frame on the ligand
+  let rr=6; keep.forEach(i=>{ rr=Math.max(rr,Math.hypot(A[i].x-cx,A[i].y-cy,A[i].z-cz)); });
+  const d=rr/Math.sin(camera.fov*Math.PI/360)*1.35; molGroup.rotation.set(0,0,0); controls.target.set(cx,cy,cz); camera.up.set(0,1,0); camera.position.set(cx,cy,cz+d);
+  controls.minDistance=rr*0.1; controls.maxDistance=rr*9; controls.update(); syncZoom();
+  const lname=ligKey.split('|')[2]; if($('selOut'))$('selOut').textContent=`Active site: ligand ${lname} + ${pocket.size} residues within ${radius} Å · H-bonds + labels on`; }
 // ---------- sequence viewer ----------
 function buildSeqPanel(){ const el=$('seqBody'); if(!el)return; el.innerHTML=''; const chains=new Map();
   for(const a of MOL.atoms){ if(a.het)continue; const anchor=a.name==='CA'||(NUC_ANCHOR[a.name]&&(MOL._dna||isNuc(a.resName))); if(!anchor)continue;
@@ -668,6 +701,31 @@ function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
         rung(new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(bk.x,bk.y,bk.z), bc); } } }
   }
   return grp; }
+let _dataMap=null, _dataRange=null, _dataTitle='Data', _dataMode='res', _dataMatched=0;   // user CSV values mapped onto residues/atoms
+// Parse a CSV/TSV of your own per-residue or per-atom values and colour the structure by them.
+// Accepted shapes (header optional): chain,res,value · res,value · serial,value (atom) · residueLabel,value ("A45"/"A:45"/"45").
+function loadDataCSV(text,fname){ const rows=text.replace(/^﻿/,'').trim().split(/\r?\n/).filter(l=>l.trim()); if(!rows.length){ $('dataOut').textContent='empty file'; return; }
+  const delim=/\t/.test(rows[0])?'\t':(/;/.test(rows[0])&&!/,/.test(rows[0])?';':','); const first=rows[0].split(delim).map(s=>s.trim());
+  const headed=first.some(c=>c&&isNaN(parseFloat(c))&&!/^[A-Za-z]?:?\d+$/.test(c));   // a header row has words that aren't residue labels
+  const hdr=headed?first.map(s=>s.toLowerCase()):null, start=headed?1:0;
+  let mode='res'; if(hdr && hdr.some(h=>/serial|atom(?!ic)|^idx$/.test(h))) mode='atom';
+  _dataTitle = (headed && hdr.length>=2 && hdr[hdr.length-1]) ? first[first.length-1] : (fname? fname.replace(/\.[^.]+$/,'') : 'Data');
+  const map=new Map(); let vmin=1e30,vmax=-1e30,n=0;
+  for(let i=start;i<rows.length;i++){ const p=rows[i].split(delim).map(s=>s.trim()); if(p.length<2) continue;
+    const val=parseFloat(p[p.length-1]); if(!isFinite(val)) continue;
+    if(mode==='atom'){ map.set('#'+p[0], val); }
+    else if(p.length>=3){ map.set(p[0]+'|'+p[1], val); }                                   // chain,res,value
+    else { const id=p[0], m=id.match(/^([A-Za-z]?)[:_ ]?(-?\d+)$/); if(m&&m[1]) map.set(m[1]+'|'+m[2], val); map.set('*|'+(m?m[2]:id), val); }  // res,value (chain optional)
+    if(val<vmin)vmin=val; if(val>vmax)vmax=val; n++; }
+  if(!n){ $('dataOut').textContent='no numeric rows found — expected e.g. "A,45,1.3"'; return; }
+  _dataMap=map; _dataMode=mode; _dataRange={min:vmin,max:vmax}; applyDataToAtoms();
+  if(!_dataMatched){ $('dataOut').textContent=`loaded ${n} values but 0 matched this structure — check chain/residue IDs`; $('dataOut').style.color='#ffb570'; return; }
+  $('dataOut').style.color=''; $('dataOut').textContent=`${_dataMatched} atoms coloured · ${n} ${mode==='atom'?'atoms':'residues'} · ${vmin.toPrecision(3)} → ${vmax.toPrecision(3)}`;
+  curCol='data'; [...$('colSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.col==='data')); rebuild(); }
+function applyDataToAtoms(){ _dataMatched=0; if(!_dataMap){ MOL.atoms.forEach(a=>a.dv=null); return; }
+  MOL.atoms.forEach(a=>{ let v; if(_dataMode==='atom') v=_dataMap.get('#'+a.serial);
+    else { v=_dataMap.get(a.chain+'|'+a.resSeq); if(v==null) v=_dataMap.get('*|'+a.resSeq); }
+    a.dv=(v==null?null:v); if(v!=null)_dataMatched++; }); }
 let _ccx=null;   // colour context (b-factor range, per-chain residue range) — recomputed each rebuild
 function computeColorCtx(){ const A=MOL.atoms; let bmin=1e9,bmax=-1e9; const cs={};
   for(const a of A){ const b=a.b||0; if(b<bmin)bmin=b; if(b>bmax)bmax=b; const s=+a.resSeq; if(!cs[a.chain])cs[a.chain]={min:1e9,max:-1e9}; if(s<cs[a.chain].min)cs[a.chain].min=s; if(s>cs[a.chain].max)cs[a.chain].max=s; }
@@ -680,11 +738,13 @@ function atomColor(a){ if(resSel.size && resSel.has(a.chain+'|'+a.resSeq)) retur
   if(curCol==='rainbow'){ const c=_ccx&&_ccx.cs[a.chain]; return _spectrum(c&&c.max>c.min?((+a.resSeq)-c.min)/(c.max-c.min):0.5); }   // N→C spectrum per chain
   if(curCol==='bfactor'){ const b=a.b||0; if(_ccx&&_ccx.isPLDDT) return b>=90?'#0053d6':b>=70?'#65cbf3':b>=50?'#ffdb13':'#ff7d45';   // AlphaFold pLDDT palette
     return _spectrum(_ccx&&_ccx.bmax>_ccx.bmin?(b-_ccx.bmin)/(_ccx.bmax-_ccx.bmin):0.5); }
+  if(curCol==='data'){ const v=a.dv; if(v==null) return '#454b57'; const r=_dataRange; return _spectrum(r&&r.max>r.min?(v-r.min)/(r.max-r.min):0.5); }   // your CSV values
   return elCol(a.el); }
 // ---------- colour legend (composited into the app overlay + PNG/figure exports) ----------
 function legendCanvas(scale){ scale=scale||1; const rows=[]; let title='', grad=null;
   if(curCol==='bfactor' && _ccx && _ccx.isPLDDT){ title='pLDDT confidence'; rows.push(['#0053d6','Very high (≥90)'],['#65cbf3','Confident (70–90)'],['#ffdb13','Low (50–70)'],['#ff7d45','Very low (<50)']); }
   else if(curCol==='bfactor' && _ccx){ title='B-factor'; grad=[_ccx.bmin.toFixed(0), _ccx.bmax.toFixed(0)]; }
+  else if(curCol==='data' && _dataRange){ title=_dataTitle||'Data'; grad=[(''+(+_dataRange.min.toPrecision(3))), (''+(+_dataRange.max.toPrecision(3)))]; }
   else if(curCol==='rainbow'){ title='Chain N → C'; grad=['N','C']; }
   else if(curCol==='chain'){ title='Chains'; const chs=[...new Set(MOL.atoms.filter(a=>!a.hidden).map(a=>a.chain))].sort(); for(const c of chs.slice(0,14)){ let h=0; for(const x of c)h+=x.charCodeAt(0); rows.push([PAL[h%PAL.length],'Chain '+c]); } }
   else if(curCol==='element'){ title='Elements'; const els=[...new Set(MOL.atoms.filter(a=>!a.hidden).map(a=>(a.el||'').replace('BASE_','')))].filter(e=>CPK[e]); for(const e of els.slice(0,12)) rows.push([elCol(e),e]); }
@@ -877,6 +937,8 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
   $('status').textContent=`${idx.length} atoms · atomic (Bohr) view · ${electronOrbits.reduce((s,o)=>s+o.es.length,0)} e⁻`; }
 // ---------- aura glow: additive BackSide shells around each atom (Unity-style bloom; ported from brainWhiz) ----------
 const AURA_LAYERS=8;   // more, finer shells → smooth glow falloff (pulses without visible stepping)
+const ATOMIC_MAX=60;   // ⚛ Atoms view draws every proton/neutron/electron — cap so big structures don't spawn 10⁴ meshes & freeze
+let _atomicWarn='';    // deferred status: the ⚛ Atoms fallback warning must survive the ball&stick status line that follows
 function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
   const atomic=(curRep==='atomic'), sp=atomic?+$('atSpread').value:1;   // atomic view spreads atoms by 'Spread' — match it
   const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; if(atomic&&!ELEM[(a.el||'').replace('BASE_','')])continue; idx.push(i); } if(!idx.length) return;
@@ -962,7 +1024,10 @@ function addOutline(){ if(!$('outlineOn')||!$('outlineOn').checked) return; cons
   molGroup.add(outlineGroup); }
 function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').textContent='empty'; return; }
   computeColorCtx(); updateLegend(); $('status').style.color='';
-  if(curRep==='atomic'){ buildAtomic(); decorations(); return; }
+  if(curRep==='atomic'){ const showH0=$('showH').checked;
+    const nA=A.filter(a=>!a.hidden && !(!showH0&&a.el==='H') && ELEM[(a.el||'').replace('BASE_','')]).length;
+    if(nA>ATOMIC_MAX){ _atomicWarn=`⚛ Atoms view is for ≤${ATOMIC_MAX} atoms — this has ${nA} (would draw thousands of electrons). Showing ball & stick; isolate a ligand/residue, then ⚛ Atoms.`; curRep='bas'; [...$('repSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.rep==='bas')); }
+    else { buildAtomic(); decorations(); return; } }
   if(curRep==='voronoi'){ buildVoronoi(); decorations(); return; }
   if(curRep==='surface'){ surfMesh=buildSurface(); if(surfMesh) molGroup.add(surfMesh);
     if($('surfLig').checked) buildLigands();
@@ -990,7 +1055,7 @@ function rebuild(){ clearMesh(); const A=MOL.atoms; if(!A.length){ $('status').t
       _m.compose(ax.clone().add(dir.clone().multiplyScalar(ra+hA/2)),_q,_s.set(rr,hA,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(a))); b++;
       _m.compose(cx.clone().add(dir.clone().multiplyScalar(-(rc+hC/2))),_q,_s.set(rr,hC,rr)); bondMesh.setMatrixAt(b,_m); bondMesh.setColorAt(b,_c.set(atomColor(c))); b++; }
     bondMesh.instanceMatrix.needsUpdate=true; if(bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate=true; molGroup.add(bondMesh); }
-  decorations(); $('status').textContent=`${A.length} atoms · ${MOL.bonds.length} bonds`;
+  decorations(); $('status').textContent = _atomicWarn || `${A.length} atoms · ${MOL.bonds.length} bonds`; if(_atomicWarn){ $('status').style.color='#ffb570'; _atomicWarn=''; }
 }
 function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms parsed'; return; }
   if(MOL.atoms.length) pushUndo();   // so Cmd-Z can return to the previous molecule
@@ -1001,6 +1066,7 @@ function loadMol(m,name){ if(!m.atoms.length){ $('status').textContent='no atoms
   molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z)));   // radius for clip-plane range
   measSel=[]; savedMeasures=[]; if(measGroup){ molGroup.remove(measGroup); measGroup=null; } if($('measOut'))$('measOut').textContent='';
   if($('atomProps'))$('atomProps').classList.remove('on');
+  _dataMap=null; _dataRange=null; _dataMatched=0; if($('dataOut'))$('dataOut').textContent=''; if(curCol==='data'){ curCol='element'; if($('colSeg'))[...$('colSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.col==='element')); }   // CSV data is per-structure
   populateChains(); selKind=''; if($('selKind'))[...$('selKind').children].forEach(x=>x.classList.remove('on'));
   resSel.clear(); if($('seqPanel')&&$('seqPanel').classList.contains('on')) buildSeqPanel();
   rebuild(); fitCamera(); syncZoom(); if($('clipOn').checked) updateClip(); if(name) document.title='molWhiz — '+name; }
@@ -1145,7 +1211,8 @@ function recordTurntable(){ const btn=$('turntableBtn'), cvs=renderer.domElement
   (function step(){ const t=(performance.now()-t0)/dur; molGroup.rotation.y=r0+t*Math.PI*2; if(t<1) requestAnimationFrame(step); else { molGroup.rotation.y=r0; setTimeout(()=>rec.stop(),120); } })(); }
 // ---------- picking ----------
 const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(); let downXY=null;
-renderer.domElement.addEventListener('pointerdown',e=>downXY=[e.clientX,e.clientY]);
+let _lastBtn=0;
+renderer.domElement.addEventListener('pointerdown',e=>{ downXY=[e.clientX,e.clientY]; _lastBtn=e.button; });
 // ---------- build-mode: drag an atom to move it (capture phase so it beats OrbitControls) ----------
 let dragAtom=-1, dragMoved=false; const _dplane=new THREE.Plane(), _dpt=new THREE.Vector3();
 renderer.domElement.addEventListener('pointerdown',e=>{ if(!builderOn||e.button!==0||!sphereMesh||!e.shiftKey)return;   // SHIFT+drag moves an atom; plain drag always rotates the camera
@@ -1193,7 +1260,11 @@ $('tglL').addEventListener('click',()=>{ $('sidebar').classList.toggle('hidden')
 $('tglR').addEventListener('click',()=>{ $('sidebarR').classList.toggle('hidden'); $('tglR').classList.toggle('on',!$('sidebarR').classList.contains('hidden')); });
 $('tglL').classList.add('on'); $('tglR').classList.add('on');   // both panels open by default so appearance controls (matcaps, shapes, aura…) are discoverable
 $('repSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; curRep=b.dataset.rep; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); rebuild(); });
-$('colSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; curCol=b.dataset.col; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); rebuild(); });
+$('colSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return;
+  if(b.dataset.col==='data' && !_dataMap){ $('dataCsv').click(); return; }   // no data yet → open the CSV picker instead of blanking colours
+  curCol=b.dataset.col; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); rebuild(); });
+$('dataCsvBtn').addEventListener('click',()=>$('dataCsv').click());
+$('dataCsv').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ loadDataCSV(r.result,f.name); }catch(err){ $('dataOut').textContent='CSV error: '+err.message; } }; r.readAsText(f); e.target.value=''; });
 $('spinSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; const ax=b.dataset.ax; spinAx[ax]=!spinAx[ax]; b.classList.toggle('on',spinAx[ax]); });
 const bindRange=(id,fn)=>{ const el=$(id), v=$(id+'V'); el.addEventListener('input',()=>{ if(v)v.textContent=(+el.value).toFixed(el.step&&+el.step<0.1?2:1); (fn||rebuild)(); }); };
 bindRange('atomScale'); bindRange('bondR'); bindRange('spinSpeed',()=>{});
@@ -1252,7 +1323,10 @@ $('example').addEventListener('change',e=>{ const v=e.target.value; if(!v) retur
   if(v.startsWith('ex:')){ const k=v.slice(3); if(EX[k]) loadMol(EX[k](),k); }
   else if(v==='dna:build'){ buildDNA($('dnaSeq').value); }
   else if(v.startsWith('af:')){ const acc=v.slice(3); $('afid').value=acc; fetchAlphaFold(acc); }
+  else if(v.startsWith('chem:')){ const q=v.slice(5); if($('findq'))$('findq').value=q; fetchChem(q); }
   else if(v.startsWith('pdb:')){ const id=v.slice(4); $('pdbid').value=id; fetchPdb(id); } });
+$('findBtn').addEventListener('click',()=>fetchChem()); $('findq').addEventListener('keydown',e=>{ if(e.key==='Enter') fetchChem(); });
+$('activeSiteBtn').addEventListener('click',()=>activeSite());
 $('bg').addEventListener('input',applyBackground);
 $('gradBg').addEventListener('change',applyBackground);
 $('vignetteOn').addEventListener('change',()=>$('vignette').classList.toggle('on',$('vignetteOn').checked));
@@ -1327,6 +1401,19 @@ $('figGrid').addEventListener('click',e=>{ const cell=e.target.closest('.figcell
   if(!figSlots[i]) figCapture(i); });   // click an empty slot → capture the current 3D view
 $('figGrid').addEventListener('input',e=>{ const inp=e.target.closest('.clab'); if(inp){ const i=+inp.closest('.figcell').dataset.i; if(figSlots[i]) figSlots[i].caption=inp.value; } });
 $('figPNG').addEventListener('click',exportFigPNG); $('figPDF').addEventListener('click',exportFigPDF); $('figSVG').addEventListener('click',exportFigSVG);
+// Search any molecule by name / SMILES / PDB. Names & SMILES → 3D SDF from PubChem (fallback NCI CACTUS); 4-char code → RCSB.
+async function fetchChem(qArg){ const q=(typeof qArg==='string'?qArg:$('findq').value).trim(); if(!q){ $('status').textContent='type a molecule name, a SMILES, or a 4-char PDB ID'; return; }
+  if(/^[0-9][0-9A-Za-z]{3}$/.test(q)){ $('pdbid').value=q.toUpperCase(); return fetchPdb(q.toUpperCase()); }        // looks like a PDB ID (digit + 3 alnum)
+  const eq=encodeURIComponent(q), P='https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound';
+  const looksSmiles=/[=#\[\]()@+\\/.%]/.test(q) || (/[A-Za-z]/.test(q)&&/\d/.test(q)&&!/\s/.test(q));            // SMILES has bond/branch chars or fused letters+digits, no spaces
+  const urls = looksSmiles
+    ? [`${P}/smiles/${eq}/SDF?record_type=3d`, `${P}/name/${eq}/SDF?record_type=3d`]
+    : [`${P}/name/${eq}/SDF?record_type=3d`, `${P}/smiles/${eq}/SDF?record_type=3d`];
+  $('status').textContent='searching PubChem for “'+q+'” …';
+  for(const url of urls){ try{ const r=await fetch(url); if(!r.ok) continue; const m=parseSDF(await r.text()); if(m.atoms.length){ loadMol(m,q); $('status').textContent=`${q} · ${m.atoms.length} atoms (PubChem)`; return; } }catch(e){} }
+  $('status').textContent='trying NCI CACTUS for “'+q+'” …';                                                        // fallback: resolves many names/SMILES to 3D
+  try{ const r=await fetch(`https://cactus.nci.nih.gov/chemical/structure/${eq}/file?format=sdf&get3d=true`); if(r.ok){ const m=parseSDF(await r.text()); if(m.atoms.length){ loadMol(m,q); $('status').textContent=`${q} · ${m.atoms.length} atoms (CACTUS)`; return; } } }catch(e){}
+  $('status').textContent='no 3D match for “'+q+'” — try another name, a SMILES, or a PDB ID'; }
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
   try{ const r=await fetch(`https://files.rcsb.org/download/${id}.pdb`); if(!r.ok) throw new Error(r.status); loadMol(parsePDB(await r.text()),id); return; }
@@ -1486,5 +1573,6 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   pushMeas:i=>{measMode=true;measSel.push(i);drawMeasure();}, keepMeas:()=>{if(measSel.length>=2){savedMeasures.push(measSel.slice());measSel=[];drawMeasure();}}, measCounts:()=>({active:measSel.length,saved:savedMeasures.length}),
   selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas,
   dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup,
-  atomicKinds:()=>{ const s={}; if(atomicGroup) atomicGroup.traverse(o=>{ const k=o.userData&&o.userData.kind; if(k) s[k]=(s[k]||0)+1; }); return s; }};
+  atomicKinds:()=>{ const s={}; if(atomicGroup) atomicGroup.traverse(o=>{ const k=o.userData&&o.userData.kind; if(k) s[k]=(s[k]||0)+1; }); return s; },
+  fetchChem, activeSite, loadDataCSV, dataInfo:()=>({matched:_dataMatched, range:_dataRange, mode:_dataMode})};
 </script>
