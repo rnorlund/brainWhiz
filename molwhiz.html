@@ -117,7 +117,7 @@
     <optgroup label="🔮 AlphaFold (predicted, by UniProt)"><option value="af:P69905">Hemoglobin α (P69905)</option><option value="af:P01308">Insulin (P01308)</option><option value="af:P04637">p53 tumour suppressor (P04637)</option><option value="af:P00698">Lysozyme C (P00698)</option><option value="af:P0DTC2">SARS-CoV-2 spike (P0DTC2)</option><option value="af:P0DP23">Calmodulin (P0DP23)</option><option value="af:P02769">Serum albumin (P02769)</option></optgroup>
     <optgroup label="DNA / DNA–protein"><option value="dna:build">🧬 Build B-DNA (from sequence)</option><option value="pdb:1BNA">B-DNA dodecamer (1BNA)</option><option value="pdb:1AOI">Nucleosome — DNA+histones (1AOI)</option><option value="pdb:1LMB">λ repressor–DNA (1LMB)</option><option value="pdb:1D66">GAL4–DNA (1D66)</option><option value="pdb:6TNA">tRNA (6TNA)</option></optgroup>
   </select>
-  <input type="text" id="findq" placeholder="Search any molecule — name / IUPAC / SMILES / PDB" autocomplete="off" style="max-width:240px">
+  <input type="text" id="findq" placeholder="Search any molecule — name · IUPAC · SMILES · PDB" autocomplete="off" style="flex:1 1 320px;min-width:230px;max-width:460px">
   <button class="tbtn" id="findBtn" title="Search by common name (aspirin), systematic IUPAC name (2-acetyloxybenzoic acid), SMILES (CC(=O)O), or 4-char PDB ID (1CRN). 3D from PubChem · OPSIN · CACTUS · RCSB.">🔎</button>
   <input type="text" id="pdbid" placeholder="PDB ID" maxlength="8" style="max-width:96px;text-transform:uppercase">
   <button class="tbtn" id="fetchBtn">Fetch</button>
@@ -368,7 +368,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.13'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.14'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
