@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.6'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.7'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -869,13 +869,14 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
 // ---------- aura glow: additive BackSide shells around each atom (Unity-style bloom; ported from brainWhiz) ----------
 const AURA_LAYERS=8;   // more, finer shells → smooth glow falloff (pulses without visible stepping)
 function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
-  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; idx.push(i); } if(!idx.length) return;
+  const atomic=(curRep==='atomic'), sp=atomic?+$('atSpread').value:1;   // atomic view spreads atoms by 'Spread' — match it
+  const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; if(atomic&&!ELEM[(a.el||'').replace('BASE_','')])continue; idx.push(i); } if(!idx.length) return;
   auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; const col=new THREE.Color($('auraColor').value), reach=+$('auraSize').value, I=+$('auraIntensity').value;
   const geo=new THREE.SphereGeometry(1,16,12);
   for(let L=0;L<AURA_LAYERS;L++){ const scale=1+(reach-1)*(L+1)/AURA_LAYERS, op=I*0.09*(1-L/AURA_LAYERS);   // even radial steps, smooth outward fade
     const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op});
     const im=new THREE.InstancedMesh(geo,mat,idx.length); let n=0;
-    for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
+    for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x*sp,a.y*sp,a.z*sp),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
     im.instanceMatrix.needsUpdate=true; im.frustumCulled=false; auraGroup.add(im); }
   molGroup.add(auraGroup); }
 // ---------- Voronoi tessellation: each atom's convex domain = a cube clipped by bisector planes to neighbours ----------
