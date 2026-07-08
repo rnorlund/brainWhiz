@@ -365,7 +365,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.19'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.20'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -426,9 +426,8 @@ function loop(){ requestAnimationFrame(loop); controls.update();
     const mul = pul>0 ? (0.55+0.45*Math.sin(performance.now()*0.001*pul)) : 1;
     if($('auraRainbow').checked){ auraHue=(auraHue+0.004)%1; const c=new THREE.Color().setHSL(auraHue,0.8,0.6);
       auraGroup.children.forEach(m=>{ const u=m.material.uniforms; if(u&&u.uColor)u.uColor.value.copy(c); else if(m.material.color)m.material.color.copy(c); }); }
-    auraGroup.children.forEach(m=>{ const u=m.material.uniforms;                                 // pulse off each mesh's stored base level
-      if(u&&u.uStr) u.uStr.value=(m.userData.aStr!=null?m.userData.aStr:1)*mul;
-      else m.material.opacity=(m.userData.aOp!=null?m.userData.aOp:base*0.09)*mul; }); }
+    auraGroup.children.forEach(m=>{ const u=m.material.uniforms, lvl=(m.userData.aBase!=null?m.userData.aBase:0.09)*base*mul;   // LIVE intensity × mesh base × pulse
+      if(u&&u.uStr) u.uStr.value=lvl; else m.material.opacity=lvl; }); }
   renderFrame(); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
@@ -1034,7 +1033,7 @@ function buildAura(){ if(!$('auraOn').checked) return; const reachG=+$('auraSize
       base+=pos.count; g.dispose(); });
     if(P.length){ const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); geo.setAttribute('normal',new THREE.Float32BufferAttribute(N,3)); geo.setAttribute('aCol',new THREE.Float32BufferAttribute(C,3)); geo.setIndex(I);
-      const mesh=new THREE.Mesh(geo, auraGlowMatVC(str,pw)); mesh.userData.aStr=str; mesh.frustumCulled=false;
+      const mesh=new THREE.Mesh(geo, auraGlowMatVC(str,pw)); mesh.userData.aBase=1.05; mesh.frustumCulled=false;   // uStr = 1.05 × live intensity × pulse
       auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; auraGroup.add(mesh); molGroup.add(auraGroup); }
     return; }
   const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
@@ -1044,7 +1043,7 @@ function buildAura(){ if(!$('auraOn').checked) return; const reachG=+$('auraSize
   const geo=new THREE.SphereGeometry(1,16,12);
   for(let L=0;L<AURA_LAYERS;L++){ const scale=1+(reach-1)*(L+1)/AURA_LAYERS, op=I*0.09*(1-L/AURA_LAYERS);   // even radial steps, smooth outward fade
     const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op});
-    const im=new THREE.InstancedMesh(geo,mat,idx.length); im.userData.aOp=op; let n=0;
+    const im=new THREE.InstancedMesh(geo,mat,idx.length); im.userData.aBase=0.09*(1-L/AURA_LAYERS); let n=0;   // intensity-independent → live-scaled in loop()
     for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x*sp,a.y*sp,a.z*sp),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
     im.instanceMatrix.needsUpdate=true; im.frustumCulled=false; auraGroup.add(im); }
   molGroup.add(auraGroup); }
@@ -1701,5 +1700,6 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup,
   atomicKinds:()=>{ const s={}; if(atomicGroup) atomicGroup.traverse(o=>{ const k=o.userData&&o.userData.kind; if(k) s[k]=(s[k]||0)+1; }); return s; },
   fetchChem, activeSite, loadDataCSV, dataInfo:()=>({matched:_dataMatched, range:_dataRange, mode:_dataMode}),
-  applyLightPreset, lightInfo:()=>({exposure:renderer.toneMappingExposure, key:key.intensity, fill:fill.intensity, back:back.intensity, amb:hemi.intensity})};
+  applyLightPreset, lightInfo:()=>({exposure:renderer.toneMappingExposure, key:key.intensity, fill:fill.intensity, back:back.intensity, amb:hemi.intensity}),
+  auraLevel:()=>{ let v=null; if(auraGroup) auraGroup.traverse(o=>{ if(o.material&&v==null) v=(o.material.uniforms&&o.material.uniforms.uStr)?o.material.uniforms.uStr.value:o.material.opacity; }); return v; }};
 </script>

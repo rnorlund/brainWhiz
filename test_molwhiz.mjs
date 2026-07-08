@@ -108,6 +108,14 @@ await setChk('ltFinish', true); await setVal('ltRough', '0.05'); await settle(15
 ok('custom finish applies (roughness override)', await page.evaluate(() => { let r=1; window.__mol; document.querySelector('canvas'); return true; }) && errs.length === 0);
 await page.evaluate(() => window.__mol.applyLightPreset('studio'));
 
+console.log('== aura intensity is live ==');
+await load('caffeine'); await settle(150);
+await setChk('auraOn', true); await settle(150);
+await setVal('auraIntensity', '0.3'); await settle(120); const aLo = await page.evaluate(() => window.__mol.auraLevel());
+await setVal('auraIntensity', '1.8'); await settle(120); const aHi = await page.evaluate(() => window.__mol.auraLevel());
+ok(`aura intensity slider changes glow live (${(aLo||0).toFixed(3)} → ${(aHi||0).toFixed(3)})`, aHi > aLo + 0.05);
+await setChk('auraOn', false);
+
 console.log('== colouring + zoom + rep sizing ==');
 await load('caffeine'); await settle(150);
 await rep('bas'); const rBas = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'bas'));
