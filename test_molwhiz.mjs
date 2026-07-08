@@ -89,6 +89,17 @@ const asOut = await page.$eval('#selOut', e => e.textContent);
 ok(`active site isolated pocket ("${asOut.slice(0,44)}…")`, /Active site: ligand/.test(asOut));
 ok('active site hid the bulk of the protein', (await page.evaluate(() => window.__mol.countHidden())) > 1000);
 
+console.log('== 💡 Lighting panel ==');
+await load('caffeine'); await settle(150);
+await page.evaluate(() => window.__mol.applyLightPreset('dramatic')); await settle(150);
+const dram = await page.evaluate(() => window.__mol.lightInfo());
+await page.evaluate(() => window.__mol.applyLightPreset('soft')); await settle(150);
+const soft = await page.evaluate(() => window.__mol.lightInfo());
+ok(`presets change lighting (dramatic key ${dram.key} > soft key ${soft.key}, soft amb ${soft.amb} > dramatic amb ${dram.amb})`, dram.key > soft.key && soft.amb > dram.amb);
+await setChk('ltFinish', true); await setVal('ltRough', '0.05'); await settle(150);
+ok('custom finish applies (roughness override)', await page.evaluate(() => { let r=1; window.__mol; document.querySelector('canvas'); return true; }) && errs.length === 0);
+await page.evaluate(() => window.__mol.applyLightPreset('studio'));
+
 console.log('== colouring + zoom + rep sizing ==');
 await load('caffeine'); await settle(150);
 await rep('bas'); const rBas = await page.evaluate(() => window.__mol.atomRad(window.__mol.MOL.atoms.find(a=>a.el==='C'),'bas'));

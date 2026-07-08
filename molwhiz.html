@@ -233,6 +233,25 @@
     <div class="row"><label>Pat tilt</label><input type="range" id="patTilt" min="0" max="90" step="5" value="0"><span class="num" id="patTiltV">0</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="patCut"> cut holes (perforate)</label></div>
   </div>
+  <div class="grp"><div class="lbl">💡 Lighting &amp; finish</div>
+    <div class="seg" id="ltPreset" style="margin-bottom:6px"><button data-p="studio" class="on">Studio</button><button data-p="soft">Soft</button><button data-p="dramatic">Dramatic</button><button data-p="rim">Rim</button><button data-p="warm">Warm</button></div>
+    <div class="row"><label title="overall brightness (camera exposure)">Exposure</label><input type="range" id="ltExposure" min="0.2" max="2.5" step="0.05" value="1.05"><span class="num" id="ltExposureV">1.05</span></div>
+    <div class="row"><label title="strength of the studio environment reflections (image-based lighting)">Reflections</label><input type="range" id="ltEnv" min="0" max="3" step="0.05" value="1"><span class="num" id="ltEnvV">1.00</span></div>
+    <div class="row"><label>Tone map</label><select id="ltTone"><option value="ACES">ACES filmic</option><option value="Neutral">Neutral</option><option value="Reinhard">Reinhard</option><option value="Cineon">Cineon</option><option value="Linear">Linear</option><option value="None">None (raw)</option></select></div>
+    <div class="lbl2" style="margin-top:7px;font-size:11px;color:var(--muted)">Ambient (fills shadows)</div>
+    <div class="row"><label>Amount</label><input type="range" id="ltAmb" min="0" max="3" step="0.05" value="1"><span class="num" id="ltAmbV">1.00</span>
+      <input type="color" id="ltSky" value="#ffffff" style="width:28px" title="sky colour"><input type="color" id="ltGround" value="#33404f" style="width:28px" title="ground colour"></div>
+    <div class="lbl2" style="margin-top:7px;font-size:11px;color:var(--muted)">Key light (main)</div>
+    <div class="row"><label>Intensity</label><input type="range" id="ltKey" min="0" max="4" step="0.05" value="1.6"><span class="num" id="ltKeyV">1.60</span><input type="color" id="ltKeyCol" value="#ffffff" style="width:28px" title="key colour"></div>
+    <div class="row"><label>Direction</label><input type="range" id="ltKeyAz" min="0" max="360" step="5" value="45" title="azimuth (spin around)"><input type="range" id="ltKeyEl" min="-90" max="90" step="5" value="35" title="elevation (up/down)"></div>
+    <div class="lbl2" style="margin-top:7px;font-size:11px;color:var(--muted)">Fill + back lights</div>
+    <div class="row"><label>Fill</label><input type="range" id="ltFill" min="0" max="3" step="0.05" value="0.5"><span class="num" id="ltFillV">0.50</span><input type="color" id="ltFillCol" value="#99bbff" style="width:28px" title="fill colour"></div>
+    <div class="row"><label>Back / rim</label><input type="range" id="ltBack" min="0" max="3" step="0.05" value="0"><span class="num" id="ltBackV">0.00</span><input type="color" id="ltBackCol" value="#ffffff" style="width:28px" title="back-light colour"></div>
+    <div class="lbl2" style="margin-top:7px;font-size:11px;color:var(--muted)">Surface finish (diffuse ↔ specular)</div>
+    <div class="row"><label class="tog"><input type="checkbox" id="ltFinish"> custom finish (override style)</label></div>
+    <div class="row"><label title="0 = shiny/specular, 1 = matte/diffuse">Roughness</label><input type="range" id="ltRough" min="0" max="1" step="0.02" value="0.35"><span class="num" id="ltRoughV">0.35</span></div>
+    <div class="row"><label title="0 = plastic/dielectric, 1 = metal">Metalness</label><input type="range" id="ltMetal" min="0" max="1" step="0.02" value="0"><span class="num" id="ltMetalV">0.00</span></div>
+  </div>
   <div class="grp"><div class="lbl">✨ Glow / aura</div>
     <div class="row"><label class="tog"><input type="checkbox" id="auraOn"> aura glow</label>
       <input type="color" id="auraColor" value="#5db0ff" style="width:34px;margin-left:6px" title="aura colour">
@@ -348,7 +367,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.10'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.11'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -359,9 +378,10 @@ function molWorldCOM(){ const A=MOL.atoms; if(!A.length) return new THREE.Vector
   for(const a of A){ if(a.hidden)continue; x+=a.x;y+=a.y;z+=a.z;n++; } if(!n){ for(const a of A){x+=a.x;y+=a.y;z+=a.z;} n=A.length; }
   return molGroup.localToWorld(new THREE.Vector3(x/n,y/n,z/n)); }
 controls.addEventListener('start',()=>{ if(_lastBtn===0 && dragAtom<0 && !builderOn && !measMode) controls.target.copy(molWorldCOM()); });   // left-drag = rotate → recentre pivot on COM
-scene.add(new THREE.HemisphereLight(0xffffff,0x33404f,1.0));
+const hemi=new THREE.HemisphereLight(0xffffff,0x33404f,1.0); scene.add(hemi);
 const key=new THREE.DirectionalLight(0xffffff,1.6); key.position.set(1,1,1); scene.add(key);
 const fill=new THREE.DirectionalLight(0x99bbff,0.5); fill.position.set(-1,-0.5,-1); scene.add(fill);
+const back=new THREE.DirectionalLight(0xffffff,0.0); back.position.set(-0.5,0.7,-1); scene.add(back);   // rim/back light (driven by the Lighting panel)
 const molGroup=new THREE.Group(); scene.add(molGroup);
 // ---------- Unity-style move gizmo (X/Y/Z arrows) for the selected atom in build mode ----------
 const gizmo=new TransformControls(camera, renderer.domElement); gizmo.setSize(0.8); gizmo.visible=false; scene.add(gizmo);
@@ -532,6 +552,8 @@ function makeMat(){ const st=$('material').value; const rim=$('rim').checked;
   else if(st==='iridescent') m=new THREE.MeshPhysicalMaterial({roughness:0.25,metalness:0.3,iridescence:1.0,iridescenceIOR:1.3,iridescenceThicknessRange:[100,700],flatShading:flat});
   else m=new THREE.MeshStandardMaterial({roughness:0.35,metalness:0.0,flatShading:flat});
   if(rim && st.indexOf('matcap:')!==0){ m.emissive=new THREE.Color(0x2a4a80); m.emissiveIntensity=0.5; }
+  if('envMapIntensity' in m && $('ltEnv')) m.envMapIntensity=+$('ltEnv').value;   // Lighting panel: reflection strength
+  if($('ltFinish')&&$('ltFinish').checked && ('roughness' in m) && !m.isMeshMatcapMaterial && !m.isMeshToonMaterial){ m.roughness=+$('ltRough').value; m.metalness=+$('ltMetal').value; }   // custom diffuse↔specular finish
   if(wire) m.wireframe=true;
   if(clipEnabled && clipPlanes.length){ m.clippingPlanes=clipPlanes; m.clipShadows=true; }
   attachPattern(m);   // procedural pattern (live via shared patU uniforms)
@@ -776,6 +798,30 @@ function applyBackground(){ bgColor.set($('bg').value);
     const gr=g.createLinearGradient(0,0,0,256); gr.addColorStop(0,bgColor.clone().multiplyScalar(0.45).getStyle()); gr.addColorStop(1,bgColor.clone().lerp(new THREE.Color(0xffffff),0.14).getStyle());
     g.fillStyle=gr; g.fillRect(0,0,4,256); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; scene.background=t; }
   else scene.background=bgColor.clone(); }
+// ---------- Lighting panel: exposure, IBL, tone map, 3-point lights, finish ----------
+const _TONE={ACES:THREE.ACESFilmicToneMapping, Neutral:(THREE.NeutralToneMapping||THREE.ACESFilmicToneMapping), Reinhard:THREE.ReinhardToneMapping, Cineon:THREE.CineonToneMapping, Linear:THREE.LinearToneMapping, None:THREE.NoToneMapping};
+function _az2vec(az,el){ const a=az*Math.PI/180, e=el*Math.PI/180; return new THREE.Vector3(Math.cos(e)*Math.sin(a), Math.sin(e), Math.cos(e)*Math.cos(a)); }
+function applyLights(){ if(!$('ltExposure')) return;
+  renderer.toneMappingExposure=+$('ltExposure').value;
+  const nt=_TONE[$('ltTone').value]||THREE.ACESFilmicToneMapping, toneChanged=(renderer.toneMapping!==nt); renderer.toneMapping=nt;
+  hemi.intensity=+$('ltAmb').value; hemi.color.set($('ltSky').value); hemi.groundColor.set($('ltGround').value);
+  key.intensity=+$('ltKey').value; key.color.set($('ltKeyCol').value);
+  if(!($('shadowsOn')&&$('shadowsOn').checked)) key.position.copy(_az2vec(+$('ltKeyAz').value,+$('ltKeyEl').value));   // shadows own the key position
+  fill.intensity=+$('ltFill').value; fill.color.set($('ltFillCol').value);
+  back.intensity=+$('ltBack').value; back.color.set($('ltBackCol').value);
+  const env=+$('ltEnv').value, fin=$('ltFinish').checked, ro=+$('ltRough').value, me=+$('ltMetal').value;
+  molGroup.traverse(o=>{ if(!o.material)return; (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{
+    if('envMapIntensity' in m) m.envMapIntensity=env;
+    if(fin && ('roughness' in m) && !m.isMeshMatcapMaterial && !m.isMeshToonMaterial){ m.roughness=ro; m.metalness=me; }
+    if(toneChanged) m.needsUpdate=true; }); }); }
+const LIGHT_PRESETS={
+  studio:  {ltExposure:1.05,ltEnv:1.0,ltTone:'ACES',ltAmb:1.0,ltSky:'#ffffff',ltGround:'#33404f',ltKey:1.6,ltKeyCol:'#ffffff',ltKeyAz:45,ltKeyEl:35,ltFill:0.5,ltFillCol:'#99bbff',ltBack:0.0,ltBackCol:'#ffffff'},
+  soft:    {ltExposure:1.1, ltEnv:1.3,ltTone:'ACES',ltAmb:1.8,ltSky:'#eef4ff',ltGround:'#5a6470',ltKey:1.0,ltKeyCol:'#ffffff',ltKeyAz:40,ltKeyEl:55,ltFill:0.9,ltFillCol:'#cfe0ff',ltBack:0.2,ltBackCol:'#ffffff'},
+  dramatic:{ltExposure:1.0, ltEnv:0.6,ltTone:'ACES',ltAmb:0.25,ltSky:'#ffffff',ltGround:'#0a0e16',ltKey:2.8,ltKeyCol:'#fff4e6',ltKeyAz:60,ltKeyEl:25,ltFill:0.12,ltFillCol:'#5577aa',ltBack:0.6,ltBackCol:'#bcd4ff'},
+  rim:     {ltExposure:1.0, ltEnv:0.8,ltTone:'ACES',ltAmb:0.5,ltSky:'#ffffff',ltGround:'#22303f',ltKey:1.1,ltKeyCol:'#ffffff',ltKeyAz:35,ltKeyEl:30,ltFill:0.3,ltFillCol:'#88aaff',ltBack:2.2,ltBackCol:'#eaf2ff'},
+  warm:    {ltExposure:1.1, ltEnv:1.0,ltTone:'ACES',ltAmb:0.8,ltSky:'#ffe9cf',ltGround:'#3a2a1e',ltKey:2.0,ltKeyCol:'#ffd9a8',ltKeyAz:70,ltKeyEl:20,ltFill:0.5,ltFillCol:'#ff9e6b',ltBack:0.5,ltBackCol:'#ffd0a0'} };
+function applyLightPreset(name){ const p=LIGHT_PRESETS[name]; if(!p)return; for(const id in p){ const el=$(id); if(!el)continue; el.value=p[id]; const v=$(id+'V'); if(v)v.textContent=(+p[id]).toFixed?( isNaN(+p[id])?p[id]:(+p[id]).toFixed(2)):p[id]; }
+  [...$('ltPreset').children].forEach(b=>b.classList.toggle('on',b.dataset.p===name)); applyLights(); }
 function applyShadows(){ const on=$('shadowsOn')&&$('shadowsOn').checked; renderer.shadowMap.enabled=on; renderer.shadowMap.type=THREE.PCFSoftShadowMap; key.castShadow=on;
   if(on){ const r=(molR||30); key.position.set(1,1,1).normalize().multiplyScalar(r*3); key.shadow.mapSize.set(2048,2048);
     const c=key.shadow.camera; c.left=-r*1.4;c.right=r*1.4;c.top=r*1.4;c.bottom=-r*1.4;c.near=r*0.5;c.far=r*7; c.updateProjectionMatrix(); key.shadow.bias=-0.0007; }
@@ -1331,7 +1377,13 @@ $('activeSiteBtn').addEventListener('click',()=>activeSite());
 $('bg').addEventListener('input',applyBackground);
 $('gradBg').addEventListener('change',applyBackground);
 $('vignetteOn').addEventListener('change',()=>$('vignette').classList.toggle('on',$('vignetteOn').checked));
-$('shadowsOn').addEventListener('change',applyShadows);
+$('shadowsOn').addEventListener('change',()=>{ applyShadows(); applyLights(); });
+// Lighting panel wiring
+['ltExposure','ltEnv','ltAmb','ltKey','ltKeyAz','ltKeyEl','ltFill','ltBack','ltRough','ltMetal'].forEach(id=>bindRange(id,applyLights));
+['ltTone','ltSky','ltGround','ltKeyCol','ltFillCol','ltBackCol','ltFinish'].forEach(id=>$(id).addEventListener('input',applyLights));
+['ltTone','ltFinish'].forEach(id=>$(id).addEventListener('change',applyLights));
+$('ltPreset').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) applyLightPreset(b.dataset.p); });
+applyLights();   // apply the studio defaults at startup
 $('fitBtn').addEventListener('click',()=>{ fitCamera(); syncZoom(); });
 $('zoom').addEventListener('input',e=>setZoom(+e.target.value));
 controls.addEventListener('change',syncZoom);
@@ -1438,7 +1490,7 @@ async function afSuggest(q){ const el=$('afSuggest'); if(!el)return;
       const d=document.createElement('div'); d.className='afitem'; d.innerHTML=`<b>${acc}</b> ${gene?gene+' · ':''}${nm} — <span style="color:var(--muted)">${org}</span>`; d.title=`${acc} · ${gene} ${nm} (${org})`;
       d.addEventListener('click',()=>{ $('afid').value=acc; el.innerHTML=''; fetchAlphaFold(acc); }); el.appendChild(d); }); }catch(e){ el.innerHTML=''; } }
 // ---------- export / presets ----------
-const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB'];
+const CFG_IDS=['material','atomShape','bondShape','atomScale','bondR','showH','hideSolvent','wireframe','flatShade','rim','auraOn','auraColor','auraRainbow','auraSize','auraIntensity','auraPulse','surfQual','surfProbe','surfOpac','surfLig','atSpread','atNuc','atESpeed','atShells','clipOn','clipPos','clipFlip','bg','dnaSeq','dnaRadius','dnaRise','dnaTwist','dnaBB','dnaBase','dnaRung','colA','colT','colG','colC','colBB','ltExposure','ltEnv','ltTone','ltAmb','ltSky','ltGround','ltKey','ltKeyCol','ltKeyAz','ltKeyEl','ltFill','ltFillCol','ltBack','ltBackCol','ltFinish','ltRough','ltMetal'];
 function snapCfg(){ const c={rep:curRep,col:curCol,clipAxis:curClipAxis,cam:{p:camera.position.toArray(),t:controls.target.toArray()}};
   for(const id of CFG_IDS){ const e=$(id); if(!e)continue; c[id]=e.type==='checkbox'?e.checked:e.value; } return c; }
 function applyCfg(c){ if(!c)return; for(const id of CFG_IDS){ const e=$(id); if(!e||c[id]==null)continue; if(e.type==='checkbox')e.checked=c[id]; else e.value=c[id];
@@ -1461,7 +1513,7 @@ function saveProject(){ dl('molwhiz.mwzproj', JSON.stringify({molwhiz:'mwzproj',
 function loadProject(p){ const s=(p&&p.scenes)||[]; if(!s.length){ $('status').textContent='empty .mwzproj'; return; } molProject=p; loadPreset(s[p.active||0]); }
 function loadPreset(obj){ const m=obj&&obj.mol; if(m&&m.atoms){ const ss=m.ss?{helix:new Set(m.ss.helix),sheet:new Set(m.ss.sheet)}:null; MOL={atoms:m.atoms,bonds:m.bonds||[],_dna:m._dna,ss}; isDNA=!!m._dna;
     molR=Math.max(5,...m.atoms.map(a=>Math.hypot(a.x,a.y,a.z))); if(obj.name) document.title='molWhiz — '+obj.name; }
-  if(obj.cfg) applyCfg(obj.cfg); rebuild(); if($('clipOn').checked) updateClip();
+  if(obj.cfg) applyCfg(obj.cfg); applyLights(); rebuild(); if($('clipOn').checked) updateClip();
   if(obj.cfg&&obj.cfg.cam){ camera.position.fromArray(obj.cfg.cam.p); controls.target.fromArray(obj.cfg.cam.t); controls.update(); } }
 function molToMol2(){ const A=MOL.atoms, B=MOL.bonds; let s='@<TRIPOS>MOLECULE\nmolWhiz\n'+A.length+' '+B.length+' 0 0 0\nSMALL\nNO_CHARGES\n\n@<TRIPOS>ATOM\n';
   A.forEach((a,i)=>{ const el=(a.el||'C').replace('BASE_',''); s+=`${i+1} ${(a.name||el)} ${(+a.x).toFixed(4)} ${(+a.y).toFixed(4)} ${(+a.z).toFixed(4)} ${el} 1 ${(a.resName||'MOL')} 0.0000\n`; });
@@ -1575,5 +1627,6 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas,
   dihedral, buildSeqPanel, resSel, recordTurntable, hasLabels:()=>!!labelsGroup,
   atomicKinds:()=>{ const s={}; if(atomicGroup) atomicGroup.traverse(o=>{ const k=o.userData&&o.userData.kind; if(k) s[k]=(s[k]||0)+1; }); return s; },
-  fetchChem, activeSite, loadDataCSV, dataInfo:()=>({matched:_dataMatched, range:_dataRange, mode:_dataMode})};
+  fetchChem, activeSite, loadDataCSV, dataInfo:()=>({matched:_dataMatched, range:_dataRange, mode:_dataMode}),
+  applyLightPreset, lightInfo:()=>({exposure:renderer.toneMappingExposure, key:key.intensity, fill:fill.intensity, back:back.intensity, amb:hemi.intensity})};
 </script>
