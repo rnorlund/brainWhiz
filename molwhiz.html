@@ -222,7 +222,7 @@
     <div class="row"><label class="tog"><input type="checkbox" id="wireframe"> wireframe</label> <label class="tog" style="margin-left:10px"><input type="checkbox" id="flatShade"> flat facets</label></div>
     <div class="row"><label>Pattern</label>
       <select id="pattern"><option>None</option><option>Checkerboard</option><option>Stripes</option><option>Grid lines</option><option>Dots</option><option>Hatch</option><option>Cross-hatch</option><option>Bricks</option><option>Waves</option><option>Concentric</option><option>Lattice</option></select></div>
-    <div class="row"><label>Pat scale</label><input type="range" id="patScale" min="0.15" max="2.5" step="0.05" value="0.6"><span class="num" id="patScaleV">0.60</span></div>
+    <div class="row"><label>Pat scale</label><input type="range" id="patScale" min="0.15" max="20" step="0.05" value="0.6"><span class="num" id="patScaleV">0.60</span></div>
     <div class="row"><label>Pat strength</label><input type="range" id="patStr" min="0" max="1" step="0.05" value="0.5"><span class="num" id="patStrV">0.50</span></div>
     <div class="row"><label>Pat tilt</label><input type="range" id="patTilt" min="0" max="90" step="5" value="0"><span class="num" id="patTiltV">0</span></div>
     <div class="row"><label class="tog"><input type="checkbox" id="patCut"> cut holes (perforate)</label></div>
@@ -339,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.5'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.6'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -385,7 +385,7 @@ function loop(){ requestAnimationFrame(loop); controls.update();
   if(auraGroup){ const pul=+$('auraPulse').value, base=+$('auraIntensity').value;
     const mul = pul>0 ? (0.55+0.45*Math.sin(performance.now()*0.001*pul)) : 1;
     if($('auraRainbow').checked){ auraHue=(auraHue+0.004)%1; const c=new THREE.Color().setHSL(auraHue,0.8,0.6); auraGroup.children.forEach(m=>m.material.color.copy(c)); }
-    auraGroup.children.forEach((m,L)=>{ m.material.opacity=base*0.14/(L+1)*mul; }); }
+    auraGroup.children.forEach((m,L)=>{ m.material.opacity=base*0.09*(1-L/AURA_LAYERS)*mul; }); }
   renderFrame(); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
@@ -867,12 +867,12 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
   molGroup.add(atomicGroup);
   $('status').textContent=`${idx.length} atoms · atomic (Bohr) view · ${electronOrbits.reduce((s,o)=>s+o.es.length,0)} e⁻`; }
 // ---------- aura glow: additive BackSide shells around each atom (Unity-style bloom; ported from brainWhiz) ----------
-const AURA_LAYERS=3;
+const AURA_LAYERS=8;   // more, finer shells → smooth glow falloff (pulses without visible stepping)
 function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
   const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; idx.push(i); } if(!idx.length) return;
   auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; const col=new THREE.Color($('auraColor').value), reach=+$('auraSize').value, I=+$('auraIntensity').value;
   const geo=new THREE.SphereGeometry(1,16,12);
-  for(let L=0;L<AURA_LAYERS;L++){ const scale=reach*(1+L*0.28), op=I*0.14/(L+1);
+  for(let L=0;L<AURA_LAYERS;L++){ const scale=1+(reach-1)*(L+1)/AURA_LAYERS, op=I*0.09*(1-L/AURA_LAYERS);   // even radial steps, smooth outward fade
     const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op});
     const im=new THREE.InstancedMesh(geo,mat,idx.length); let n=0;
     for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x,a.y,a.z),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
