@@ -315,9 +315,14 @@ console.log('== figure builder ==');
 await load('caffeine'); await settle(200);
 await page.click('#figBtn'); await settle(200);
 ok('figure modal opens', await page.$eval('#figModal', e => e.classList.contains('on')));
-await page.click('#figAdd'); await settle(300);
-await page.evaluate(() => window.__mol.rebuild()); await page.click('#figAdd'); await settle(300);
-ok(`two panels captured (${await page.evaluate(()=>window.__mol.figCount())})`, (await page.evaluate(()=>window.__mol.figCount())) === 2);
+const emptySlots = await page.$$eval('#figGrid .figcell', c => c.length);
+ok(`grid renders slots (${emptySlots})`, emptySlots >= 2);
+await page.click('#figGrid .figcell:nth-child(1)'); await settle(300);   // click a ＋ slot → capture
+await page.evaluate(() => window.__mol.rebuild());
+await page.click('#figGrid .figcell:nth-child(2)'); await settle(300);
+ok(`two slots filled (${await page.evaluate(()=>window.__mol.figCount())})`, (await page.evaluate(()=>window.__mol.figCount())) === 2);
+await page.evaluate(() => window.__mol.figFill6()); await settle(600);
+ok(`auto 6-view fills 6 (${await page.evaluate(()=>window.__mol.figCount())})`, (await page.evaluate(()=>window.__mol.figCount())) === 6);
 const fig = await page.evaluate(() => { const c = window.__mol.renderFigureCanvas(1); return { w: c.width, h: c.height }; });
 ok(`figure canvas composed (${fig.w}×${fig.h})`, fig.w > 100 && fig.h > 100);
 const svg = await page.evaluate(() => { let out=''; const _dl=window.URL; try{ window.__mol.exportFigSVG(); }catch(e){ out=String(e); } return out; });

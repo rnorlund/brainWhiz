@@ -61,11 +61,19 @@
   #figModal{position:fixed;inset:0;z-index:60;background:rgba(6,10,16,.97);display:none;grid-template-columns:310px 1fr;gap:14px;padding:16px}
   #figModal.on{display:grid}
   #figCtl{overflow-y:auto;font-size:12px} #figCtl h2{font-size:15px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
-  #figPrevWrap{display:flex;align-items:center;justify-content:center;overflow:auto;background:#1a1f28;border:1px solid var(--line);border-radius:8px}
-  #figPrev{max-width:100%;max-height:100%;box-shadow:0 4px 24px rgba(0,0,0,.5)}
-  .figrow{display:flex;gap:6px;align-items:center;background:#141a24;border:1px solid var(--line);border-radius:6px;padding:4px;margin-bottom:5px}
-  .figrow img{width:52px;height:38px;object-fit:cover;border-radius:3px;background:#000}
-  .figrow input{flex:1;min-width:0;font-size:11px} .figrow button{padding:2px 6px}
+  #figPrevWrap{display:flex;align-items:center;justify-content:center;overflow:auto;background:#1a1f28;border:1px solid var(--line);border-radius:8px;padding:14px}
+  #figGrid{display:grid;gap:8px;width:100%;max-width:900px;align-content:center}
+  .figcell{position:relative;aspect-ratio:4/3;border:1px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;background:#0c1119;overflow:hidden;cursor:pointer}
+  .figcell.filled{border-style:solid;cursor:default}
+  .figcell img{width:100%;height:100%;object-fit:contain}
+  .figcell .plus{font-size:30px;color:var(--muted)}
+  .figcell .cbtns{position:absolute;top:3px;right:3px;display:none;gap:3px}
+  .figcell.filled:hover .cbtns{display:flex}
+  .figcell .cbtns button{background:#000b;border:none;border-radius:4px;color:#fff;padding:1px 5px;font-size:11px;cursor:pointer}
+  .figcell .cbtns button:hover{color:var(--acc)}
+  .figcell .clab{position:absolute;bottom:0;left:0;right:0;background:#000a;color:#fff;border:none;font-size:11px;padding:2px 5px;text-align:center}
+  .figcell .clab::placeholder{color:#ffffff88}
+  .figcell .tag{position:absolute;top:3px;left:5px;background:#000a;color:#fff;font-weight:700;font-size:11px;padding:0 4px;border-radius:3px}
   #status{font-size:11px;color:var(--muted);min-height:14px}
   #drop{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(10,20,40,.75);border:3px dashed var(--acc);font-size:22px;font-weight:700;color:#dff0ff}
   #drop.on{display:flex}
@@ -82,20 +90,19 @@
 <div id="figModal">
   <div id="figCtl">
     <h2>🎬 Figure builder <button class="tbtn" id="figClose">✕ close</button></h2>
-    <button id="figAdd" class="acc" style="width:100%">＋ Add current 3D view as a panel</button>
-    <div style="font-size:10px;color:var(--muted);margin:5px 0 8px">Rotate/adjust the molecule behind this dialog, then add more panels. Reorder with ↑↓.</div>
+    <div style="font-size:10px;color:var(--muted);margin:0 0 8px">Set a grid, then click a <b>＋</b> slot to drop in the current 3D view. Rotate/restyle the molecule behind this dialog between captures. Edit ✎ / restore ⚙ / recapture ⟳ / remove ✕ per panel.</div>
+    <div class="row"><label>Grid</label><input type="number" id="figRows" min="1" max="6" value="1" style="width:46px"> rows × <input type="number" id="figCols" min="1" max="6" value="2" style="width:46px"> cols</div>
     <div class="row"><label>Title</label><input id="figTitle" placeholder="(optional figure title)"></div>
-    <div class="row"><label>Columns</label><input type="range" id="figCols" min="1" max="5" step="1" value="2"><span class="num" id="figColsV">2</span></div>
     <div class="row"><label>Gap</label><input type="range" id="figGap" min="0" max="40" step="2" value="14"><span class="num" id="figGapV">14</span></div>
     <div class="row"><label>Labels</label><select id="figLabel"><option value="ABC">A B C…</option><option value="abc">a b c…</option><option value="123">1 2 3…</option><option value="none">none</option></select></div>
-    <div class="row"><label>Background</label><input type="color" id="figBg" value="#ffffff"></div>
-    <div class="lbl" style="margin-top:8px">Panels</div>
-    <div id="figList" style="margin-top:4px"><div style="color:var(--muted);font-size:11px">No panels yet — add the current view.</div></div>
+    <div class="row"><label>Background</label><input type="color" id="figBg" value="#ffffff"><button class="tbtn" id="figBgW" title="white">▢</button><button class="tbtn" id="figBgB" title="black">▣</button></div>
+    <div class="row"><button id="figFill6" style="flex:1" title="auto-capture 6 standard views into a 2×3">⤢ Auto 6-view (2×3)</button><button id="figClear" title="clear all slots">🗑</button></div>
     <div class="lbl" style="margin-top:10px">Export</div>
     <div class="row"><label>PNG scale</label><select id="figScale"><option>1</option><option selected>2</option><option>3</option><option>4</option></select><button id="figPNG" class="acc">PNG</button></div>
     <div class="row" style="margin-top:5px"><button id="figPDF" style="flex:1">PDF</button><button id="figSVG" style="flex:1">SVG</button></div>
+    <div id="figOut" style="font-size:11px;color:var(--muted);margin-top:8px"></div>
   </div>
-  <div id="figPrevWrap"><canvas id="figPrev" width="600" height="400"></canvas></div>
+  <div id="figPrevWrap"><div id="figGrid"></div></div>
 </div>
 
 <div id="topbar">
@@ -332,7 +339,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.0'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.1'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -1245,17 +1252,23 @@ $('loadPresetBtn').addEventListener('click',()=>$('presetFile').click());
 $('presetFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readFile(f); e.target.value=''; });
 $('expHTML').addEventListener('click',exportHTML);
 // figure builder
-$('figBtn').addEventListener('click',()=>{ $('figModal').classList.add('on'); updateFigPreview(); });
+$('figBtn').addEventListener('click',()=>{ $('figModal').classList.add('on'); figGridRender(); });
 $('figClose').addEventListener('click',()=>$('figModal').classList.remove('on'));
-$('figAdd').addEventListener('click',captureViewPanel);
-['figCols','figGap'].forEach(id=>$(id).addEventListener('input',()=>{ const v=$(id+'V'); if(v)v.textContent=$(id).value; updateFigPreview(); }));
-['figTitle','figLabel','figBg'].forEach(id=>$(id).addEventListener('input',updateFigPreview));
-$('figList').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return;
-  if(b.dataset.rm!=null){ figPanels.splice(+b.dataset.rm,1); }
-  else if(b.dataset.up!=null){ const i=+b.dataset.up; if(i>0){ [figPanels[i-1],figPanels[i]]=[figPanels[i],figPanels[i-1]]; } }
-  else if(b.dataset.dn!=null){ const i=+b.dataset.dn; if(i<figPanels.length-1){ [figPanels[i+1],figPanels[i]]=[figPanels[i],figPanels[i+1]]; } }
-  renderFigList(); updateFigPreview(); });
-$('figList').addEventListener('input',e=>{ const inp=e.target.closest('input'); if(inp&&inp.dataset.i!=null) figPanels[+inp.dataset.i].caption=inp.value; });
+['figRows','figCols'].forEach(id=>$(id).addEventListener('input',figGridRender));
+$('figGap').addEventListener('input',()=>{ const v=$('figGapV'); if(v)v.textContent=$('figGap').value; });
+['figLabel'].forEach(id=>$(id).addEventListener('change',figGridRender));
+$('figBgW').addEventListener('click',()=>{ $('figBg').value='#ffffff'; }); $('figBgB').addEventListener('click',()=>{ $('figBg').value='#000000'; });
+$('figFill6').addEventListener('click',figFill6);
+$('figClear').addEventListener('click',()=>{ figSlots=figSlots.map(()=>null); figGridRender(); });
+$('figGrid').addEventListener('click',e=>{ const cell=e.target.closest('.figcell'); if(!cell)return; const i=+cell.dataset.i, btn=e.target.closest('button[data-act]');
+  if(btn){ const act=btn.dataset.act, p=figSlots[i]; if(!p)return;
+    if(act==='rm'){ figSlots[i]=null; figGridRender(); }
+    else if(act==='recap'){ figCapture(i, p.caption); }
+    else if(act==='edit'){ const inp=cell.querySelector('.clab'); inp.focus(); inp.select(); }
+    else if(act==='restore' && p.cfg){ applyCfg(p.cfg); rebuild(); if(p.cfg.cam){ camera.position.fromArray(p.cfg.cam.p); controls.target.fromArray(p.cfg.cam.t); controls.update(); } if($('figOut'))$('figOut').textContent='restored view '+(i+1)+' to the molecule'; }
+    return; }
+  if(!figSlots[i]) figCapture(i); });   // click an empty slot → capture the current 3D view
+$('figGrid').addEventListener('input',e=>{ const inp=e.target.closest('.clab'); if(inp){ const i=+inp.closest('.figcell').dataset.i; if(figSlots[i]) figSlots[i].caption=inp.value; } });
 $('figPNG').addEventListener('click',exportFigPNG); $('figPDF').addEventListener('click',exportFigPDF); $('figSVG').addEventListener('click',exportFigSVG);
 async function fetchPdb(idArg){ const id=(typeof idArg==='string'?idArg:$('pdbid').value).trim().toUpperCase(); if(!/^[0-9A-Z]{4}$/.test(id)){ $('status').textContent='enter a 4-char PDB ID'; return; }
   $('status').textContent='fetching '+id+' …';
@@ -1336,21 +1349,22 @@ addEventListener('resize',()=>{rn.setSize(innerWidth,innerHeight);cam.aspect=inn
 (function loop(){requestAnimationFrame(loop);ct.update();rn.render(sc,cam);})();
 <\/script></body></html>`;
   dl((title.replace(/[^\w]+/g,'_')||'molecule')+'_molwhiz.html', H, 'text/html'); return H; }
-// ---------- figure builder: capture 3D views as panels → montage → PNG / PDF / SVG ----------
-let figPanels=[];   // {url, img, caption}
+// ---------- figure builder: PPT-style grid of slots → capture 3D views → montage → PNG/PDF/SVG ----------
+let figSlots=[];   // grid slots (row-major); each null or {url, img, caption, cfg}
 const _hexRgb=h=>{ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
 const _escX=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function captureViewPanel(){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderFrame(W,H);
-  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeVignette(cv); compositeLegend(cv,1.4);   // bake vignette+legend into the panel
+function figDims(){ return [Math.max(1,Math.min(6,+$('figRows').value||1)), Math.max(1,Math.min(6,+$('figCols').value||1))]; }
+function figCapture(i, keepCaption){ const W=900,H=680; renderer.setSize(W,H); camera.aspect=W/H; camera.updateProjectionMatrix(); renderFrame(W,H);
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const x=cv.getContext('2d'); x.drawImage(renderer.domElement,0,0); compositeVignette(cv); compositeLegend(cv,1.4);   // bake vignette+legend into the slot
   const url=cv.toDataURL('image/png'); resize(); renderFrame();   // restore live viewport
-  const img=new Image(); img.onload=updateFigPreview; img.src=url; figPanels.push({url,img,caption:(document.title||'').replace('molWhiz — ','')}); renderFigList(); updateFigPreview(); }
-function layoutFig(scale){ scale=scale||1; const cols=+$('figCols').value, gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
-  const anyCap=figPanels.some(p=>(p.caption||'').trim()), capH=anyCap?28*scale:0, capFs=15*scale;
-  const n=Math.max(1,figPanels.length), rows=Math.ceil(n/cols), pw=440*scale, imgH=330*scale, ph=imgH+capH, title=$('figTitle').value.trim(), titleH=title?46*scale:0;
-  const W=pad*2+cols*pw+(cols-1)*gap, H=pad*2+titleH+rows*ph+(rows-1)*gap, lbls=$('figLabel').value, cells=[];
-  figPanels.forEach((p,i)=>{ const r=Math.floor(i/cols), c=i%cols, x=pad+c*(pw+gap), y=pad+titleH+r*(ph+gap);
-    const lab=lbls==='none'?'':lbls==='ABC'?String.fromCharCode(65+i):lbls==='abc'?String.fromCharCode(97+i):String(i+1);
-    cells.push({x,y,w:pw,h:imgH,url:p.url,img:p.img,lab,cap:(p.caption||'').trim()}); });
+  const img=new Image(); img.onload=figGridRender; img.src=url; figSlots[i]={url,img,caption:(keepCaption!==undefined?keepCaption:''), cfg:snapCfg()}; figGridRender(); }
+function layoutFig(scale){ scale=scale||1; const [rows,cols]=figDims(), gap=+$('figGap').value*scale, pad=(+$('figGap').value+6)*scale;
+  const filled=figSlots.filter(Boolean), anyCap=filled.some(p=>(p.caption||'').trim()), capH=anyCap?28*scale:0, capFs=15*scale;
+  const pw=440*scale, imgH=330*scale, ph=imgH+capH, title=$('figTitle').value.trim(), titleH=title?46*scale:0;
+  const W=pad*2+cols*pw+(cols-1)*gap, H=pad*2+titleH+rows*ph+(rows-1)*gap, lbls=$('figLabel').value, cells=[]; let li=0;
+  for(let i=0;i<rows*cols;i++){ const p=figSlots[i]; if(!p) continue; const r=Math.floor(i/cols), c=i%cols, x=pad+c*(pw+gap), y=pad+titleH+r*(ph+gap);
+    const lab=lbls==='none'?'':lbls==='ABC'?String.fromCharCode(65+li):lbls==='abc'?String.fromCharCode(97+li):String(li+1); li++;
+    cells.push({x,y,w:pw,h:imgH,url:p.url,img:p.img,lab,cap:(p.caption||'').trim()}); }
   return {W,H,pad,title,titleH,cells,scale,lblFs:20*scale,titleFs:26*scale,capH,capFs}; }
 function renderFigureCanvas(scale){ const L=layoutFig(scale), cv=document.createElement('canvas'); cv.width=Math.round(L.W); cv.height=Math.round(L.H); const x=cv.getContext('2d');
   x.fillStyle=$('figBg').value; x.fillRect(0,0,cv.width,cv.height);
@@ -1360,11 +1374,22 @@ function renderFigureCanvas(scale){ const L=layoutFig(scale), cv=document.create
     if(c.lab){ x.fillStyle='rgba(0,0,0,.55)'; x.fillRect(c.x,c.y,1.7*L.lblFs,1.5*L.lblFs); x.fillStyle='#fff'; x.font=`bold ${L.lblFs}px system-ui`; x.textBaseline='top'; x.fillText(c.lab,c.x+0.4*L.lblFs,c.y+0.25*L.lblFs); }
     if(c.cap){ x.fillStyle='#222'; x.font=`${L.capFs}px system-ui`; x.textBaseline='middle'; x.textAlign='center'; x.fillText(c.cap,c.x+c.w/2,c.y+c.h+L.capH/2); x.textAlign='left'; } }
   return cv; }
-function updateFigPreview(){ const cv=renderFigureCanvas(1), pv=$('figPrev'); pv.width=cv.width; pv.height=cv.height; pv.getContext('2d').drawImage(cv,0,0); }
-function renderFigList(){ const el=$('figList'); if(!figPanels.length){ el.innerHTML='<div style="color:var(--muted);font-size:11px">No panels yet — add the current view.</div>'; return; }
-  el.innerHTML=''; figPanels.forEach((p,i)=>{ const row=document.createElement('div'); row.className='figrow';
-    row.innerHTML=`<img src="${p.url}"><input value="${_escX(p.caption)}" data-i="${i}"><button data-up="${i}" title="up">↑</button><button data-dn="${i}" title="down">↓</button><button data-rm="${i}" title="remove">✕</button>`;
-    el.appendChild(row); }); }
+// interactive grid: empty slots show ＋ (click to capture); filled show thumbnail + label + edit/restore/recapture/remove
+function figGridRender(){ const [rows,cols]=figDims(), n=rows*cols; figSlots.length=n; for(let i=0;i<n;i++) if(figSlots[i]===undefined) figSlots[i]=null;
+  const g=$('figGrid'); if(!g) return; g.style.gridTemplateColumns=`repeat(${cols},1fr)`; g.innerHTML=''; const lbls=$('figLabel').value; let li=0;
+  for(let i=0;i<n;i++){ const p=figSlots[i], cell=document.createElement('div'); cell.className='figcell'+(p?' filled':''); cell.dataset.i=i;
+    if(p){ const tag=lbls==='none'?'':lbls==='ABC'?String.fromCharCode(65+li):lbls==='abc'?String.fromCharCode(97+li):String(li+1); li++;
+      cell.innerHTML=`<img src="${p.url}">${tag?`<span class="tag">${tag}</span>`:''}<div class="cbtns"><button data-act="edit" title="edit caption">✎</button><button data-act="restore" title="restore this view to the molecule">⚙</button><button data-act="recap" title="recapture current view here">⟳</button><button data-act="rm" title="remove">✕</button></div><input class="clab" value="${_escX(p.caption)}" placeholder="＋ caption">`;
+    } else cell.innerHTML='<span class="plus">＋</span>';
+    g.appendChild(cell); }
+  if($('figOut')) $('figOut').textContent=`${figSlots.filter(Boolean).length}/${n} slots filled`; }
+function figFill6(){ $('figRows').value=2; $('figCols').value=3; figSlots=new Array(6).fill(null);
+  const dirs=[['Front',0,0,1],['Back',0,0,-1],['Left',-1,0,0],['Right',1,0,0],['Top',0,1,0],['Bottom',0,-1,0]];
+  const R=(molR||30), d=R/Math.sin(camera.fov*Math.PI/360)*1.25, up0=camera.up.clone(), pos0=camera.position.clone(), t=controls.target.clone();
+  for(let i=0;i<6;i++){ const v=dirs[i], alongY=Math.abs(v[2])>0.5; camera.up.set(0, alongY?0:1, alongY?1:0);   // top/bottom look down Y → up=Z; else up=Y
+    camera.position.set(t.x+v[1]*d, t.y+v[2]*d, t.z+v[3]*d); controls.update(); figCapture(i, dirs[i][0]); }
+  camera.up.copy(up0); camera.position.copy(pos0); controls.update(); figGridRender(); }
+function captureViewPanel(){ figGridRender(); let i=figSlots.indexOf(null); if(i<0){ $('figCols').value=Math.min(6,(+$('figCols').value||1)+1); figGridRender(); i=figSlots.indexOf(null); } if(i>=0) figCapture(i); }
 function exportFigPNG(){ const cv=renderFigureCanvas(+$('figScale').value); const a=document.createElement('a'); a.download='figure.png'; a.href=cv.toDataURL('image/png'); a.click(); }
 function exportFigSVG(){ const L=layoutFig(2); let s=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.round(L.W)}" height="${Math.round(L.H)}" viewBox="0 0 ${Math.round(L.W)} ${Math.round(L.H)}">`;
   s+=`<rect width="100%" height="100%" fill="${$('figBg').value}"/>`;
@@ -1398,7 +1423,7 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   builderAdd, builderFragment, builderFillH, builderNew:()=>{MOL={atoms:[],bonds:[]};builderSel=-1;isDNA=false;refreshBuild();}, setBuildEl:e=>{builderEl=e;}, setBuildSel:i=>{builderSel=i;updateBuildMarker();},
   undo, builderDeleteMol, undoDepth:()=>undoStack.length, patU, setPattern:n=>{patU.uPattern.value=n;},
   fetchPdb, fetchAlphaFold, parseCIF, parseMol2, parseGro, parseByName, molToXYZ, molToPDB, molToMol2, exportHTML, snapCfg, applyCfg, loadPreset, loadProject, currentScene, computeSS,
-  captureViewPanel, renderFigureCanvas, exportFigSVG, figCount:()=>figPanels.length,
+  captureViewPanel, renderFigureCanvas, exportFigSVG, figFill6, figGridRender, figCount:()=>figSlots.filter(Boolean).length,
   setZoom, camDist:()=>camera.position.distanceTo(controls.target), colorCtx:()=>_ccx, atomRad, setCol:c=>{curCol=c;[...$('colSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.col===c));rebuild();},
   hasHBonds:()=>!!hbondGroup, hasOutline:()=>!!outlineGroup, hasNucleic:structHasNucleic,
   selAct, setSel:(ch,k)=>{selChain=ch||'';selKind=k||'';}, countHidden:()=>MOL.atoms.filter(a=>a.hidden).length, legendCanvas,
