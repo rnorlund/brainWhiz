@@ -368,7 +368,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.14'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.15'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -420,7 +420,7 @@ function loop(){ requestAnimationFrame(loop); controls.update();
   if(auraGroup){ const pul=+$('auraPulse').value, base=+$('auraIntensity').value;
     const mul = pul>0 ? (0.55+0.45*Math.sin(performance.now()*0.001*pul)) : 1;
     if($('auraRainbow').checked){ auraHue=(auraHue+0.004)%1; const c=new THREE.Color().setHSL(auraHue,0.8,0.6); auraGroup.children.forEach(m=>m.material.color.copy(c)); }
-    auraGroup.children.forEach((m,L)=>{ m.material.opacity=base*0.09*(1-L/AURA_LAYERS)*mul; }); }
+    auraGroup.children.forEach(m=>{ m.material.opacity=(m.userData.aOp!=null?m.userData.aOp:base*0.09)*mul; }); }   // pulse off each mesh's own base opacity (works for per-atom shells + ribbon shells)
   renderFrame(); }
 requestAnimationFrame(loop);   // deferred so module-scoped state (electronOrbits…) is initialized first
 
@@ -684,7 +684,7 @@ function computeSS(atoms){ const helix=new Set(), sheet=new Set(), byChain={};
   return {helix,sheet}; }
 // flat ribbon (rectangular cross-section swept along the curve) — arrow=true tapers to a β-strand arrowhead
 // swept ribbon with a ROUNDED-RECTANGLE (superellipse) cross-section → smooth, professional ribbons/arrows
-const _RIBPROF=(function(){ const M=18, p=[]; for(let k=0;k<M;k++){ const a=k/M*Math.PI*2, cx=Math.cos(a), cy=Math.sin(a);
+const _RIBPROF=(function(){ const M=28, p=[]; for(let k=0;k<M;k++){ const a=k/M*Math.PI*2, cx=Math.cos(a), cy=Math.sin(a);
   p.push([Math.sign(cx)*Math.pow(Math.abs(cx),0.4), Math.sign(cy)*Math.pow(Math.abs(cy),0.4)]); } return p; })();
 function ribbonGeom(curve, seg, halfW, halfT, arrow){ const fr=curve.computeFrenetFrames(seg,false), pos=[], idx=[], rings=[], M=_RIBPROF.length;
   for(let i=0;i<=seg;i++){ const t=i/seg, p=curve.getPointAt(t), N=fr.normals[i], B=fr.binormals[i]; let hw=halfW;
@@ -698,11 +698,11 @@ function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
   const chainCol=ch=>{ let h=0; for(const c of ch)h+=c.charCodeAt(0); return PAL[h%PAL.length]; };
   for(const [ch,cas] of chains){ if(cas.length<2) continue; cas.sort((p,q)=>(+p.resSeq)-(+q.resSeq));
     const flush=(arr,ss)=>{ if(arr.length<2) return; const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z));
-      const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(14,arr.length*10);
+      const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(24,arr.length*14);   // denser along the backbone → smoother sweep
       const col=(curCol==='chain')?chainCol(ch):(curCol==='rainbow'||curCol==='bfactor')?atomColor(arr[Math.floor(arr.length/2)]):(ss==='H'?'#ff5b6e':ss==='E'?'#ffd23f':'#9fd0ff');
       let geo; if(ss==='H') geo=ribbonGeom(curve,seg,1.2,0.2,false);          // helix: flat rounded ribbon
         else if(ss==='E') geo=ribbonGeom(curve,seg,1.1,0.2,true);             // strand: flat rounded arrow
-        else geo=new THREE.TubeGeometry(curve,seg,0.3,12,false);              // coil: smooth thin tube
+        else geo=new THREE.TubeGeometry(curve,seg,0.3,16,false);              // coil: smooth thin tube
       const mesh=new THREE.Mesh(geo, makeMat()); mesh.material.color.set(col); if(ss!=='C') mesh.material.side=THREE.DoubleSide; grp.add(mesh); };
     let run=[cas[0]], curSS=ssOf(cas[0]);
     for(let i=1;i<cas.length;i++){ const s=ssOf(cas[i]); if(s!==curSS){ flush(run.concat([cas[i]]), curSS); run=[cas[i]]; curSS=s; } else run.push(cas[i]); }
@@ -717,9 +717,9 @@ function buildCartoon(){ const grp=new THREE.Group(); const chains=new Map();
       const q=new THREE.Quaternion().setFromUnitVectors(_up2,dir), g=new THREE.CylinderGeometry(0.28,0.28,len,8), m=new THREE.Mesh(g,makeMat());
       m.material.color.set(col); m.position.copy(p0).add(p1).multiplyScalar(0.5); m.quaternion.copy(q); grp.add(m); };
     for(const [ch,rm] of nucCh){ const arr=[...rm.values()].map(v=>v.a).sort((x,y)=>(+x.resSeq)-(+y.resSeq)); if(arr.length<2) continue;
-      const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z)), curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(12,arr.length*8);
+      const pts=arr.map(a=>new THREE.Vector3(a.x,a.y,a.z)), curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.5), seg=Math.max(20,arr.length*10);
       const col=(curCol==='chain')?chainCol(ch):(curCol==='rainbow'||curCol==='bfactor')?atomColor(arr[Math.floor(arr.length/2)]):'#c8a05a';
-      const tube=new THREE.TubeGeometry(curve,seg,0.85,12,false), tm=new THREE.Mesh(tube,makeMat()); tm.material.color.set(col); grp.add(tm);
+      const tube=new THREE.TubeGeometry(curve,seg,0.85,16,false), tm=new THREE.Mesh(tube,makeMat()); tm.material.color.set(col); grp.add(tm);
       for(const a of arr){ const bk=baseAt.get(a.chain+'|'+a.resSeq); if(bk){ const bc=(curCol==='chain'||curCol==='rainbow'||curCol==='bfactor')?col:(BASE_COL[a.resName]||'#c8a05a');
         rung(new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(bk.x,bk.y,bk.z), bc); } } }
   }
@@ -1000,14 +1000,24 @@ function buildAtomic(){ atomicGroup=new THREE.Group(); electronOrbits=[]; const 
 const AURA_LAYERS=8;   // more, finer shells → smooth glow falloff (pulses without visible stepping)
 const ATOMIC_MAX=60;   // ⚛ Atoms view draws every proton/neutron/electron — cap so big structures don't spawn 10⁴ meshes & freeze
 let _atomicWarn='';    // deferred status: the ⚛ Atoms fallback warning must survive the ball&stick status line that follows
-function buildAura(){ if(!$('auraOn').checked) return; const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
+function buildAura(){ if(!$('auraOn').checked) return; const reachG=+$('auraSize').value, intG=+$('auraIntensity').value;
+  // Cartoon/ribbon aura: glow the ribbon MESH itself (smooth, hugs the ribbon, colour-matched to each segment) rather than
+  // per-atom spheres — the sphere aura was lumpy on ribbons (side-chain atoms scattered it) and single-coloured.
+  if(curRep==='cartoon' && cartoonGroup){ auraGroup=new THREE.Group(); auraGroup.renderOrder=-1;
+    const shells=4; let n=0;
+    cartoonGroup.traverse(o=>{ if(!o.isMesh||!o.geometry||n>240)return; const c0=(o.material&&o.material.color)?o.material.color.clone():new THREE.Color($('auraColor').value);
+      for(let L=0;L<shells;L++){ const d=0.05+(reachG-1)*0.6*(L+1)/shells;
+        const op=intG*0.12*(1-L/shells), m=new THREE.MeshBasicMaterial({color:c0,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op,toneMapped:false,fog:false});
+        const mm=new THREE.Mesh(inflateGeo(o.geometry,d),m); mm.userData.aOp=op; auraGroup.add(mm); n++; } });
+    molGroup.add(auraGroup); return; }
+  const A=MOL.atoms, showH=$('showH').checked, hideSolv=$('hideSolvent').checked;
   const atomic=(curRep==='atomic'), sp=atomic?+$('atSpread').value:1;   // atomic view spreads atoms by 'Spread' — match it
   const idx=[]; for(let i=0;i<A.length;i++){ const a=A[i]; if(!showH&&a.el==='H')continue; if(hideSolv&&isSolvent(a))continue; if(a.hidden)continue; if(atomic&&!ELEM[(a.el||'').replace('BASE_','')])continue; idx.push(i); } if(!idx.length) return;
   auraGroup=new THREE.Group(); auraGroup.renderOrder=-1; const col=new THREE.Color($('auraColor').value), reach=+$('auraSize').value, I=+$('auraIntensity').value;
   const geo=new THREE.SphereGeometry(1,16,12);
   for(let L=0;L<AURA_LAYERS;L++){ const scale=1+(reach-1)*(L+1)/AURA_LAYERS, op=I*0.09*(1-L/AURA_LAYERS);   // even radial steps, smooth outward fade
     const mat=new THREE.MeshBasicMaterial({color:col,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.BackSide,opacity:op});
-    const im=new THREE.InstancedMesh(geo,mat,idx.length); let n=0;
+    const im=new THREE.InstancedMesh(geo,mat,idx.length); im.userData.aOp=op; let n=0;
     for(const i of idx){ const a=A[i], r=(a.r!=null?a.r*1.2:elVdw(a.el))*scale; _m.compose(_v.set(a.x*sp,a.y*sp,a.z*sp),_q.identity(),_s.set(r,r,r)); im.setMatrixAt(n++,_m); }
     im.instanceMatrix.needsUpdate=true; im.frustumCulled=false; auraGroup.add(im); }
   molGroup.add(auraGroup); }
