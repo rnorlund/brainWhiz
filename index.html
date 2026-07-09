@@ -4846,6 +4846,20 @@ window.brainAPI = {
   // ---- figure-automation helpers (used to script montages, e.g. lateral+medial hemisphere panels) ----
   labels(){ return meshes.map(o=>({id:o.meta.id, hemi:o.meta.hemi, name:o.meta.name, centroid:o.meta.centroid})); },
   regionColor(id){ const o=meshes.find(m=>m.meta.id===+id); return o? '#'+o.mesh.material.color.getHexString() : null; },
+  // Build a full, editable figure in the Editor (fabric.js) from a spec — every brain / colourbar / label / line becomes a
+  // movable object. spec = { w, h, bg, items:[{type:'image',url,left,top,w} | {type:'text',text,left,top,size,fill,bold,align} | {type:'line',x1,y1,x2,y2,color,width,dash}] }
+  async editorFigure(spec){ $('figEditor').classList.add('on'); if(!(await ensureFabric())) return false;
+    if(!feCanvas){ feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:spec.bg||'#000',preserveObjectStacking:true}); window.feCanvas=feCanvas; }
+    feCanvas.clear(); feCanvas.setWidth(spec.w); feCanvas.setHeight(spec.h); feCanvas.backgroundColor=spec.bg||'#000';
+    if($('feW'))$('feW').value=spec.w; if($('feH'))$('feH').value=spec.h; if($('feBg'))$('feBg').value=spec.bg||'#000000';
+    const addImg=(url,o)=>new Promise(res=>fabric.Image.fromURL(url,img=>{ img.set({left:o.left,top:o.top,selectable:true}); if(o.w)img.scaleToWidth(o.w); feCanvas.add(img); res(); },{crossOrigin:'anonymous'}));
+    for(const it of (spec.items||[])){
+      if(it.type==='image') await addImg(it.url,it);
+      else if(it.type==='text'){ const t=new fabric.IText(it.text,{left:it.left,top:it.top,fontSize:it.size||20,fill:it.fill||'#fff',fontFamily:'system-ui',fontWeight:it.bold?'700':'normal'}); if(it.align==='right')t.set({originX:'right'}); feCanvas.add(t); }
+      else if(it.type==='line'){ feCanvas.add(new fabric.Line([it.x1,it.y1,it.x2,it.y2],{stroke:it.color||'#fff',strokeWidth:it.width||2,strokeDashArray:it.dash||null,selectable:true})); }
+    }
+    feCanvas.renderAll(); return true; },
+  editorPNG(mult){ return feCanvas? feCanvas.toDataURL({format:'png',multiplier:mult||1}) : null; },
   showOnly(ids){ const S=new Set((ids||[]).map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id) : true; }); requestRender(); },
   showAllRegions(){ meshes.forEach(o=>o.mesh.visible=true); requestRender(); },
   setCamera(p,t){ if(t) controls.target.set(t[0],t[1],t[2]); camera.position.set(p[0],p[1],p[2]); camera.up.set(0,1,0); controls.update(); requestRender(); },
