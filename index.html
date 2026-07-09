@@ -4908,6 +4908,10 @@ window.brainAPI = {
   renderTo(w=600,h=480,transparent=false,zoom=1){
     const oldBG=scene.background; if(transparent) scene.background=null;
     const oldZoom=camera.zoom; if(zoom!==1){ camera.zoom*=zoom; }
+    // Fixed device-pixel-ratio for figure exports: output is ALWAYS w*FIG_DPR x h*FIG_DPR
+    // regardless of the display's real DPR, so baked panel images and live re-renders share
+    // identical pixel dimensions (prevents editor object width drift on non-retina screens).
+    const FIG_DPR=2; renderer.setPixelRatio(FIG_DPR);
     renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
     if(edgesOn()){                                   // apply the constant-width edge ink (alpha-preserving) for figure exports
       const s=ensureEdges(); s.rt.setSize(w,h); s.mat.uniforms.uRes.value.set(w,h);
@@ -5146,11 +5150,12 @@ function pbSyncLook(only){   // only = Set of panel indices to re-render (null/u
   pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; if(only && !only.has(i)) return; const c=it.cfg;
     if(c.active!=null && c.active>=0 && c.active<overlays.length){ ovSelect(c.active); }   // which overlay is on the 3D (+its colours)
     if(Array.isArray(c.vis)){ const S=new Set(c.vis.map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id):true; }); }
-    if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // keep the figure's near-orthographic FOV
-    if(c.camP && c.camT){ const t=c.camT, dir=[c.camP[0]-t[0], c.camP[1]-t[1], c.camP[2]-t[2]];   // RE-FIT the visible hemisphere from the same direction → reproduces the build framing exactly (no shrink/off-centre)
-      const z=Math.max(0.3,+($('figZoom')?$('figZoom').value:1)||1);
-      window.brainAPI.fitTo(dir, 1.06/z, 900/680);   // 'Figure brain size' = tighter/looser fit
-    } else if(c.camP){ camera.position.fromArray(c.camP); if(c.camT)controls.target.fromArray(c.camT); camera.up.set(0,1,0); controls.update(); }
+    if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // EXACT camera replay: FOV + position + target reproduce the build byte-for-byte (no re-fit → no size drift)
+    if(c.camP && c.camT){ const t=c.camT, z=Math.max(0.3,+($('figZoom')?$('figZoom').value:1)||1);   // 'Figure brain size' scales distance about the target
+      camera.position.set(t[0]+(c.camP[0]-t[0])/z, t[1]+(c.camP[1]-t[1])/z, t[2]+(c.camP[2]-t[2])/z);
+      if(Array.isArray(c.up)) camera.up.set(c.up[0],c.up[1],c.up[2]); else camera.up.set(0,1,0);
+      controls.target.fromArray(t); controls.update(); }
+    else if(c.camP){ camera.position.fromArray(c.camP); if(c.camT)controls.target.fromArray(c.camT); controls.update(); }
     it.dataURL = (mosaicMode||sliceMode) ? it.dataURL : window.brainAPI.renderTo(900,680,true);
     it.cbar = (sliceMode||mosaicMode) ? it.cbar : window.brainAPI.colorbar(); n++; });
   pbRender(); if($('pbSyncLook')) $('pbSyncLook').textContent=`🎨 Applied to ${n} panels`; setTimeout(()=>{ if($('pbSyncLook'))$('pbSyncLook').textContent='🎨 Apply look to all panels'; },1500);
@@ -5195,7 +5200,7 @@ function captureViewerCfg(){
       gapX:+$('mosGapX').value, gapY:+$('mosGapY').value, overlap:$('mosOverlap').value, crop:+$('mosCrop').value,
       manual:$('mosManual').checked, z0:+$('mosZ0').value, z1:+$('mosZ1').value,
       labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
-    active: selOv, fov: +camera.fov.toFixed(3),
+    active: selOv, fov: +camera.fov.toFixed(3), up: camera.up.toArray().map(v=>+v.toFixed(3)),
     // privacy: only persist a fileName for overlays that are ACTUALLY in use right now —
     // i.e. a file/csv overlay that currently holds data (o.vals) or is awaiting a relink
     // (o.needsFile). Cleared/empty/stale slots save no path at all.
