@@ -4,7 +4,7 @@ message: "If you use this software, please cite it and the original atlas / Neur
 type: software
 authors:
   - family-names: Newman-Norlund
-    given-names: Roger
+    given-names: Roger D.
 repository-code: "https://github.com/rnorlund/brainWhiz"
 url: "https://rnorlund.github.io/brainWhiz/"
 doi: 10.5281/zenodo.21246441

@@ -5,7 +5,7 @@
   "access_right": "open",
   "license": "CC-BY-NC-4.0",
   "creators": [
-    { "name": "Newman-Norlund, Roger", "affiliation": "University of South Carolina" }
+    { "name": "Newman-Norlund, Roger D.", "affiliation": "University of South Carolina" }
   ],
   "keywords": ["neuroimaging", "brain atlas", "visualization", "three.js", "connectivity", "figure", "arterial territories"],
   "related_identifiers": [
