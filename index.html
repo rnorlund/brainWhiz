@@ -5144,6 +5144,7 @@ function pbSyncLook(){
   pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; const c=it.cfg;
     if(c.active!=null && c.active>=0 && c.active<overlays.length){ ovSelect(c.active); }   // which overlay is on the 3D (+its colours)
     if(Array.isArray(c.vis)){ const S=new Set(c.vis.map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id):true; }); }
+    if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // keep the figure's near-orthographic FOV — else brains shrink
     if(c.camP){ camera.position.fromArray(c.camP); if(c.camT) controls.target.fromArray(c.camT); camera.up.set(0,1,0); controls.update(); }
     it.dataURL = (mosaicMode||sliceMode) ? it.dataURL : window.brainAPI.renderTo(900,680,true);
     it.cbar = (sliceMode||mosaicMode) ? it.cbar : window.brainAPI.colorbar(); n++; });
@@ -5184,7 +5185,7 @@ function captureViewerCfg(){
       gapX:+$('mosGapX').value, gapY:+$('mosGapY').value, overlap:$('mosOverlap').value, crop:+$('mosCrop').value,
       manual:$('mosManual').checked, z0:+$('mosZ0').value, z1:+$('mosZ1').value,
       labelSize:+$('mosLabelSize').value, labelCenter:$('mosLabelCenter').checked },
-    active: selOv,
+    active: selOv, fov: +camera.fov.toFixed(3),
     // privacy: only persist a fileName for overlays that are ACTUALLY in use right now —
     // i.e. a file/csv overlay that currently holds data (o.vals) or is awaiting a relink
     // (o.needsFile). Cleared/empty/stale slots save no path at all.
@@ -5213,6 +5214,7 @@ function applyViewerCfg(cfg){
     ovRender();
   } else if('taskMap' in v && v.taskMap) setControl('taskMap', v.taskMap);   // legacy single-map .bwz
   if(cfg.vis) showOnly(cfg.vis);
+  if(cfg.fov){ camera.fov=cfg.fov; camera.updateProjectionMatrix(); }   // restore the (near-orthographic) FOV so framing matches capture
   if(cfg.camP){ camera.position.fromArray(cfg.camP); controls.target.fromArray(cfg.camT); controls.update(); }
   if(cfg.sliceMM) sliceMM=cfg.sliceMM.slice();
   if(cfg.sliceKind){ sliceKind=cfg.sliceKind; syncSliceCtx(); }
