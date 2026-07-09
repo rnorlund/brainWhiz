@@ -1003,6 +1003,7 @@
     <span style="opacity:.6">or</span>
     <input id="pbRows" type="number" min="1" max="12" value="2" style="width:46px" title="rows"> ×
     <input id="pbCols" type="number" min="1" max="12" value="2" style="width:46px" title="columns">
+    <button class="sm" id="pbSyncLook" title="Re-render EVERY panel with the current appearance (surface / matcap / edges / lighting / background) — each panel keeps its own overlay, colours, camera and hemisphere. Change a look setting in the toolbars, then click this to update all brains at once." style="margin-left:auto">🎨 Apply look to all panels</button>
   </div>
   <div id="pbCells"></div>
   <div class="pbSliders">
@@ -1669,6 +1670,8 @@ async function loadEmbedData(){ try{
   const trk=params.get('tracts'); if(trk) await loadSurfaceOrTracts(await _demoFile(trk));
   const ul=params.get('underlay'); if(ul) await loadUnderlayFromFile(await _demoFile(ul));
   const ov=params.get('overlay'); if(ov) await embedApplyOverlay({overlay:ov, cmap:params.get('cmap'), cmin:params.get('cmin'), cmax:params.get('cmax'), thr:params.get('thr')});
+  const projUrl=params.get('project'); if(projUrl){ try{ const pj=await (await fetch(projUrl)).json(); await brainAPI.loadProject(pj);
+    if(params.get('editor')!=null){ const t=$('feToggle'); if(t) t.click(); } }catch(e){ console.warn('project load failed',e); } }
   const expl=params.get('explode'); if(expl!=null) setExplode(+expl);
   const m=params.get('mode'); if(m==='slice') setViewMode('slice'); else if(m==='mosaic') setViewMode('mosaic');
   const vw=params.get('view'); if(vw) brainAPI.setView(vw);
@@ -4884,6 +4887,7 @@ window.brainAPI = {
     if('cmin'in s)set('cmin',String(s.cmin)); if('cmax'in s)set('cmax',String(s.cmax)); if('base'in s)set('ovBaseColor',s.base,'input'); },
   pbGrid(r,c){ if($('pbRows'))$('pbRows').value=r; if($('pbCols'))$('pbCols').value=c; if(typeof pbRender==='function')pbRender(); },
   pbCapturePanel(i){ if(typeof pbCapture==='function') pbCapture(i); },
+  pbSyncLook(){ return typeof pbSyncLook==='function'? pbSyncLook() : 0; },   // re-render all panels with the current global look
   // restore a full tile/.bwz panel config (controls + overlay + camera + regions)
   async applyCfg(cfg){ if(typeof applyViewerCfg==='function') applyViewerCfg(cfg); await nextFrames(3); return true; },
   // load a NIfTI from raw bytes (base64) and apply as overlay A or B — for headless file overlays
@@ -5130,6 +5134,19 @@ function captureSlices2x2(W=900,H=680){
   draw($('slSag'),0,0); draw($('slCor'),qw,0); draw($('slAxi'),0,qh); draw($('sl3d'),qw,qh);
   return c.toDataURL('image/png');
 }
+// Re-render EVERY panel with the CURRENT global appearance (surface/matcap/edges/lighting/bg from the toolbars),
+// preserving each panel's own overlay, colours, camera and hemisphere (from its stored cfg). One-click "apply look to all".
+function pbSyncLook(){
+  const done=[]; let n=0;
+  pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; const c=it.cfg;
+    if(c.active!=null && c.active>=0 && c.active<overlays.length){ ovSelect(c.active); }   // which overlay is on the 3D (+its colours)
+    if(Array.isArray(c.vis)){ const S=new Set(c.vis.map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id):true; }); }
+    if(c.camP){ camera.position.fromArray(c.camP); if(c.camT) controls.target.fromArray(c.camT); camera.up.set(0,1,0); controls.update(); }
+    it.dataURL = (mosaicMode||sliceMode) ? it.dataURL : window.brainAPI.renderTo(900,680,true);
+    it.cbar = (sliceMode||mosaicMode) ? it.cbar : window.brainAPI.colorbar(); n++; });
+  pbRender(); if($('pbSyncLook')) $('pbSyncLook').textContent=`🎨 Applied to ${n} panels`; setTimeout(()=>{ if($('pbSyncLook'))$('pbSyncLook').textContent='🎨 Apply look to all panels'; },1500);
+  return n;
+}
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
@@ -5335,6 +5352,7 @@ $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
   p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender();
   resize(); refreshSliceViews(); });
 $('pbClose').addEventListener('click',()=>{ $('panelBuilder').style.display='none'; resize(); refreshSliceViews(); });
+$('pbSyncLook').addEventListener('click', pbSyncLook);
 // drag the panel builder by its header so it doesn't cover the figure you're capturing
 (function(){ const pb=$('panelBuilder'); let d=null;
   pb.querySelector('.pbHead').addEventListener('pointerdown',e=>{ if(e.target.closest('button,select,input')) return;
