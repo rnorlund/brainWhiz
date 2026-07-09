@@ -5146,10 +5146,11 @@ function pbSyncLook(only){   // only = Set of panel indices to re-render (null/u
   pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; if(only && !only.has(i)) return; const c=it.cfg;
     if(c.active!=null && c.active>=0 && c.active<overlays.length){ ovSelect(c.active); }   // which overlay is on the 3D (+its colours)
     if(Array.isArray(c.vis)){ const S=new Set(c.vis.map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id):true; }); }
-    if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // keep the figure's near-orthographic FOV — else brains shrink
-    if(c.camP){ const z=Math.max(0.3,+($('figZoom')?$('figZoom').value:1)||1); const t=c.camT||[0,0,0];   // 'Figure brain size' zoom: move camera closer/farther
-      camera.position.set(t[0]+(c.camP[0]-t[0])/z, t[1]+(c.camP[1]-t[1])/z, t[2]+(c.camP[2]-t[2])/z);
-      controls.target.fromArray(t); camera.up.set(0,1,0); controls.update(); }
+    if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // keep the figure's near-orthographic FOV
+    if(c.camP && c.camT){ const t=c.camT, dir=[c.camP[0]-t[0], c.camP[1]-t[1], c.camP[2]-t[2]];   // RE-FIT the visible hemisphere from the same direction → reproduces the build framing exactly (no shrink/off-centre)
+      const z=Math.max(0.3,+($('figZoom')?$('figZoom').value:1)||1);
+      window.brainAPI.fitTo(dir, 1.06/z, 900/680);   // 'Figure brain size' = tighter/looser fit
+    } else if(c.camP){ camera.position.fromArray(c.camP); if(c.camT)controls.target.fromArray(c.camT); camera.up.set(0,1,0); controls.update(); }
     it.dataURL = (mosaicMode||sliceMode) ? it.dataURL : window.brainAPI.renderTo(900,680,true);
     it.cbar = (sliceMode||mosaicMode) ? it.cbar : window.brainAPI.colorbar(); n++; });
   pbRender(); if($('pbSyncLook')) $('pbSyncLook').textContent=`🎨 Applied to ${n} panels`; setTimeout(()=>{ if($('pbSyncLook'))$('pbSyncLook').textContent='🎨 Apply look to all panels'; },1500);
