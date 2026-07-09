@@ -60,8 +60,10 @@
   .tbtn.tbon{background:var(--accent);color:#001;border-color:var(--accent);font-weight:600}
   /* ---- voxel slice view ---- */
   /* ---- figure editor ---- */
-  #figEditor{position:fixed;inset:0;z-index:60;background:#11151c;display:none;flex-direction:column}
+  #figEditor{position:fixed;top:0;left:0;bottom:0;right:300px;z-index:60;background:#11151c;display:none;flex-direction:column}
   #figEditor.on{display:flex}
+  body.feopen #sidebarR{z-index:62;box-shadow:-8px 0 24px rgba(0,0,0,.5)}   /* keep the appearance toolbar visible/usable beside the open Editor */
+  body.feopen #sidebarR .grp{cursor:default}
   #feBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
   .febtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
   .febtn:hover{border-color:var(--accent)}
@@ -944,6 +946,7 @@
     <button class="febtn" id="feAddView" title="Add the current viewer image (3D / slices / mosaic) as a movable picture">＋ View</button>
     <button class="febtn" id="feAddPanels" title="Import every tile from the 🗔 Panels builder">＋ Panels</button>
     <button class="febtn" id="feAddImg" title="Add an image file from your computer">＋ Image…</button>
+    <button class="febtn" id="feSyncBrains" title="Re-render every brain in this figure with the CURRENT global appearance (surface / matcap / edges / lighting). Set the look in the appearance panel first, then click. Each brain keeps its overlay, camera & hemisphere.">🎨 Re-render brains</button>
     <input type="file" id="feImgFile" accept="image/*" style="display:none">
     <span class="fesep"></span>
     <button class="febtn" id="feText" title="Add an editable text label (double-click it to type)">T Text</button>
@@ -4855,7 +4858,7 @@ window.brainAPI = {
     if(!feCanvas){ feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:spec.bg||'#000',preserveObjectStacking:true}); window.feCanvas=feCanvas; }
     feCanvas.clear(); feCanvas.setWidth(spec.w); feCanvas.setHeight(spec.h); feCanvas.backgroundColor=spec.bg||'#000';
     if($('feW'))$('feW').value=spec.w; if($('feH'))$('feH').value=spec.h; if($('feBg'))$('feBg').value=spec.bg||'#000000';
-    const addImg=(url,o)=>new Promise(res=>fabric.Image.fromURL(url,img=>{ img.set({left:o.left,top:o.top,selectable:true}); if(o.w)img.scaleToWidth(o.w); feCanvas.add(img); res(); },{crossOrigin:'anonymous'}));
+    const addImg=(url,o)=>new Promise(res=>fabric.Image.fromURL(url,img=>{ img.set({left:o.left,top:o.top,selectable:true}); if(o.w)img.scaleToWidth(o.w); if(o.panel!=null) img._panel=o.panel; feCanvas.add(img); res(); },{crossOrigin:'anonymous'}));
     for(const it of (spec.items||[])){
       if(it.type==='image') await addImg(it.url,it);
       else if(it.type==='text'){ const t=new fabric.IText(it.text,{left:it.left,top:it.top,fontSize:it.size||20,fill:it.fill||'#fff',fontFamily:'system-ui',fontWeight:it.bold?'700':'normal'}); if(it.align==='right')t.set({originX:'right'}); feCanvas.add(t); }
@@ -4887,7 +4890,7 @@ window.brainAPI = {
     if('cmin'in s)set('cmin',String(s.cmin)); if('cmax'in s)set('cmax',String(s.cmax)); if('base'in s)set('ovBaseColor',s.base,'input'); },
   pbGrid(r,c){ if($('pbRows'))$('pbRows').value=r; if($('pbCols'))$('pbCols').value=c; if(typeof pbRender==='function')pbRender(); },
   pbCapturePanel(i){ if(typeof pbCapture==='function') pbCapture(i); },
-  pbSyncLook(){ return typeof pbSyncLook==='function'? pbSyncLook() : 0; },   // re-render all panels with the current global look
+  pbSyncLook(){ return typeof applyLookAll==='function'? applyLookAll() : 0; },   // re-render all panels + refresh the Editor figure with the current global look
   // restore a full tile/.bwz panel config (controls + overlay + camera + regions)
   async applyCfg(cfg){ if(typeof applyViewerCfg==='function') applyViewerCfg(cfg); await nextFrames(3); return true; },
   // load a NIfTI from raw bytes (base64) and apply as overlay A or B — for headless file overlays
@@ -4964,7 +4967,7 @@ window.brainAPI = {
       arcs: arcs.map(a=>({i:a.i,j:a.j,startCap:a.startCap,endCap:a.endCap,label:a.label})),
       grid: pbDims().join('x'), figure: pbFigureSettings(),
       panels: pbItems.map(it=> it?{label:it.label, cfg:it.cfg, dataURL:it.dataURL, cbar:it.cbar}:null),
-      editor: feCanvas?feCanvas.toJSON():null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
+      editor: feCanvas?feCanvas.toJSON(['_panel']):null, editorSize: feCanvas?{w:feCanvas.getWidth(),h:feCanvas.getHeight(),bg:feCanvas.backgroundColor}:null };
   },
   async loadProject(p){
     if(!p||!p.viewer) return false;
@@ -5147,6 +5150,12 @@ function pbSyncLook(){
   pbRender(); if($('pbSyncLook')) $('pbSyncLook').textContent=`🎨 Applied to ${n} panels`; setTimeout(()=>{ if($('pbSyncLook'))$('pbSyncLook').textContent='🎨 Apply look to all panels'; },1500);
   return n;
 }
+// hot-swap the Editor's brain images (tagged with _panel) with the latest re-rendered panels — keeps their position/size/edits
+function feRefreshPanelImages(){ if(!window.feCanvas) return 0; let n=0;
+  window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel]){ o.setSrc(pbItems[o._panel].dataURL, ()=>window.feCanvas.requestRenderAll(), {crossOrigin:'anonymous'}); n++; } });
+  return n; }
+// one call: re-render every panel with the current global look AND refresh the Editor figure in place
+function applyLookAll(){ const n=pbSyncLook(); feRefreshPanelImages(); return n; }
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
@@ -5352,7 +5361,7 @@ $('pbToggle').addEventListener('click',()=>{ const p=$('panelBuilder');
   p.style.display = p.style.display==='none'?'block':'none'; if(p.style.display!=='none') pbRender();
   resize(); refreshSliceViews(); });
 $('pbClose').addEventListener('click',()=>{ $('panelBuilder').style.display='none'; resize(); refreshSliceViews(); });
-$('pbSyncLook').addEventListener('click', pbSyncLook);
+$('pbSyncLook').addEventListener('click', applyLookAll);
 // drag the panel builder by its header so it doesn't cover the figure you're capturing
 (function(){ const pb=$('panelBuilder'); let d=null;
   pb.querySelector('.pbHead').addEventListener('pointerdown',e=>{ if(e.target.closest('button,select,input')) return;
@@ -6080,7 +6089,8 @@ function feSyncStyleBar(){ const o=feSel(); if(!o) return;
   const sh=o.shadow; $('feShadow').checked=!!sh; if(sh){ $('feShBlur').value=sh.blur||0; const d=Math.round(Math.hypot(sh.offsetX||0,sh.offsetY||0)); $('feShDist').value=d; if(sh.color)$('feShColor').value=sh.color; }
   $('feGrad').checked = !!(o.fill && o.fill.colorStops); }
 async function openFigEditor(){
-  $('figEditor').classList.add('on');
+  $('figEditor').classList.add('on'); document.body.classList.add('feopen');
+  if($('sidebarR')) $('sidebarR').classList.remove('hidden'), document.body.classList.remove('navhiddenR');   // reveal the appearance toolbar next to the figure
   if(!await ensureFabric()){ alert('Could not load the figure-editor library (offline?).'); $('figEditor').classList.remove('on'); return; }
   if(!feCanvas){
     feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:$('feBg').value, preserveObjectStacking:true});
@@ -6105,7 +6115,13 @@ async function openFigEditor(){
 }
 (function initFigEditor(){
   $('feToggle').addEventListener('click', openFigEditor);
-  $('feClose').addEventListener('click', ()=>$('figEditor').classList.remove('on'));
+  $('feClose').addEventListener('click', ()=>{ $('figEditor').classList.remove('on'); document.body.classList.remove('feopen'); resize(); });
+  if($('feSyncBrains')) $('feSyncBrains').addEventListener('click', applyLookAll);
+  // LIVE: while the Editor is open, changing a GLOBAL look control re-renders every brain in the figure (debounced).
+  // Delegated on the appearance sidebar so it catches any of these controls regardless of load order.
+  let _lookTimer=null; const LOOK_LIVE=new Set(['scheme','singleColor','smooth','surfStyle','shading','outlineOn','outlineW','edgeOn','edgeW','vivid','rim','rimColor','bg','ovBaseColor','patSel','patScale','patStr','patMode','wireWidth','allOpacity','coloredOp','grayOp']);
+  const liveHandler=e=>{ if(!document.body.classList.contains('feopen')) return; const t=e.target; if(!t||!LOOK_LIVE.has(t.id)) return; clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); };
+  const sr=$('sidebarR'); if(sr){ sr.addEventListener('input', liveHandler, true); sr.addEventListener('change', liveHandler, true); }
   $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
   $('feBg').addEventListener('input', ()=>{ if(feCanvas){ feCanvas.backgroundColor=$('feBg').value; feCanvas.renderAll(); } });
   $('feColor').addEventListener('input', feApplyColor);
