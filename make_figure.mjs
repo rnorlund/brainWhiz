@@ -32,10 +32,13 @@ const WebSocket = require('ws');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const CHROME_CANDIDATES = [
+  process.env.CHROME_BIN || "",                                    // explicit override wins
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  "google-chrome", "chromium", "chrome",
-];
+  "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome",       // Linux (CI runners)
+  "/usr/bin/chromium-browser", "/usr/bin/chromium", "/snap/bin/chromium",
+  "google-chrome-stable", "google-chrome", "chromium", "chrome",   // PATH fallbacks
+].filter(Boolean);
 const CHROME = CHROME_CANDIDATES.find(p => { try { return p.includes('/') ? fs.existsSync(p) : true; } catch { return false; } });
 
 const specPath = process.argv[2];
@@ -75,15 +78,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const port = 9400 + Math.floor((spec.panels.length * 7) % 500);
 
 async function cdp() {
+  // --no-sandbox / --disable-dev-shm-usage are required for headless Chrome in CI / containers
+  // (runs as root, no user namespaces, tiny /dev/shm); harmless for this throwaway local instance.
   const chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${port}`,
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu-sandbox",
     "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
     "--no-first-run", "--user-data-dir=" + path.join(HERE, ".chrome-figtmp-" + port),
     "--window-size=1400,1000", "about:blank"], { stdio: "ignore" });
+  let spawnErr = null; chrome.on("error", e => { spawnErr = e; });   // surface "binary not found" instead of a silent hang
   const getJSON = p => new Promise((res, rej) => http.get({ host: "127.0.0.1", port, path: p },
     r => { let d = ""; r.on("data", c => d += c); r.on("end", () => res(JSON.parse(d))); }).on("error", rej));
   await sleep(1500);
-  let tabs; for (let i = 0; i < 30; i++) { try { tabs = await getJSON("/json"); break; } catch { await sleep(500); } }
+  let tabs; for (let i = 0; i < 30; i++) { if (spawnErr) break; try { tabs = await getJSON("/json"); break; } catch { await sleep(500); } }
+  if (!Array.isArray(tabs)) throw new Error(
+    `Chrome did not expose a debug port on 127.0.0.1:${port} within 15s` +
+    (spawnErr ? ` — failed to launch "${CHROME}": ${spawnErr.message}` : ` (launched "${CHROME}"; in CI/containers it must run with --no-sandbox)`));
   const target = tabs.find(t => t.type === "page");
+  if (!target) throw new Error(`Chrome debug port returned no "page" target (${tabs.length} target(s))`);
   const sock = new WebSocket(target.webSocketDebuggerUrl);
   let id = 0; const pend = {};
   sock.on("message", d => { const m = JSON.parse(d); if (m.id && pend[m.id]) { pend[m.id](m); delete pend[m.id]; } });
