@@ -513,6 +513,8 @@
   </div></details>
 
   <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance<button class="sm" id="resetAppear" title="Reset appearance / all settings to defaults (also clears the saved look)" style="float:right;margin:-2px 0 0 0;padding:1px 7px">↺ Reset</button></summary><div class="accb">
+    <div class="ctl" id="figZoomRow" style="display:none"><div class="lab"><span title="Zoom of each brain within its figure panel — bigger = brains fill more of each tile. Applies to the whole figure in the Editor.">Figure brain size</span><span id="figZoomV">1.00×</span></div>
+      <input type="range" id="figZoom" min="0.6" max="2" step="0.05" value="1"></div>
     <div class="row"><label>Color scheme</label>
       <select id="scheme">
         <option value="lobe">By lobe / structure</option>
@@ -5139,24 +5141,29 @@ function captureSlices2x2(W=900,H=680){
 }
 // Re-render EVERY panel with the CURRENT global appearance (surface/matcap/edges/lighting/bg from the toolbars),
 // preserving each panel's own overlay, colours, camera and hemisphere (from its stored cfg). One-click "apply look to all".
-function pbSyncLook(){
-  const done=[]; let n=0;
-  pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; const c=it.cfg;
+function pbSyncLook(only){   // only = Set of panel indices to re-render (null/undefined = all)
+  let n=0;
+  pbItems.forEach((it,i)=>{ if(!it||!it.cfg||it.cfg.atlas!==ATLAS_ID) return; if(only && !only.has(i)) return; const c=it.cfg;
     if(c.active!=null && c.active>=0 && c.active<overlays.length){ ovSelect(c.active); }   // which overlay is on the 3D (+its colours)
     if(Array.isArray(c.vis)){ const S=new Set(c.vis.map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id):true; }); }
     if(c.fov){ camera.fov=c.fov; camera.updateProjectionMatrix(); }   // keep the figure's near-orthographic FOV — else brains shrink
-    if(c.camP){ camera.position.fromArray(c.camP); if(c.camT) controls.target.fromArray(c.camT); camera.up.set(0,1,0); controls.update(); }
+    if(c.camP){ const z=Math.max(0.3,+($('figZoom')?$('figZoom').value:1)||1); const t=c.camT||[0,0,0];   // 'Figure brain size' zoom: move camera closer/farther
+      camera.position.set(t[0]+(c.camP[0]-t[0])/z, t[1]+(c.camP[1]-t[1])/z, t[2]+(c.camP[2]-t[2])/z);
+      controls.target.fromArray(t); camera.up.set(0,1,0); controls.update(); }
     it.dataURL = (mosaicMode||sliceMode) ? it.dataURL : window.brainAPI.renderTo(900,680,true);
     it.cbar = (sliceMode||mosaicMode) ? it.cbar : window.brainAPI.colorbar(); n++; });
   pbRender(); if($('pbSyncLook')) $('pbSyncLook').textContent=`🎨 Applied to ${n} panels`; setTimeout(()=>{ if($('pbSyncLook'))$('pbSyncLook').textContent='🎨 Apply look to all panels'; },1500);
   return n;
 }
 // hot-swap the Editor's brain images (tagged with _panel) with the latest re-rendered panels — keeps their position/size/edits
-function feRefreshPanelImages(){ if(!window.feCanvas) return 0; let n=0;
-  window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel]){ o.setSrc(pbItems[o._panel].dataURL, ()=>window.feCanvas.requestRenderAll(), {crossOrigin:'anonymous'}); n++; } });
+function feRefreshPanelImages(only){ if(!window.feCanvas) return 0; let n=0;
+  window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel] && (!only||only.has(o._panel))){ o.setSrc(pbItems[o._panel].dataURL, ()=>window.feCanvas.requestRenderAll(), {crossOrigin:'anonymous'}); n++; } });
   return n; }
-// one call: re-render every panel with the current global look AND refresh the Editor figure in place
-function applyLookAll(){ const n=pbSyncLook(); feRefreshPanelImages(); return n; }
+// which brains are selected in the Editor? (shift-click to multi-select). null = none selected = apply to ALL.
+function feSelectedPanels(){ if(!window.feCanvas) return null; const objs=window.feCanvas.getActiveObjects()||[];
+  const idx=objs.filter(o=>o&&o._panel!=null).map(o=>o._panel); return idx.length? new Set(idx) : null; }
+// re-render with the current global look; if brains are selected in the Editor, only those, else all. Also refreshes the Editor figure.
+function applyLookAll(){ const only=feSelectedPanels(); const n=pbSyncLook(only); feRefreshPanelImages(only); return n; }
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
@@ -6093,6 +6100,9 @@ function feSyncStyleBar(){ const o=feSel(); if(!o) return;
 async function openFigEditor(){
   $('figEditor').classList.add('on'); document.body.classList.add('feopen');
   if($('sidebarR')) $('sidebarR').classList.remove('hidden'), document.body.classList.remove('navhiddenR');   // reveal the appearance toolbar next to the figure
+  { const t=document.querySelector('.sideRtitle'); if(t) t.textContent='🎨 Figure appearance'; }   // this toolbar now drives the WHOLE figure
+  if($('figZoomRow')) $('figZoomRow').style.display='';   // show the figure brain-size slider in Editor mode
+  if($('accAppearance')) $('accAppearance').open=true;
   if(!await ensureFabric()){ alert('Could not load the figure-editor library (offline?).'); $('figEditor').classList.remove('on'); return; }
   if(!feCanvas){
     feCanvas=new fabric.Canvas('feCanvas',{backgroundColor:$('feBg').value, preserveObjectStacking:true});
@@ -6117,11 +6127,13 @@ async function openFigEditor(){
 }
 (function initFigEditor(){
   $('feToggle').addEventListener('click', openFigEditor);
-  $('feClose').addEventListener('click', ()=>{ $('figEditor').classList.remove('on'); document.body.classList.remove('feopen'); resize(); });
+  $('feClose').addEventListener('click', ()=>{ $('figEditor').classList.remove('on'); document.body.classList.remove('feopen');
+    const t=document.querySelector('.sideRtitle'); if(t) t.textContent='🎨 Look & feel'; if($('figZoomRow')) $('figZoomRow').style.display='none'; resize(); });
   if($('feSyncBrains')) $('feSyncBrains').addEventListener('click', applyLookAll);
   // LIVE: while the Editor is open, changing a GLOBAL look control re-renders every brain in the figure (debounced).
   // Delegated on the appearance sidebar so it catches any of these controls regardless of load order.
-  let _lookTimer=null; const LOOK_LIVE=new Set(['scheme','singleColor','smooth','surfStyle','shading','outlineOn','outlineW','edgeOn','edgeW','vivid','rim','rimColor','bg','ovBaseColor','patSel','patScale','patStr','patMode','wireWidth','allOpacity','coloredOp','grayOp']);
+  let _lookTimer=null; const LOOK_LIVE=new Set(['scheme','singleColor','smooth','surfStyle','shading','outlineOn','outlineW','edgeOn','edgeW','vivid','rim','rimColor','bg','ovBaseColor','patSel','patScale','patStr','patMode','wireWidth','allOpacity','coloredOp','grayOp','figZoom']);
+  const _fz=$('figZoom'); if(_fz) _fz.addEventListener('input',()=>{ if($('figZoomV'))$('figZoomV').textContent=(+_fz.value).toFixed(2)+'×'; });
   const liveHandler=e=>{ if(!document.body.classList.contains('feopen')) return; const t=e.target; if(!t||!LOOK_LIVE.has(t.id)) return; clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); };
   const sr=$('sidebarR'); if(sr){ sr.addEventListener('input', liveHandler, true); sr.addEventListener('change', liveHandler, true); }
   $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
