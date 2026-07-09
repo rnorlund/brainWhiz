@@ -5175,13 +5175,15 @@ function pbSyncLook(only){   // only = Set of panel indices to re-render (null/u
   return n;
 }
 // hot-swap the Editor's brain images (tagged with _panel) with the latest re-rendered panels — keeps their position/size/edits
-function feRefreshPanelImages(only){ if(!window.feCanvas) return 0; let n=0;
+// NB: guard on getObjects, not just truthiness — a <canvas id="feCanvas"> is auto-exposed as
+// window.feCanvas (named element access) before fabric replaces it, and the DOM element has no getObjects.
+function feRefreshPanelImages(only){ if(!window.feCanvas || typeof window.feCanvas.getObjects!=='function') return 0; let n=0;
   window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel] && (!only||only.has(o._panel))){
     const w=o.getScaledWidth(), cx=o.left, cy=o.top;   // preserve on-screen size & position (new image may differ in pixel res → don't let scale shrink it)
     o.setSrc(pbItems[o._panel].dataURL, ()=>{ o.scaleToWidth(w); o.set({left:cx,top:cy}); o.setCoords(); window.feCanvas.requestRenderAll(); }, {crossOrigin:'anonymous'}); n++; } });
   return n; }
 // which brains are selected in the Editor? (shift-click to multi-select). null = none selected = apply to ALL.
-function feSelectedPanels(){ if(!window.feCanvas) return null; const objs=window.feCanvas.getActiveObjects()||[];
+function feSelectedPanels(){ if(!window.feCanvas || typeof window.feCanvas.getActiveObjects!=='function') return null; const objs=window.feCanvas.getActiveObjects()||[];
   const idx=objs.filter(o=>o&&o._panel!=null).map(o=>o._panel); return idx.length? new Set(idx) : null; }
 // re-render with the current global look; if brains are selected in the Editor, only those, else all. Also refreshes the Editor figure.
 function applyLookAll(){ const only=feSelectedPanels(); const n=pbSyncLook(only); feRefreshPanelImages(only); return n; }
@@ -6159,7 +6161,6 @@ async function openFigEditor(){
     window.feCanvas=feCanvas;   // expose the editor canvas (automation / headless figure export)
     feResize();
     document.addEventListener('keydown',e=>{ if(!$('figEditor').classList.contains('on')) return; const o=feSel();
-      if(e.key==='Escape'){ if(o&&o.isEditing){ o.exitEditing(); } else { $('feClose').click(); } e.preventDefault(); return; }   // Esc = leave the editor
       if((e.key==='Delete'||e.key==='Backspace') && o && !o.isEditing){ feDelSel(); e.preventDefault(); }
       else if((e.metaKey||e.ctrlKey)&&e.key==='c'&&o){ o.clone(c=>feClip=c); }
       else if((e.metaKey||e.ctrlKey)&&e.key==='v'&&feClip){ feClip.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); }
@@ -6180,6 +6181,11 @@ async function openFigEditor(){
   $('feToggle').addEventListener('click', openFigEditor);
   $('feClose').addEventListener('click', ()=>{ $('figEditor').classList.remove('on'); document.body.classList.remove('feopen');
     const t=document.querySelector('.sideRtitle'); if(t) t.textContent='🎨 Look & feel'; if($('figZoomRow')) $('figZoomRow').style.display='none'; resize(); });
+  // Global Esc-to-close, wired once — works no matter how the editor was opened (button, project
+  // auto-open, or editorFigure()), since the per-canvas keydown handler only exists when opened via the button.
+  document.addEventListener('keydown', e=>{ if(e.key!=='Escape' || !$('figEditor').classList.contains('on')) return;
+    const o = feCanvas && feCanvas.getActiveObject && feCanvas.getActiveObject();
+    if(o && o.isEditing){ o.exitEditing(); } else { $('feClose').click(); } e.preventDefault(); });
   if($('feSyncBrains')) $('feSyncBrains').addEventListener('click', applyLookAll);
   // LIVE: while the Editor is open, changing a GLOBAL look control re-renders every brain in the figure (debounced).
   // Delegated on the appearance sidebar so it catches any of these controls regardless of load order.
