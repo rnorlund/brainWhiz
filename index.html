@@ -4922,6 +4922,8 @@ window.brainAPI = {
       s.mat.uniforms.uThresh.value=(modelRadius||80)*0.006; s.mat.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
       renderer.setRenderTarget(s.rt); renderer.setClearColor(0x000000,0); renderer.clear(); renderer.render(scene,camera);
       renderer.setRenderTarget(null); renderer.render(s.scn, s.cam);
+    } else if(ssaoOn()){                              // ambient occlusion — apply in exports too (was live-viewport only)
+      try{ renderSSAO(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); }
     } else renderer.render(scene,camera);
     const url=renderer.domElement.toDataURL('image/png');
     scene.background=oldBG; camera.zoom=oldZoom; resize(); renderer.render(scene,camera);
@@ -5177,16 +5179,29 @@ function pbSyncLook(only){   // only = Set of panel indices to re-render (null/u
 // hot-swap the Editor's brain images (tagged with _panel) with the latest re-rendered panels — keeps their position/size/edits
 // NB: guard on getObjects, not just truthiness — a <canvas id="feCanvas"> is auto-exposed as
 // window.feCanvas (named element access) before fabric replaces it, and the DOM element has no getObjects.
-function feRefreshPanelImages(only){ if(!window.feCanvas || typeof window.feCanvas.getObjects!=='function') return 0; let n=0;
+function feRefreshPanelImages(only){ if(!window.feCanvas || typeof window.feCanvas.getObjects!=='function') return Promise.resolve(0);
+  const proms=[];
   window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel] && (!only||only.has(o._panel))){
     const w=o.getScaledWidth(), cx=o.left, cy=o.top;   // preserve on-screen size & position (new image may differ in pixel res → don't let scale shrink it)
-    o.setSrc(pbItems[o._panel].dataURL, ()=>{ o.scaleToWidth(w); o.set({left:cx,top:cy}); o.setCoords(); window.feCanvas.requestRenderAll(); }, {crossOrigin:'anonymous'}); n++; } });
-  return n; }
+    proms.push(new Promise(res=>{ o.setSrc(pbItems[o._panel].dataURL, ()=>{ o.scaleToWidth(w); o.set({left:cx,top:cy}); o.setCoords(); window.feCanvas.requestRenderAll(); res(); }, {crossOrigin:'anonymous'}); })); } });
+  return Promise.all(proms).then(()=>proms.length); }
 // which brains are selected in the Editor? (shift-click to multi-select). null = none selected = apply to ALL.
 function feSelectedPanels(){ if(!window.feCanvas || typeof window.feCanvas.getActiveObjects!=='function') return null; const objs=window.feCanvas.getActiveObjects()||[];
   const idx=objs.filter(o=>o&&o._panel!=null).map(o=>o._panel); return idx.length? new Set(idx) : null; }
+// small "Updating…" chip (lower-left) shown while the figure re-renders after a setting change
+function showUpdating(on){ let el=document.getElementById('feUpdating');
+  if(!el){ el=document.createElement('div'); el.id='feUpdating';
+    el.style.cssText='position:fixed;left:14px;bottom:14px;z-index:9600;background:rgba(20,28,40,.94);color:#dce6f5;'
+      +'font:600 12px system-ui;padding:7px 12px 7px 30px;border:1px solid #3a4a63;border-radius:9px;'
+      +'box-shadow:0 4px 16px rgba(0,0,0,.45);display:none;align-items:center;pointer-events:none';
+    el.innerHTML='<span style="position:absolute;left:11px;width:12px;height:12px;border:2px solid #6ea8ff;'
+      +'border-top-color:transparent;border-radius:50%;animation:feSpin .7s linear infinite"></span>Updating…';
+    const st=document.createElement('style'); st.textContent='@keyframes feSpin{to{transform:rotate(360deg)}}'; document.head.appendChild(st);
+    document.body.appendChild(el); }
+  el.style.display = on?'flex':'none'; }
 // re-render with the current global look; if brains are selected in the Editor, only those, else all. Also refreshes the Editor figure.
-function applyLookAll(){ const only=feSelectedPanels(); const n=pbSyncLook(only); feRefreshPanelImages(only); return n; }
+async function applyLookAll(){ showUpdating(true); await new Promise(r=>requestAnimationFrame(r));   // let the chip paint before the blocking render
+  const only=feSelectedPanels(); const n=pbSyncLook(only); await feRefreshPanelImages(only); showUpdating(false); return n; }
 function pbCapture(i, keepLabel){
   const atlasName=(ENTRY?ENTRY.name:ATLAS_ID).split(' ')[0];
   const ov = selOv>=0 ? overlays[selOv] : null;
@@ -6189,10 +6204,20 @@ async function openFigEditor(){
   if($('feSyncBrains')) $('feSyncBrains').addEventListener('click', applyLookAll);
   // LIVE: while the Editor is open, changing a GLOBAL look control re-renders every brain in the figure (debounced).
   // Delegated on the appearance sidebar so it catches any of these controls regardless of load order.
-  let _lookTimer=null; const LOOK_LIVE=new Set(['scheme','singleColor','smooth','surfStyle','shading','outlineOn','outlineW','edgeOn','edgeW','vivid','rim','rimColor','bg','ovBaseColor','patSel','patScale','patStr','patMode','wireWidth','allOpacity','coloredOp','grayOp','figZoom']);
+  let _lookTimer=null;
+  // In the Editor, EVERY control inside the Appearance panel re-renders all brains live — not a
+  // hand-maintained allowlist (that's how aura/glass/SSAO silently did nothing). File inputs are
+  // skipped (custom-material load re-syncs itself); 'bg' drives the figure background (panels are transparent).
+  const LOOK_SKIP=new Set(['matImgFile']);
   const _fz=$('figZoom'); if(_fz) _fz.addEventListener('input',()=>{ if($('figZoomV'))$('figZoomV').textContent=(+_fz.value).toFixed(2)+'×'; });
-  const liveHandler=e=>{ if(!document.body.classList.contains('feopen')) return; const t=e.target; if(!t||!LOOK_LIVE.has(t.id)) return; clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); };
+  const liveHandler=e=>{ if(!document.body.classList.contains('feopen')) return; const t=e.target;
+    if(!t || !t.id || t.type==='file' || LOOK_SKIP.has(t.id)) return;
+    if(!(t.closest && t.closest('#accAppearance'))) return;                 // only Appearance controls drive the figure
+    if(t.id==='bg'){ if(window.feCanvas && typeof window.feCanvas.getObjects==='function'){ window.feCanvas.backgroundColor=t.value; if($('feBg'))$('feBg').value=t.value; window.feCanvas.requestRenderAll(); } return; }
+    showUpdating(true); clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 250); };
   const sr=$('sidebarR'); if(sr){ sr.addEventListener('input', liveHandler, true); sr.addEventListener('change', liveHandler, true); }
+  // ↺ Reset appearance also re-syncs the figure when the Editor is open
+  if($('resetAppear')) $('resetAppear').addEventListener('click', ()=>{ if(document.body.classList.contains('feopen')){ showUpdating(true); clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); } });
   $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
   $('feBg').addEventListener('input', ()=>{ if(feCanvas){ feCanvas.backgroundColor=$('feBg').value; feCanvas.renderAll(); } });
   $('feColor').addEventListener('input', feApplyColor);
