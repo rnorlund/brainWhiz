@@ -4831,6 +4831,19 @@ window.brainAPI = {
     return true;
   },
   setView(name){ view(VIEWS[name]||VIEWS.left); },
+  // ---- figure-automation helpers (used to script montages, e.g. lateral+medial hemisphere panels) ----
+  labels(){ return meshes.map(o=>({id:o.meta.id, hemi:o.meta.hemi, name:o.meta.name, centroid:o.meta.centroid})); },
+  showOnly(ids){ const S=new Set((ids||[]).map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id) : true; }); requestRender(); },
+  showAllRegions(){ meshes.forEach(o=>o.mesh.visible=true); requestRender(); },
+  setCamera(p,t){ if(t) controls.target.set(t[0],t[1],t[2]); camera.position.set(p[0],p[1],p[2]); camera.up.set(0,1,0); controls.update(); requestRender(); },
+  selectOverlay(i){ if(typeof ovSelect==='function' && i>=0 && i<overlays.length) ovSelect(i); return selOv; },
+  newOverlay(){ if(typeof ovAdd==='function') ovAdd('csv'); return selOv; },
+  overlayCount(){ return overlays.length; },
+  styleActiveOverlay(s){ const set=(id,v,ev)=>{const e=$(id);if(!e)return;if(e.type==='checkbox')e.checked=v;else e.value=v;e.dispatchEvent(new Event(ev||'change'));};
+    if(s.style)set('ovStyle',s.style); if(s.cmap)set('cmap',s.cmap); if('invert'in s)set('cmapInvert',s.invert); if('abs'in s)set('cmapAbs',s.abs);
+    if('cmin'in s)set('cmin',String(s.cmin)); if('cmax'in s)set('cmax',String(s.cmax)); if('base'in s)set('ovBaseColor',s.base,'input'); },
+  pbGrid(r,c){ if($('pbRows'))$('pbRows').value=r; if($('pbCols'))$('pbCols').value=c; if(typeof pbRender==='function')pbRender(); },
+  pbCapturePanel(i){ if(typeof pbCapture==='function') pbCapture(i); },
   // restore a full tile/.bwz panel config (controls + overlay + camera + regions)
   async applyCfg(cfg){ if(typeof applyViewerCfg==='function') applyViewerCfg(cfg); await nextFrames(3); return true; },
   // load a NIfTI from raw bytes (base64) and apply as overlay A or B — for headless file overlays
