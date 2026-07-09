@@ -5157,7 +5157,9 @@ function pbSyncLook(only){   // only = Set of panel indices to re-render (null/u
 }
 // hot-swap the Editor's brain images (tagged with _panel) with the latest re-rendered panels — keeps their position/size/edits
 function feRefreshPanelImages(only){ if(!window.feCanvas) return 0; let n=0;
-  window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel] && (!only||only.has(o._panel))){ o.setSrc(pbItems[o._panel].dataURL, ()=>window.feCanvas.requestRenderAll(), {crossOrigin:'anonymous'}); n++; } });
+  window.feCanvas.getObjects().forEach(o=>{ if(o.type==='image' && o._panel!=null && pbItems[o._panel] && (!only||only.has(o._panel))){
+    const w=o.getScaledWidth(), cx=o.left, cy=o.top;   // preserve on-screen size & position (new image may differ in pixel res → don't let scale shrink it)
+    o.setSrc(pbItems[o._panel].dataURL, ()=>{ o.scaleToWidth(w); o.set({left:cx,top:cy}); o.setCoords(); window.feCanvas.requestRenderAll(); }, {crossOrigin:'anonymous'}); n++; } });
   return n; }
 // which brains are selected in the Editor? (shift-click to multi-select). null = none selected = apply to ALL.
 function feSelectedPanels(){ if(!window.feCanvas) return null; const objs=window.feCanvas.getActiveObjects()||[];
