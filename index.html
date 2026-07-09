@@ -434,6 +434,9 @@
       </div>
       <div class="row"><label>Threshold <span id="cthreshUnit" class="muted"></span></label>
         <input type="range" id="cthresh" min="0" max="1" step="0.01" value="0"></div>
+      <div class="row"><label class="toggle" title="Two-tailed: hide the near-centre band and show BOTH tails — for diverging maps (e.g. a contrast) where you want to see high AND low extremes at once. The Threshold slider then hides |value − centre| below it."><input type="checkbox" id="cthreshTwo"> ⇔ two-tailed (show both high &amp; low)</label></div>
+      <div class="row" id="cthreshHiRow" style="display:none"><label title="Diverging centre value (values within ±Threshold of this are hidden). Usually 0 for a contrast/difference map.">Centre</label>
+        <input type="text" id="cthreshCenter" value="0" style="width:60px"></div>
       <div class="row"><label title="TFCE on raw values, or fraction of range">Units</label>
         <select id="cthreshMode"><option value="frac">fraction of range</option><option value="raw">raw value (z, etc.)</option></select></div>
       <div class="row" style="gap:14px">
@@ -3721,7 +3724,7 @@ function initAtlasPicker(){
 const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patScale','patStr','patTilt',
   'shading','vivid','rim','rimColor','patMode','wireWidth','outlineOn','outlineW','ssaoOn','ssaoInt','ssaoRadius','edgeOn','edgeW','edgeStr','bg','axisLines','axisLetters','axisColor','axisWidth','axisSize','axisExplode','spin','autoRotate','rotSpeed',
   'zoomSpeed','connOn','connType','connTh','connScale','connAll','connColorMode','connCmap','connColor','connPulse','connPulseSpeed','connPulseColor','arcThick','arcHeight','arcColor','arcStartCap','arcEndCap','arcCapSize','shellOn','shellColor','shellOp','shellMNI','scheme','singleColor',
-  'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
+  'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','cthreshTwo','cthreshCenter','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth','slMeshVox','meshVoxOp',
   'volOn','volMode','volCmap','volThr','volOp','volSteps','volClip',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
@@ -3799,7 +3802,7 @@ function syncStyleRows(){
   $('cmapInvert').parentElement.style.display = cm?'flex':'none';
 }
 // ---- overlay stack management ----
-function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cmapInvert:false,cmapAbs:false,opacity:'1',vivid:'1',cropBg:false}; }
+function ovDefaults(){ return {style:'solid',color:'#ff3b30',cmap:'hot',cmin:'0',cmax:'1',cthresh:'0.25',cthreshMode:'frac',cthreshTwo:false,cthreshCenter:'0',cmapInvert:false,cmapAbs:false,opacity:'1',vivid:'1',cropBg:false}; }
 function ovRender(){
   const L=$('ovList'); if(!L) return; L.innerHTML='';
   overlays.forEach((o,i)=>{ const d=document.createElement('div'); d.className='ovItem'+(i===selOv?' sel':'');
@@ -3818,6 +3821,7 @@ function ovRender(){
 function ovApplySettings(o){ const s=o.s;
   $('ovName').value=o.name; $('ovStyle').value=s.style; $('ovColor').value=s.color; $('cmap').value=s.cmap;
   $('cmin').value=s.cmin; $('cmax').value=s.cmax; $('cthreshMode').value=s.cthreshMode; $('cthresh').value=s.cthresh;
+  $('cthreshTwo').checked=!!s.cthreshTwo; $('cthreshCenter').value=(s.cthreshCenter!=null?s.cthreshCenter:'0'); $('cthreshHiRow').style.display=s.cthreshTwo?'flex':'none';
   $('cmapInvert').checked=s.cmapInvert; $('cmapAbs').checked=s.cmapAbs;
   $('ovOpacity').value=s.opacity; $('ovOpacityV').textContent=(+s.opacity).toFixed(1);
   $('ovVivid').value=s.vivid||'1'; $('ovVividV').textContent=(+(s.vivid||1)).toFixed(1);
@@ -3828,7 +3832,7 @@ function ovApplySettings(o){ const s=o.s;
 function ovReadEditor(){ if(selOv<0) return; const o=overlays[selOv];
   o.name=$('ovName').value||o.name; overlay.name=o.name;
   o.s={ style:$('ovStyle').value, color:$('ovColor').value, cmap:$('cmap').value, cmin:$('cmin').value, cmax:$('cmax').value,
-    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value, vivid:$('ovVivid').value, cropBg:$('ovCropBg').checked };
+    cthresh:$('cthresh').value, cthreshMode:$('cthreshMode').value, cthreshTwo:$('cthreshTwo').checked, cthreshCenter:$('cthreshCenter').value, cmapInvert:$('cmapInvert').checked, cmapAbs:$('cmapAbs').checked, opacity:$('ovOpacity').value, vivid:$('ovVivid').value, cropBg:$('ovCropBg').checked };
 }
 function ovSelect(i){ if(i<0||i>=overlays.length) return; selOv=i; const o=overlays[i];
   overlay.vals=o.vals||null; overlay.volA=o.vol||null; overlay.volA_grid=o.volGrid||null; overlay.name=o.name; overlay.on=!!o.vals; tfceCache=null;
@@ -3915,6 +3919,8 @@ function initOverlayUI(){
   $('cmapAbs').addEventListener('change', ()=>edited(()=>{ autoRange(); syncThreshRange(); }));
   $('cthreshMode').addEventListener('change', ()=>edited(syncThreshRange));
   $('cthresh').addEventListener('input', ()=>edited());
+  $('cthreshTwo').addEventListener('change', ()=>{ $('cthreshHiRow').style.display=$('cthreshTwo').checked?'flex':'none'; edited(); });
+  $('cthreshCenter').addEventListener('input', ()=>edited());
   $('cmin').addEventListener('change', ()=>edited());
   $('cmax').addEventListener('change', ()=>edited());
   $('ovCropBg').addEventListener('change', ()=>{ edited(); if(typeof updateVolume==='function' && $('volOn') && $('volOn').checked) updateVolume(true); });
@@ -4048,7 +4054,7 @@ function recolorOverlay(){
     let hex=NEUTRAL, active=false, nv=0;
     if(raw!==undefined && isFinite(raw)){
       const v=curVal(raw);
-      if(threshPass(v,lo,span) && (v-lo) > 0){
+      if(threshPass(v,lo,span)){                       // values outside [cmin,cmax] CLAMP to the end colour (below), not drop to base grey
         let n=(v-lo)/span; if(inv) n=1-n; n=Math.max(0,Math.min(1,n));
         let c;
         if(solid){ c=_gray.clone().lerp(ovC, n); }
@@ -4065,7 +4071,13 @@ function recolorOverlay(){
 // threshold: "raw" units (z, etc.) compare the value directly; "frac" = fraction of range
 function threshPass(v, lo, span){
   const t=+$('cthresh').value;
-  if($('cthreshMode').value==='raw') return v >= t;
+  if(t<=0) return true;                                // no threshold → colour every region (out-of-range values clamp to the ends)
+  const raw=$('cthreshMode').value==='raw';
+  if($('cthreshTwo') && $('cthreshTwo').checked){       // TWO-TAILED: hide the near-centre band, show BOTH tails (diverging maps)
+    const c=parseFloat($('cthreshCenter').value)||0, d=Math.abs(v-c);
+    return raw ? d>=t : d >= t*span;
+  }
+  if(raw) return v >= t;
   return (v-lo) >= t*span;
 }
 function threshFrac(){ const s=$('cthresh'),mn=+s.min,mx=+s.max; return mx>mn?(+s.value-mn)/(mx-mn):+s.value; }
@@ -4833,9 +4845,11 @@ window.brainAPI = {
   setView(name){ view(VIEWS[name]||VIEWS.left); },
   // ---- figure-automation helpers (used to script montages, e.g. lateral+medial hemisphere panels) ----
   labels(){ return meshes.map(o=>({id:o.meta.id, hemi:o.meta.hemi, name:o.meta.name, centroid:o.meta.centroid})); },
+  regionColor(id){ const o=meshes.find(m=>m.meta.id===+id); return o? '#'+o.mesh.material.color.getHexString() : null; },
   showOnly(ids){ const S=new Set((ids||[]).map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id) : true; }); requestRender(); },
   showAllRegions(){ meshes.forEach(o=>o.mesh.visible=true); requestRender(); },
   setCamera(p,t){ if(t) controls.target.set(t[0],t[1],t[2]); camera.position.set(p[0],p[1],p[2]); camera.up.set(0,1,0); controls.update(); requestRender(); },
+  setFov(deg){ camera.fov=+deg; camera.updateProjectionMatrix(); requestRender(); return camera.fov; },   // narrow FOV ≈ orthographic → lateral & medial render at the same apparent size (no perspective blow-up)
   // Frame the currently-VISIBLE regions from direction `dir`, fitting the whole thing in view (no clipping). aspect = render w/h.
   fitTo(dir, pad, aspect, forceDist){ pad=pad||1.22; aspect=aspect||(900/680); scene.updateMatrixWorld(true);
     const box=new THREE.Box3(), _b=new THREE.Box3(); let has=false;
@@ -4852,6 +4866,7 @@ window.brainAPI = {
   overlayCount(){ return overlays.length; },
   styleActiveOverlay(s){ const set=(id,v,ev)=>{const e=$(id);if(!e)return;if(e.type==='checkbox')e.checked=v;else e.value=v;e.dispatchEvent(new Event(ev||'change'));};
     if(s.style)set('ovStyle',s.style); if(s.cmap)set('cmap',s.cmap); if('invert'in s)set('cmapInvert',s.invert); if('abs'in s)set('cmapAbs',s.abs);
+    if('cthreshMode'in s)set('cthreshMode',s.cthreshMode); if('twoTailed'in s)set('cthreshTwo',s.twoTailed); if('center'in s)set('cthreshCenter',String(s.center),'input'); if('cthresh'in s)set('cthresh',String(s.cthresh),'input');
     if('cmin'in s)set('cmin',String(s.cmin)); if('cmax'in s)set('cmax',String(s.cmax)); if('base'in s)set('ovBaseColor',s.base,'input'); },
   pbGrid(r,c){ if($('pbRows'))$('pbRows').value=r; if($('pbCols'))$('pbCols').value=c; if(typeof pbRender==='function')pbRender(); },
   pbCapturePanel(i){ if(typeof pbCapture==='function') pbCapture(i); },
