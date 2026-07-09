@@ -943,7 +943,7 @@
 
 <div id="figEditor">
   <div id="feBar">
-    <button class="febtn" id="feClose" title="Close the editor and return to the brain viewer">✕ Close</button>
+    <button class="febtn" id="feClose" title="Close the editor and return to the brain viewer (or press Esc)" style="background:#b3391f;color:#fff;font-weight:700;border-color:#b3391f">✕ Close editor</button>
     <span class="fesep"></span>
     <button class="febtn" id="feAddView" title="Add the current viewer image (3D / slices / mosaic) as a movable picture">＋ View</button>
     <button class="febtn" id="feAddPanels" title="Import every tile from the 🗔 Panels builder">＋ Panels</button>
@@ -5092,6 +5092,10 @@ let pbItems = [];  // per-cell {dataURL,label,cbar} | null
 function pbDims(){ return [Math.max(1,Math.min(12,+$('pbRows').value||1)), Math.max(1,Math.min(12,+$('pbCols').value||1))]; }
 function pbRender(){
   const [rows,cols]=pbDims(); const n=rows*cols;
+  // keep the "Grid" preset dropdown honest — show the real dims even for combos not in the preset list
+  const gsel=$('pbGrid'); if(gsel){ const want=rows+'x'+cols;
+    if(![...gsel.options].some(o=>o.value===want||o.textContent===want)){ const opt=document.createElement('option'); opt.textContent=want; gsel.appendChild(opt); }
+    if(gsel.value!==want) gsel.value=want; }
   while(pbItems.length<n) pbItems.push(null); pbItems.length=n;
   const wrap=$('pbCells'); wrap.style.gridTemplateColumns=`repeat(${cols},1fr)`; wrap.innerHTML='';
   pbItems.forEach((it,i)=>{
@@ -5214,7 +5218,11 @@ function captureViewerCfg(){
     // i.e. a file/csv overlay that currently holds data (o.vals) or is awaiting a relink
     // (o.needsFile). Cleared/empty/stale slots save no path at all.
     overlays: overlays.map(o=>{ const used=(o.kind==='file'||o.kind==='csv') && (!!o.vals || !!o.needsFile);
-      return { name:o.name, kind:o.kind, term:o.term||'', fileName: used ? (o.fileName||'') : '', visible:o.visible!==false, tfce:!!o.tfce, s:{...o.s} }; }) };
+      // Bake per-region values ({roiId:value}) into the cfg for csv/file overlays — they're tiny
+      // (a few hundred numbers) and make each panel/tile self-contained, so restoring a panel or
+      // re-rendering the figure never falls back to lobe coloring for lack of data.
+      return { name:o.name, kind:o.kind, term:o.term||'', fileName: used ? (o.fileName||'') : '', visible:o.visible!==false, tfce:!!o.tfce,
+        vals: ((o.kind==='csv'||o.kind==='file') && o.vals) ? o.vals : null, s:{...o.s} }; }) };
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
@@ -5226,12 +5234,18 @@ function applyViewerCfg(cfg){
   Object.keys(v).forEach(id=>{ if(id==='taskMap') return; setControl(id,v[id]); });   // non-overlay look
   // rebuild the overlay stack
   if(cfg.overlays){
+    // Preserve region values already loaded in the live stack (keyed by name) so restoring a panel
+    // cfg — which carries look/camera but historically not data — doesn't wipe the CSV/file maps and
+    // drop the brain back to lobe coloring.
+    const prevByName={}; overlays.forEach(o=>{ if(o.vals) prevByName[o.name]=o.vals; });
     overlays=[]; selOv=-1;
     cfg.overlays.forEach(oc=>{ const o={ name:oc.name||'Overlay', kind:oc.kind||'task', term:oc.term||'', fileName:oc.fileName||'',
         visible:oc.visible!==false, tfce:!!oc.tfce, vals:null, vol:null, volGrid:null, volStats:null, tfceCache:null,
         s:Object.assign(ovDefaults(), oc.s||{}) };
-      if(o.kind==='task' && o.term && NEURO.terms[o.term]) o.vals=NEURO.terms[o.term];
-      o.needsFile = (o.kind==='file');                          // data loaded later (relink / make_figure)
+      if(oc.vals) o.vals=oc.vals;                                // values baked into the cfg (self-contained)
+      else if(o.kind==='task' && o.term && NEURO.terms[o.term]) o.vals=NEURO.terms[o.term];
+      else if(prevByName[o.name]) o.vals=prevByName[o.name];     // else reuse whatever is already loaded
+      o.needsFile = (o.kind==='file' && !o.vals);                // only needs a file if we still have no data
       overlays.push(o); });
     selOv = (cfg.active!=null && cfg.active>=0 && cfg.active<overlays.length) ? cfg.active : (overlays.length-1);
     if(selOv>=0){ ovSelect(selOv); } else { $('ovEditor').style.display='none'; applyScheme(activeScheme); }
@@ -6145,6 +6159,7 @@ async function openFigEditor(){
     window.feCanvas=feCanvas;   // expose the editor canvas (automation / headless figure export)
     feResize();
     document.addEventListener('keydown',e=>{ if(!$('figEditor').classList.contains('on')) return; const o=feSel();
+      if(e.key==='Escape'){ if(o&&o.isEditing){ o.exitEditing(); } else { $('feClose').click(); } e.preventDefault(); return; }   // Esc = leave the editor
       if((e.key==='Delete'||e.key==='Backspace') && o && !o.isEditing){ feDelSel(); e.preventDefault(); }
       else if((e.metaKey||e.ctrlKey)&&e.key==='c'&&o){ o.clone(c=>feClip=c); }
       else if((e.metaKey||e.ctrlKey)&&e.key==='v'&&feClip){ feClip.clone(c=>{ c.set({left:(c.left||0)+24,top:(c.top||0)+24}); feAddObj(c); }); }
