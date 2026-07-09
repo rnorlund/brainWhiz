@@ -2511,6 +2511,9 @@ async function handleDroppedFile(file, asOverlay){
       alert('"'+file.name+'" looks like a labels file. Drop it TOGETHER with its label .nii on the\nBUILD ATLAS band to name the regions. (For per-region values, use a .csv with a numeric column.)');
     } else if(/\.bwzproj$/.test(n)){
       const p=JSON.parse(await file.text()); await window.brainAPI.loadProject(p);
+      // If the project carries an editor figure, jump straight into the Editor so it's visible
+      // (otherwise the dropped figure sits behind a closed editor and looks like nothing happened).
+      if(p.editor && p.editor.objects && p.editor.objects.length && !$('figEditor').classList.contains('on')){ $('feToggle').click(); }
     } else if(/\.(bwz|json)$/.test(n)){
       await bwzImport(file);
     } else {
@@ -4977,7 +4980,11 @@ window.brainAPI = {
   },
   async loadProject(p){
     if(!p||!p.viewer) return false;
-    if(p.atlas && p.atlas!==ATLAS_ID){ if(confirm(`This project was built on atlas "${p.atlas}". Switch & reload? (then open the project again)`)) location.href=location.pathname+'?atlas='+encodeURIComponent(p.atlas); return false; }
+    const atlasMismatch = p.atlas && p.atlas!==ATLAS_ID;
+    // The panels + editor figure are self-contained baked images, so they load regardless of which
+    // atlas is active. Only the live 3D brains / overlays / tracts need the matching atlas — skip
+    // those on a mismatch (with a non-blocking offer to switch) instead of refusing the whole load.
+    if(!atlasMismatch){
     applyViewerCfg(p.viewer);
     if(p.data){ if(p.data.underlay) this.setUnderlayBytes(p.data.underlay.b64, p.data.underlay.name);
       if(p.data.overlays) for(const k in p.data.overlays){ const ent=p.data.overlays[k]; const ovc=(p.viewer.overlays||[])[+k]||{};
@@ -5001,6 +5008,7 @@ window.brainAPI = {
       tractFX.uPulse.value = t.flow?1:0; updateTractClip(); rebuildBridges();
     }
     if(Array.isArray(p.arcs)){ arcs = p.arcs.map(a=>({i:a.i,j:a.j,startCap:a.startCap,endCap:a.endCap,label:a.label})); rebuildArcs(); buildArcList(); }
+    }  // end atlas-dependent restore
     if(p.grid){ const [r,c]=p.grid.split('x').map(Number); if(r&&$('pbRows'))$('pbRows').value=r; if(c&&$('pbCols'))$('pbCols').value=c; }
     if(p.figure){ const f=p.figure, set=(id,v)=>{ if(v!=null&&$(id)){ $(id).value=v; $(id).dispatchEvent(new Event('input')); } };
       set('pbBrain',f.brain); set('pbTitle',f.titleSize); set('pbCbar',f.colorbarSize); set('pbGap',f.gap);
@@ -5008,6 +5016,7 @@ window.brainAPI = {
     if(p.panels){ pbItems=p.panels.map(it=> it?{label:it.label,cfg:it.cfg,dataURL:it.dataURL,cbar:it.cbar}:null); pbRender(); }
     window._projEditor=p.editor||null; window._projEditorSize=p.editorSize||null;
     if(feCanvas && window._projEditor) feLoadProjectEditor();
+    if(atlasMismatch) projMismatchNote(p.atlas);
     return true;
   }
 };
@@ -6098,6 +6107,25 @@ function feApplyGradient(){ const o=feSel(); if(!o) return;
       coords:{x1:0.5-cx,y1:0.5-cy,x2:0.5+cx,y2:0.5+cy}, colorStops:[{offset:0,color:$('feColor').value},{offset:1,color:$('feGradC2').value}]})); }
   else o.set('fill', $('feColor').value);
   feCanvas.requestRenderAll(); }
+// Non-blocking banner shown when a dropped project's atlas differs from the loaded one. The figure
+// (baked images) is already displayed; this only offers to switch atlas for LIVE 3D re-rendering.
+function projMismatchNote(atlas){
+  const old=document.getElementById('projMismatch'); if(old) old.remove();
+  const d=document.createElement('div'); d.id='projMismatch';
+  d.style.cssText='position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:9500;max-width:560px;'
+    +'background:rgba(20,28,40,.96);border:1px solid #3a4a63;border-radius:12px;padding:12px 16px;color:#dce6f5;'
+    +'font-size:13px;line-height:1.5;box-shadow:0 8px 30px rgba(0,0,0,.5);display:flex;gap:12px;align-items:center';
+  d.innerHTML='<span>✅ Figure loaded — you can edit &amp; export it now. To <b>re-render the 3D brains</b>, '
+    +'this project needs atlas <b>'+atlas+'</b>.</span>';
+  const btn=document.createElement('button'); btn.textContent='Switch atlas';
+  btn.style.cssText='flex:none;background:#2f6fed;color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600';
+  btn.onclick=()=>{ location.href=location.pathname+'?atlas='+encodeURIComponent(atlas); };
+  const x=document.createElement('button'); x.textContent='✕';
+  x.style.cssText='flex:none;background:transparent;color:#9fb3c8;border:0;cursor:pointer;font-size:15px';
+  x.onclick=()=>d.remove();
+  d.appendChild(btn); d.appendChild(x); document.body.appendChild(d);
+  setTimeout(()=>{ if(d.parentNode) d.remove(); }, 12000);
+}
 function feLoadProjectEditor(){ if(!feCanvas||!window._projEditor) return; const sz=window._projEditorSize||{w:1400,h:900};
   feLock=true; feCanvas.setWidth(sz.w); feCanvas.setHeight(sz.h); $('feW').value=sz.w; $('feH').value=sz.h;
   feCanvas.loadFromJSON(window._projEditor, ()=>{ feCanvas.backgroundColor=sz.bg||'#ffffff'; feCanvas.renderAll(); feLock=false; window._projEditor=null; }); }
