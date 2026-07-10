@@ -52,10 +52,11 @@ function ok(name, cond, extra=''){ if(cond){PASS++;} else {FAIL++; FAILURES.push
   // ---- 4) accessibility: UI text size scales the panels, re-insets the canvas, and persists ----
   console.log('\n[4] Text-size control scales the UI, keeps the canvas aligned, and persists');
   await boot(BASE+'?atlas=neuromorph');
-  const base=await p.evaluate(()=>({ sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0) }));
+  const base=await p.evaluate(()=>({ sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0), logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height) }));
   await p.evaluate(()=>{ [...document.querySelectorAll('.uiSizeBtn')].find(b=>b.dataset.uiscale==='1.45').click(); }); await p.waitForTimeout(300);
-  const xl=await p.evaluate(()=>({ scale:getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim(), sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0) }));
+  const xl=await p.evaluate(()=>({ scale:getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim(), sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0), logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height) }));
   ok('XL scales the panels up', parseFloat(xl.scale)===1.45 && xl.sb>base.sb, JSON.stringify(xl));
+  ok('brainWhiz logo stays fixed size regardless of text size', xl.logo===base.logo && base.logo>=38, `base=${base.logo} xl=${xl.logo}`);
   ok('canvas re-insets to the scaled panel (no overlap)', Math.abs(xl.cvL-xl.sb)<=2, `canvasLeft=${xl.cvL} sidebar=${xl.sb}`);
   await boot(BASE+'?atlas=neuromorph');
   const persist=await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim());

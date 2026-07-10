@@ -52,7 +52,14 @@
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:20}
   #topbar .brand{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px;white-space:nowrap}
   #topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
-  #topbar .brandlogo{height:34px;width:34px;border-radius:50%;object-fit:cover;flex:none}
+  /* Brand: logo + wordmark stay a FIXED size regardless of the UI text-size setting (topbar is
+     never scaled by --uiScale) — keeps brainWhiz recognisable at every zoom. */
+  #topbar .brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none;flex:none}
+  #topbar .brandlogo{height:40px;width:40px;border-radius:50%;object-fit:cover;flex:none;
+    box-shadow:0 0 0 1.5px var(--accent,#3b82f6), 0 2px 8px rgba(0,0,0,.4)}
+  #topbar .brandname{font-size:19px;font-weight:600;letter-spacing:-0.2px;color:var(--txt,#e7eef7);white-space:nowrap}
+  #topbar .brandname b{font-weight:800;color:var(--accent,#4b9cff)}
+  @media (max-width:1180px){ #topbar .brandname{display:none} }   /* hide the wordmark when the bar gets tight; logo stays */
   #loader .loaderlogo{width:230px;max-width:62vw;border-radius:18px;margin-bottom:20px;box-shadow:0 8px 40px #000a}
   .tbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;
     padding:5px 9px;cursor:pointer;font-size:12px;white-space:nowrap}
@@ -374,7 +381,9 @@
 <!-- ===== TOP TOOLBAR (most-used: atlas · views · export) ===== -->
 <div id="topbar">
   <button id="navToggle" class="tbtn" title="show / hide controls">☰</button>
-  <img src="brainwhiz_logo.png" class="brandlogo" alt="brainWhiz" title="brainWhiz">
+  <a href="https://rnorlund.github.io/brainWhiz/" class="brand" title="brainWhiz — home" target="_blank" rel="noopener">
+    <img src="brainwhiz_logo.png" class="brandlogo" alt="brainWhiz">
+    <span class="brandname">brain<b>Whiz</b></span></a>
   <select id="atlasSel" class="tbsel" title="atlas"></select>
   <span id="netBadge" class="netbadge" title="connection mode">● online</span>
   <span style="flex:1"></span>
