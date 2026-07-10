@@ -3727,7 +3727,7 @@ function initAtlasPicker(){
     if(a.has&&a.has.rs)tags.push(a.has.rs===2?'RS*':'RS');
     o.textContent = a.name + (tags.length?'  ('+tags.join('·')+')':''); sel.appendChild(o); }
   sel.value=ATLAS_ID;
-  sel.addEventListener('change', e=>{ location.href = location.pathname+'?atlas='+encodeURIComponent(e.target.value); });
+  sel.addEventListener('change', e=>{ carryLook(); location.href = location.pathname+'?atlas='+encodeURIComponent(e.target.value); });
   // populate connectivity modality selector from what this bundle actually has
   const ct=$('connType'); ct.innerHTML='';
   if(CONN && CONN.dti){ const o=document.createElement('option'); o.value='dti';
@@ -3756,6 +3756,8 @@ function capturePreset(){
     p[id] = el.type==='checkbox' ? el.checked : el.value; }
   p._camP = camera.position.toArray().map(v=>+v.toFixed(2));   // save the camera (zoom + angle) too
   p._camT = controls.target.toArray().map(v=>+v.toFixed(2));
+  p._mode = mosaicMode?'mosaic':sliceMode?'slice':'mesh';      // carry the view mode (mesh / slice / mosaic)…
+  p._sliceKind = sliceKind;                                    // …and the slice render kind (voxel / mesh / mesh+vox)
   return p;
 }
 function applyPreset(p){
@@ -3764,16 +3766,25 @@ function applyPreset(p){
     else { el.value=p[id];
       el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }
   }
+  // restore the view mode + slice kind so e.g. "Mesh+vox slices" survives an atlas switch
+  if(p._sliceKind){ sliceKind=p._sliceKind; if(typeof syncSliceCtx==='function') syncSliceCtx(); if(typeof syncKindButtons==='function') syncKindButtons(); }
+  if(p._mode==='slice') setViewMode('slice'); else if(p._mode==='mosaic') setViewMode('mosaic'); else if(p._mode==='mesh') setViewMode('mesh');
   if(p._camP){ camera.position.fromArray(p._camP); controls.target.fromArray(p._camT||[0,0,0]); controls.update(); requestRender(); }
+  if(sliceMode||mosaicMode){ try{ refreshSliceViews(); }catch(e){} }
 }
 // ---- persist the current "look" (all appearance/settings controls) across atlas switches ----
 // Switching atlas reloads the page, so we save the look on unload and re-apply it once the new
 // atlas is ready. Camera is NOT persisted (each atlas gets its own default framing).
 const LOOK_KEY='bwzLook';
 function captureLook(){ return capturePreset(); }   // includes camera (_camP/_camT) so rotation + zoom carry over too
-function saveLook(){ try{ if(meshes.length) localStorage.setItem(LOOK_KEY, JSON.stringify(captureLook())); }catch(e){} }
-function restoreLook(){ if(!meshes.length) return; let s; try{ s=localStorage.getItem(LOOK_KEY); }catch(e){} if(!s) return;
-  try{ applyPreset(JSON.parse(s)); }catch(e){} }
+// The look is carried ONLY across an in-app atlas switch (via sessionStorage, consumed once on the
+// next load). A plain page reload / new tab therefore opens at the DEFAULT look & fit — matching a
+// fresh incognito load. Camera is intentionally dropped so each atlas gets its own default framing.
+const CARRY_KEY='bwCarryLook';
+function carryLook(){ try{ if(meshes.length) sessionStorage.setItem(CARRY_KEY, JSON.stringify(captureLook())); }catch(e){} }
+function restoreLook(){ if(!meshes.length) return; let s; try{ s=sessionStorage.getItem(CARRY_KEY); }catch(e){}
+  try{ sessionStorage.removeItem(CARRY_KEY); }catch(e){}                       // consume once → next fresh reload is default
+  if(!s) return; try{ const o=JSON.parse(s); delete o._camP; delete o._camT; applyPreset(o); }catch(e){} }
 function resetAppearance(){ try{ localStorage.removeItem(LOOK_KEY); }catch(e){}
   for(const id of PRESET_IDS){ const el=$(id); if(!el) continue;
     if(el.type==='checkbox'){ el.checked=el.defaultChecked; el.dispatchEvent(new Event('change')); }
@@ -3781,7 +3792,6 @@ function resetAppearance(){ try{ localStorage.removeItem(LOOK_KEY); }catch(e){}
     else { el.value=el.defaultValue; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); } }
   requestRender();
 }
-window.addEventListener('beforeunload', saveLook);
 if($('resetAppear')) $('resetAppear').addEventListener('click', e=>{ e.preventDefault(); e.stopPropagation(); resetAppearance(); });
 function loadPresets(){ try{ return JSON.parse(localStorage.getItem('brainPresets')||'{}'); }catch(e){ return {}; } }
 function savePresets(s){ localStorage.setItem('brainPresets', JSON.stringify(s)); }
@@ -4034,7 +4044,7 @@ function loadRegionCSV(text, fileName){
     let cand=reg.filter(a=>a.nroi===rowN); if(cand.length!==1 && wideN) cand=reg.filter(a=>a.nroi===wideN);
     const target=cand.length===1?cand[0]:null;
     if(target && target.id!==ATLAS_ID){ try{ sessionStorage.setItem('mwPendingCSV', JSON.stringify({text, name:fileName||'data.csv'})); }catch(e){}
-      if($('ovInfo')) $('ovInfo').textContent=`Switching to ${target.name} to match this CSV…`;
+      carryLook(); if($('ovInfo')) $('ovInfo').textContent=`Switching to ${target.name} to match this CSV…`;
       location.href=location.pathname+'?atlas='+encodeURIComponent(target.id); return; } }
   const vals={}; let matched=0, how;
   // WIDE subjects×regions matrix on the right atlas → show the column means (group average)
@@ -6452,11 +6462,15 @@ function tick(){
     if(edgesOn() && !sliceMode && !mosaicMode){ try{ renderEdges(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
     else if(ssaoOn() && !sliceMode && !mosaicMode){ try{ renderSSAO(); }catch(e){ renderer.setRenderTarget(null); renderer.render(scene,camera); } }
     else renderer.render(scene,camera);
-    if(sliceMode) _sl3dDirty=true;          // 3D scene changed -> the slice-grid thumbnail is now stale
+    if(sliceMode||mosaicMode) _sl3dDirty=true;   // 3D scene changed -> slice/mosaic display is now stale
   }
-  // refresh the slice-grid 3D thumbnail when the 3D look changes (wireframe, rim, shading, …),
-  // throttled so continuous animations (spin/flow/pulse) don't re-render it every frame
-  if(sliceMode && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false; try{ $('sl3d').src=window.brainAPI.renderTo(560,520,true,1.4); }catch(e){} } }
+  // Any setting that changed the 3D (visibility, hemisphere, colors, look…) also refreshes the
+  // slice/mosaic canvases + the slice-grid 3D thumbnail — so changes show without a manual click.
+  // Throttled so continuous animations (spin/flow/pulse) don't re-render every frame.
+  // Safe from feedback loops: sliceRenderAll/renderMosaic never call requestRender.
+  if((sliceMode||mosaicMode) && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false;
+    if(sliceMode){ try{ $('sl3d').src=window.brainAPI.renderTo(560,520,true,1.4); }catch(e){} }
+    try{ refreshSliceViews(); }catch(e){} } }
 }
 tick();
 </script>
