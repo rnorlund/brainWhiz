@@ -176,12 +176,14 @@ const SPECS = [
   console.log('\n[E] Tooltips — every visible control in the side panels has a title');
   await page.evaluate(()=>{ if(document.getElementById('feClose')) document.getElementById('feClose').click(); });  // leave editor
   await page.waitForTimeout(300);
-  await page.evaluate(()=>{ document.querySelectorAll('#sidebar details').forEach(d=>d.open=true); });  // expand all sections to surface dynamic controls
+  await page.evaluate(()=>{ document.querySelectorAll('#sidebar details, #sidebarR details').forEach(d=>d.open=true); });  // expand all sections incl. appearance sub-categories
   await page.waitForTimeout(500);
   const tips = await page.evaluate(()=>{ const sel='#sidebar input, #sidebar select, #sidebar button, #sidebar textarea, #sidebarR input, #sidebarR select, #sidebarR button, #sidebarR textarea';
     const els=[...document.querySelectorAll(sel)].filter(e=>e.type!=='hidden' && e.offsetParent!==null);
-    return { total:els.length, missing:els.filter(e=>!(e.title&&e.title.trim())).map(e=>e.id||e.className||e.tagName) }; });
+    return { total:els.length, missing:els.filter(e=>!(e.title&&e.title.trim())).map(e=>e.id||e.className||e.tagName),
+             appearanceSubcats:document.querySelectorAll('#accAppearance .sub>summary').length }; });
   ok(`tooltips: all ${tips.total} visible controls have one`, tips.missing.length===0, tips.missing.slice(0,12).join(', '));
+  ok('Appearance panel is split into collapsible sub-categories', tips.appearanceSubcats>=4, 'subcats='+tips.appearanceSubcats);
   console.log(`\n[C/D/E] editor errors: ${errs.length?errs.slice(0,3).join(' | '):'none'}`);
 
   await browser.close();

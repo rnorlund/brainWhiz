@@ -58,7 +58,8 @@ function ok(name, cond, extra=''){ if(cond){PASS++;} else {FAIL++; FAILURES.push
     logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height),
     tbH:Math.round(document.getElementById('topbar').getBoundingClientRect().height),
     sbTop:Math.round(document.getElementById('sidebar').getBoundingClientRect().top),
-    tbBottom:Math.round(document.getElementById('topbar').getBoundingClientRect().bottom) }));
+    tbBottom:Math.round(document.getElementById('topbar').getBoundingClientRect().bottom),
+    hudLeft:Math.round(parseFloat((document.getElementById('hud')||{}).style?.left)||0) }));
   const base=await snap();
   await p.evaluate(()=>{ [...document.querySelectorAll('.uiSizeBtn')].find(b=>b.dataset.uiscale==='1.45').click(); }); await p.waitForTimeout(300);
   const xl=await snap();
@@ -66,6 +67,7 @@ function ok(name, cond, extra=''){ if(cond){PASS++;} else {FAIL++; FAILURES.push
   ok('XL scales the TOP TOOLBAR too', xl.tbH>base.tbH+6, `tbH ${base.tbH}→${xl.tbH}`);
   ok('sidebar sits flush under the (taller) toolbar — no gap', Math.abs(xl.sbTop-xl.tbBottom)<=2, `sbTop=${xl.sbTop} tbBottom=${xl.tbBottom}`);
   ok('brainWhiz logo stays fixed size regardless of text size', xl.logo===base.logo && base.logo>=38, `base=${base.logo} xl=${xl.logo}`);
+  ok('region-label HUD clears the widened sidebar (not hidden behind it)', xl.hudLeft>=xl.sb, `hudLeft=${xl.hudLeft} sidebar=${xl.sb}`);
   ok('canvas re-insets to the scaled panel (no overlap)', Math.abs(xl.cvL-xl.sb)<=2, `canvasLeft=${xl.cvL} sidebar=${xl.sb}`);
   await boot(BASE+'?atlas=neuromorph');
   const persist=await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim());

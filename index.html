@@ -101,6 +101,10 @@
   #sliceCtl input[type=range]{flex:1;accent-color:var(--accent)}
   #sliceCtl .seg button{font-size:10px;padding:2px 7px}
   #sliceCtl .seg button.on{background:var(--accent);color:#001;border-color:var(--accent)}
+  /* Voxels / Regions / Mesh+vox is the PRIMARY choice in Slices view — make it big & full-width */
+  #sliceCtl #slKindRow{gap:6px;margin:2px 0 7px}
+  #sliceCtl #slKindRow button{flex:1;font-size:13px;padding:10px 6px;font-weight:600;border-radius:8px}
+  #sliceCtl #slKindRow button.on{box-shadow:0 0 0 1px var(--accent) inset}
   .tbsel{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px;width:auto;max-width:200px}
   .tbsep{width:1px;height:24px;background:var(--line)}
   .tbmuted{color:var(--muted);font-size:11px}
@@ -351,8 +355,6 @@
           <span style="color:var(--muted)">X</span><input type="range" id="slPosX" min="-90" max="90" step="1" value="0" style="flex:1">
           <span style="color:var(--muted)">Y</span><input type="range" id="slPosY" min="-126" max="90" step="1" value="0" style="flex:1">
           <span style="color:var(--muted)">Z</span><input type="range" id="slPosZ" min="-72" max="108" step="1" value="0" style="flex:1"></div>
-        <div class="row"><span style="flex:1"></span>
-          <label class="toggle"><input type="checkbox" id="slCross" checked> crosshair</label></div>
       </div>
       <div id="mosaicCtl" style="display:none">
         <div class="row seg"><label>Plane</label>
@@ -547,83 +549,96 @@
   <details class="acc" id="accAppearance" open><summary><span class="chev">▸</span>✨ Appearance<button class="sm" id="resetAppear" title="Reset appearance / all settings to defaults (also clears the saved look)" style="float:right;margin:-2px 0 0 0;padding:1px 7px">↺ Reset</button></summary><div class="accb">
     <div class="ctl" id="figZoomRow" style="display:none"><div class="lab"><span title="Zoom of each brain within its figure panel — bigger = brains fill more of each tile. Applies to the whole figure in the Editor.">Figure brain size</span><span id="figZoomV">1.00×</span></div>
       <input type="range" id="figZoom" min="0.6" max="2" step="0.05" value="1"></div>
-    <div class="row"><label>Color scheme</label>
-      <select id="scheme">
-        <option value="lobe">By lobe / structure</option>
-        <option value="hemi">By hemisphere</option>
-        <option value="rainbow">Rainbow (by id)</option>
-        <option value="random">Random</option>
-        <option value="single">Single color</option>
-      </select>
-      <button id="applyScheme" class="sm" title="Re-apply">↻</button></div>
-    <div class="row" id="singleRow" style="display:none"><label>Color</label><input type="color" id="singleColor" value="#9aa7bd"></div>
-    <div class="ctl"><div class="lab"><span>All opacity</span><span id="opVal">1.00</span></div>
-      <input type="range" id="opacity" min="0.1" max="1" step="0.01" value="1"></div>
-    <div class="ctl"><div class="lab"><span>Opacity · colored</span><span id="coloredOpVal"></span></div>
-      <input type="range" id="coloredOp" min="0" max="1" step="0.02" value="1"></div>
-    <div class="ctl"><div class="lab"><span>Opacity · gray</span><span id="grayOpVal"></span></div>
-      <input type="range" id="grayOp" min="0" max="1" step="0.02" value="1"></div>
-    <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
-      <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
-    <div class="row"><label class="toggle" title="Fade the VISIBLE uncolored/inactive regions to a faint shell (only affects regions that are toggled on)"><input type="checkbox" id="glass"> 🪟 Glass: fade uncolored regions</label></div>
-    <div class="row"><label class="toggle" title="Whole-brain translucent shell as anatomical context — independent of which regions are toggled on. Use it to show a few highlighted regions + arcs 'inside' a glass brain."><input type="checkbox" id="shellOn"> 🫧 Glass brain shell (context)</label>
-      <input type="color" id="shellColor" value="#aebfd4" title="Shell color"></div>
-    <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
-      <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
-    <div class="row"><label class="toggle" title="Build the shell from the MNI152 template (a complete brain incl. cerebellum & brainstem) instead of the current atlas — best for enclosing a volume render whose signal extends into cerebellum/subcortex that cortical atlases don't cover"><input type="checkbox" id="shellMNI"> 🧠 Whole-brain shell (MNI, incl. cerebellum)</label></div>
-    <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
-      <input type="range" id="smooth" min="0" max="50" step="1" value="4"></div>
-    <div class="row"><label>Surface</label>
-      <select id="surfStyle">
-        <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
-        <option>Checkerboard</option><option>Stripes</option><option>Grid lines</option><option>Dots</option><option>Hatch</option>
-        <option>Cross-hatch</option><option>Bricks</option><option>Waves</option><option>Concentric</option><option>Lattice</option>
-      </select></div>
-    <div class="row"><label title="How pattern cells are rendered: darkened, or cut out entirely (holes through the mesh)">Pattern fill</label>
-      <select id="patMode"><option value="0">Darken cells</option><option value="1">Cut out cells (holes)</option></select></div>
-    <div class="row"><label title="Lighting model for the mesh surface">Shading</label>
-      <select id="shading">
-        <option>Standard</option><option>Matcap</option><option>Cartoon</option>
-        <optgroup label="Lighting"><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Phong</option><option>Metal</option><option>Anisotropic</option><option>Hemispheric</option></optgroup>
-        <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
-        <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option><option>Hatching</option><option>Hologram</option></optgroup>
-        <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
-    <div class="row"><label title="Drag any image (or a matcap/lit-sphere PNG) onto the brain — or pick one here — to wear it as a material (Unity-style). Matcap images give the most 'material' look.">🎨 Custom material</label>
-      <button class="sm" id="matImgBtn" title="Load an image as a matcap material applied to the brain">＋ Drop / load image…</button>
-      <input type="file" id="matImgFile" accept="image/*" style="display:none"></div>
-    <div class="row"><label title="Constant-width black ink outline around the brain (inverted-hull) — composes with any shading/material">✒ Ink outline</label>
-      <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
-    <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
-      <input type="range" id="outlineW" min="0.5" max="6" step="0.5" value="2"></div>
-    <div class="row"><label title="Constant-width black outline of every region/sulcus/edge, screen-space — stays the SAME thickness no matter how you rotate the brain (mesh view)">✑ Edge ink (constant width)</label>
-      <label class="toggle"><input type="checkbox" id="edgeOn"> on</label></div>
-    <div class="ctl" id="edgeRow1" style="display:none"><div class="lab"><span>Edge width (px)</span><span id="edgeWV">1.5</span></div>
-      <input type="range" id="edgeW" min="0.5" max="5" step="0.5" value="1.5"></div>
-    <div class="ctl" id="edgeRow2" style="display:none"><div class="lab"><span>Edge strength</span><span id="edgeStrV">1.0</span></div>
-      <input type="range" id="edgeStr" min="0" max="1" step="0.05" value="1"></div>
-    <div class="row"><label title="Screen-space ambient occlusion — real cavity/sulcal depth darkening (mesh view)">🌑 Ambient occlusion (SSAO)</label>
-      <label class="toggle"><input type="checkbox" id="ssaoOn"> on</label></div>
-    <div class="ctl" id="ssaoRow1" style="display:none"><div class="lab"><span>SSAO strength</span><span id="ssaoIntV">1.0</span></div>
-      <input type="range" id="ssaoInt" min="0" max="2.5" step="0.1" value="1"></div>
-    <div class="ctl" id="ssaoRow2" style="display:none"><div class="lab"><span>SSAO radius</span><span id="ssaoRadiusV">1.0</span></div>
-      <input type="range" id="ssaoRadius" min="0.2" max="3" step="0.1" value="1"></div>
-    <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
-      <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
-    <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
-      <input type="range" id="patScale" min="0.01" max="2.5" step="0.01" value="0.08"></div>
-    <div class="ctl"><div class="lab"><span>Pattern strength</span><span id="patStrVal"></span></div>
-      <input type="range" id="patStr" min="0" max="1" step="0.02" value="0.55"></div>
-    <div class="ctl"><div class="lab"><span title="Rotate the pattern — e.g. tilt the hatch / stripe angle">Pattern tilt</span><span id="patTiltV">0°</span></div>
-      <input type="range" id="patTilt" min="0" max="180" step="1" value="0"></div>
-    <div class="ctl"><div class="lab"><span>Vividness</span><span id="vividVal"></span></div>
-      <input type="range" id="vivid" min="1" max="2.5" step="0.05" value="1.3"></div>
-    <div class="ctl"><div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
-      <input type="range" id="rim" min="0" max="1.5" step="0.05" value="0.3"></div>
-    <div class="row"><label>Rim color</label><input type="color" id="rimColor" value="#ffffff"></div>
-    <div class="row"><label>Background</label><input type="color" id="bg" value="#000000">
-      <button class="sm" id="bgWhite" title="white">▢</button>
-      <button class="sm" id="bgBlack" title="black">▣</button></div>
-    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+
+    <details class="sub" open><summary><span class="chev">▸</span>🎨 Color &amp; opacity</summary><div class="subb">
+      <div class="row"><label>Color scheme</label>
+        <select id="scheme">
+          <option value="lobe">By lobe / structure</option>
+          <option value="hemi">By hemisphere</option>
+          <option value="rainbow">Rainbow (by id)</option>
+          <option value="random">Random</option>
+          <option value="single">Single color</option>
+        </select>
+        <button id="applyScheme" class="sm" title="Re-apply">↻</button></div>
+      <div class="row" id="singleRow" style="display:none"><label>Color</label><input type="color" id="singleColor" value="#9aa7bd"></div>
+      <div class="ctl"><div class="lab"><span>All opacity</span><span id="opVal">1.00</span></div>
+        <input type="range" id="opacity" min="0.1" max="1" step="0.01" value="1"></div>
+      <div class="ctl"><div class="lab"><span>Opacity · colored</span><span id="coloredOpVal"></span></div>
+        <input type="range" id="coloredOp" min="0" max="1" step="0.02" value="1"></div>
+      <div class="ctl"><div class="lab"><span>Opacity · gray</span><span id="grayOpVal"></span></div>
+        <input type="range" id="grayOp" min="0" max="1" step="0.02" value="1"></div>
+      <div class="ctl"><div class="lab"><span>Color cutoff</span><span id="satCutVal"></span></div>
+        <input type="range" id="satCut" min="0" max="0.6" step="0.01" value="0.22"></div>
+    </div></details>
+
+    <details class="sub"><summary><span class="chev">▸</span>🧊 Surface &amp; shading</summary><div class="subb">
+      <div class="ctl"><div class="lab"><span>🫧 Mesh smoothing</span><span id="smoothVal">4</span></div>
+        <input type="range" id="smooth" min="0" max="50" step="1" value="4"></div>
+      <div class="row"><label>Surface</label>
+        <select id="surfStyle">
+          <option>Solid</option><option>Flat shaded</option><option>Wireframe</option><option>Wireframe + fill</option>
+          <option>Checkerboard</option><option>Stripes</option><option>Grid lines</option><option>Dots</option><option>Hatch</option>
+          <option>Cross-hatch</option><option>Bricks</option><option>Waves</option><option>Concentric</option><option>Lattice</option>
+        </select></div>
+      <div class="row"><label title="How pattern cells are rendered: darkened, or cut out entirely (holes through the mesh)">Pattern fill</label>
+        <select id="patMode"><option value="0">Darken cells</option><option value="1">Cut out cells (holes)</option></select></div>
+      <div class="row"><label title="Lighting model for the mesh surface">Shading</label>
+        <select id="shading">
+          <option>Standard</option><option>Matcap</option><option>Cartoon</option>
+          <optgroup label="Lighting"><option>Gooch</option><option>Matte</option><option>Glossy</option><option>Phong</option><option>Metal</option><option>Anisotropic</option><option>Hemispheric</option></optgroup>
+          <optgroup label="Material FX"><option>Subsurface</option><option>Velvet</option><option>Pearl</option><option>Chrome</option><option>Glass</option><option>Wax</option><option>Clay</option><option>Iridescent</option></optgroup>
+          <optgroup label="Imaging / NPR"><option>X-ray</option><option>Curvature</option><option>Curvature 2-tone</option><option>Ambient occlusion</option><option>Normals</option><option>Blueprint</option><option>Contour</option><option>Spectral</option><option>Thermal</option><option>Hatching</option><option>Hologram</option></optgroup>
+          <optgroup label="Materials (matcap)"><option value="matcap:Clay">Clay</option><option value="matcap:Skin">Skin</option><option value="matcap:Pearl">Pearl</option><option value="matcap:Jade">Jade</option><option value="matcap:Bronze">Bronze</option><option value="matcap:Chrome">Chrome</option><option value="matcap:Gold">Gold</option><option value="matcap:Glass">Glass</option><option value="matcap:Wax">Wax</option><option value="matcap:Basalt">Basalt</option><option value="matcap:Copper">Copper</option><option value="matcap:Pewter">Pewter</option><option value="matcap:Ruby">Ruby</option><option value="matcap:Emerald">Emerald</option><option value="matcap:Sapphire">Sapphire</option><option value="matcap:Porcelain">Porcelain</option></optgroup></select></div>
+      <div class="row"><label title="Drag any image (or a matcap/lit-sphere PNG) onto the brain — or pick one here — to wear it as a material (Unity-style). Matcap images give the most 'material' look.">🎨 Custom material</label>
+        <button class="sm" id="matImgBtn" title="Load an image as a matcap material applied to the brain">＋ Drop / load image…</button>
+        <input type="file" id="matImgFile" accept="image/*" style="display:none"></div>
+      <div class="ctl"><div class="lab"><span>Wire thickness</span><span id="wireWVal"></span></div>
+        <input type="range" id="wireWidth" min="0.3" max="6" step="0.1" value="1.2"></div>
+      <div class="ctl"><div class="lab"><span>Pattern scale</span><span id="patScaleVal"></span></div>
+        <input type="range" id="patScale" min="0.01" max="2.5" step="0.01" value="0.08"></div>
+      <div class="ctl"><div class="lab"><span>Pattern strength</span><span id="patStrVal"></span></div>
+        <input type="range" id="patStr" min="0" max="1" step="0.02" value="0.55"></div>
+      <div class="ctl"><div class="lab"><span title="Rotate the pattern — e.g. tilt the hatch / stripe angle">Pattern tilt</span><span id="patTiltV">0°</span></div>
+        <input type="range" id="patTilt" min="0" max="180" step="1" value="0"></div>
+    </div></details>
+
+    <details class="sub"><summary><span class="chev">▸</span>✒ Outlines &amp; depth</summary><div class="subb">
+      <div class="row"><label title="Constant-width black ink outline around the brain (inverted-hull) — composes with any shading/material">✒ Ink outline</label>
+        <label class="toggle"><input type="checkbox" id="outlineOn"> on</label></div>
+      <div class="ctl"><div class="lab"><span>Outline width</span><span id="outlineWV">2</span></div>
+        <input type="range" id="outlineW" min="0.5" max="6" step="0.5" value="2"></div>
+      <div class="row"><label title="Constant-width black outline of every region/sulcus/edge, screen-space — stays the SAME thickness no matter how you rotate the brain (mesh view)">✑ Edge ink (constant width)</label>
+        <label class="toggle"><input type="checkbox" id="edgeOn"> on</label></div>
+      <div class="ctl" id="edgeRow1" style="display:none"><div class="lab"><span>Edge width (px)</span><span id="edgeWV">1.5</span></div>
+        <input type="range" id="edgeW" min="0.5" max="5" step="0.5" value="1.5"></div>
+      <div class="ctl" id="edgeRow2" style="display:none"><div class="lab"><span>Edge strength</span><span id="edgeStrV">1.0</span></div>
+        <input type="range" id="edgeStr" min="0" max="1" step="0.05" value="1"></div>
+      <div class="row"><label title="Screen-space ambient occlusion — real cavity/sulcal depth darkening (mesh view)">🌑 Ambient occlusion (SSAO)</label>
+        <label class="toggle"><input type="checkbox" id="ssaoOn"> on</label></div>
+      <div class="ctl" id="ssaoRow1" style="display:none"><div class="lab"><span>SSAO strength</span><span id="ssaoIntV">1.0</span></div>
+        <input type="range" id="ssaoInt" min="0" max="2.5" step="0.1" value="1"></div>
+      <div class="ctl" id="ssaoRow2" style="display:none"><div class="lab"><span>SSAO radius</span><span id="ssaoRadiusV">1.0</span></div>
+        <input type="range" id="ssaoRadius" min="0.2" max="3" step="0.1" value="1"></div>
+    </div></details>
+
+    <details class="sub"><summary><span class="chev">▸</span>🪟 Glass &amp; shell</summary><div class="subb">
+      <div class="row"><label class="toggle" title="Fade the VISIBLE uncolored/inactive regions to a faint shell (only affects regions that are toggled on)"><input type="checkbox" id="glass"> 🪟 Glass: fade uncolored regions</label></div>
+      <div class="row"><label class="toggle" title="Whole-brain translucent shell as anatomical context — independent of which regions are toggled on. Use it to show a few highlighted regions + arcs 'inside' a glass brain."><input type="checkbox" id="shellOn"> 🫧 Glass brain shell (context)</label>
+        <input type="color" id="shellColor" value="#aebfd4" title="Shell color"></div>
+      <div class="ctl"><div class="lab"><span title="Opacity of the whole-brain context shell">Shell opacity</span><span id="shellOpV">0.10</span></div>
+        <input type="range" id="shellOp" min="0.02" max="0.6" step="0.01" value="0.1"></div>
+      <div class="row"><label class="toggle" title="Build the shell from the MNI152 template (a complete brain incl. cerebellum & brainstem) instead of the current atlas — best for enclosing a volume render whose signal extends into cerebellum/subcortex that cortical atlases don't cover"><input type="checkbox" id="shellMNI"> 🧠 Whole-brain shell (MNI, incl. cerebellum)</label></div>
+    </div></details>
+
+    <details class="sub"><summary><span class="chev">▸</span>💡 Lighting &amp; glow</summary><div class="subb">
+      <div class="ctl"><div class="lab"><span>Vividness</span><span id="vividVal"></span></div>
+        <input type="range" id="vivid" min="1" max="2.5" step="0.05" value="1.3"></div>
+      <div class="ctl"><div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
+        <input type="range" id="rim" min="0" max="1.5" step="0.05" value="0.3"></div>
+      <div class="row"><label>Rim color</label><input type="color" id="rimColor" value="#ffffff"></div>
+      <div class="row"><label>Background</label><input type="color" id="bg" value="#000000">
+        <button class="sm" id="bgWhite" title="white">▢</button>
+        <button class="sm" id="bgBlack" title="black">▣</button></div>
       <div class="row"><label class="toggle" title="A soft glow radiating outward from the brain (Unity-style bloom). Just for fun."><input type="checkbox" id="auraOn"> ✨ Aura glow</label>
         <input type="color" id="auraColor" value="#5db0ff" title="Aura color">
         <label class="toggle" title="Rainbow: cycle the aura color automatically" style="margin-left:2px"><input type="checkbox" id="auraRainbow"> 🌈</label></div>
@@ -633,7 +648,7 @@
         <input type="range" id="auraIntensity" min="0" max="2" step="0.05" value="0.85"></div>
       <div class="ctl"><div class="lab"><span title="Pulsing/breathing speed (0 = steady)">Aura pulse</span><span id="auraPulseV">0.0</span></div>
         <input type="range" id="auraPulse" min="0" max="4" step="0.1" value="0"></div>
-    </div>
+    </div></details>
   </div></details>
 
   <details class="acc"><summary><span class="chev">▸</span>◯ Regions</summary><div class="accb">
@@ -1296,7 +1311,7 @@ function colorFor(scheme, m, idx){
   switch(scheme){
     case 'lobe':   return LOBE_COLORS[m.lobe] || '#888';
     case 'hemi':   return HEMI_COLORS[m.hemi] || '#888';
-    case 'rainbow':return hslHex((m.id/189)%1, 0.6, 0.55);
+    case 'rainbow':return hslHex(((idx!=null?idx:m.id)/(meshes.length||189))%1, 0.6, 0.55);   // even spread across regions
     case 'random': return hslHex(seededRand(m.id), 0.55, 0.55);
     case 'single': return document.getElementById('singleColor').value;
   }
@@ -1316,8 +1331,12 @@ function setSwatch(node, hex){
 function applyScheme(scheme){
   activeScheme = scheme;
   overlay.on = false;                              // categorical scheme clears overlay
+  // "By lobe" needs lobe metadata; some atlases (e.g. Brodmann) have none (all "Other"), which
+  // would paint the whole brain one color — fall back to per-region colors so it's multicolored.
+  let eff = scheme;
+  if(scheme==='lobe'){ const lobes=new Set(meshes.map(o=>(o.meta.lobe||'Other'))); if(lobes.size<=1) eff='rainbow'; }
   meshes.forEach((o,i)=>{
-    const hex = colorFor(scheme, o.meta, i);
+    const hex = colorFor(eff, o.meta, i);
     o.meta.color = hex;
     o.mesh.material.color.set(hex);
     setSwatch(o.meta.node, hex);
@@ -4643,6 +4662,7 @@ function resize(){
   for(const vid of ['sliceView','mosaicView']){ const q=$(vid); if(q){ q.style.left=sbL+'px'; q.style.top=top+'px'; q.style.width=w+'px'; q.style.height=h+'px'; } }
   const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+pbW+16)+'px';                    // keep widgets clear of right panel + builder
   const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+pbW+12)+'px';
+  const hud=$('hud'); if(hud){ hud.style.left=(sbL+12)+'px'; hud.style.top=(top+8)+'px'; }   // region-label popup clears the (text-size-scaled) sidebar + toolbar
   requestRender();
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
@@ -4723,7 +4743,7 @@ const CONTROL_TIPS = {
   tractSpotlight:'Spotlight the hovered tract, dim the rest', tractMaskR:'Tract clipping mask radius (mm)',
   tractSmooth:'Tract mesh smoothing', tractExplode:'Explode the tracts outward',
   // Axes / camera / animation
-  axisLines:'Show the L-R / A-P / S-I axis lines', axisLetters:'Show the L/R/A/P/S/I axis letters',
+  axisLines:'Show the L-R / A-P / S-I axis lines (and the crosshair on the slices)', axisLetters:'Show the L/R/A/P/S/I axis letters',
   axisColor:'Axis line & label color', axisWidth:'Axis line thickness', axisSize:'Axis label size',
   axisExplode:'How far the axis labels sit from the brain',
   explode:'Explode the regions outward from the center', distance:'Camera distance / zoom',
@@ -5810,7 +5830,7 @@ function renderMeshSlices(){
       ctx.save(); ctx.clip(unionPath,'evenodd'); ctx.drawImage(ovImg, ox, oy); ctx.restore();
       if(bw>0){ ctx.lineWidth=bw; ctx.strokeStyle=bcol; ctx.lineJoin='round'; ctx.stroke(unionPath); } }   // region borders on top
     drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
-    if($('slCross').checked && $('axisLines').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
+    if($('axisLines').checked){ const c=crossInplane(plane), cx=toX(c[0]), cy=toY(c[1]);
       ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
     cv._plane={plane,ox,oy,dw,dh,hmin:win.hmin,hr:win.hr,vmax:win.vmax,vr:win.vr,mesh:true};
@@ -5951,7 +5971,7 @@ function renderPlane(cv, plane){
   ctx.putImageData(img,ox,oy);
   const toX=h=>ox+((h-hmin)/hr)*dw, toY=v=>oy+((vmax-v)/vr)*dh;
   drawTracts(ctx, plane, toX, toY, plane==='sag'?sliceMM[0]:plane==='cor'?sliceMM[1]:sliceMM[2]);
-  if($('slCross').checked && $('axisLines').checked){ const c=crossInplane(plane);
+  if($('axisLines').checked){ const c=crossInplane(plane);
     const cx=toX(c[0]), cy=toY(c[1]);
     ctx.strokeStyle='rgba(93,176,255,.6)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(cx,oy); ctx.lineTo(cx,oy+dh); ctx.moveTo(ox,cy); ctx.lineTo(ox+dw,cy); ctx.stroke(); }
@@ -6084,7 +6104,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
   if(vp.z<=1.001){ vp.z=1; vp.px=0; vp.py=0; }           // snap back to full view
   sliceRenderAll(); }
 (function initSliceUI(){
-  $('slCross').addEventListener('change', sliceRenderAll);
+  // (slice crosshair is governed by the "Axis lines" toggle under View & motion — no separate checkbox)
   $('modeMesh').addEventListener('click', ()=>setViewMode('mesh'));
   $('modeSlice').addEventListener('click', ()=>setViewMode('slice'));
   $('modeMosaic').addEventListener('click', ()=>setViewMode('mosaic'));
@@ -6200,7 +6220,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     slKindVox:'Slice view: voxel heatmap of the loaded stat map on the MNI template', slKindMesh:'Slice view: thin cross-section of the colored 3D regions', slKindMeshVox:'Slice view: region cross-sections with the stat map painted voxelwise inside them',
     slPosX:'Move the slice along left↔right (X)', slPosY:'Move the slice along front↔back (Y)', slPosZ:'Move the slice along bottom↔top (Z)',
     slRaw:'Threshold the raw stat values', slTfce:'Threshold-Free Cluster Enhancement — highlights spatially-supported clusters', slThresh:'Slice overlay threshold (drag to hide weaker values)',
-    slCmap:'Slice heatmap colormap', slCross:'Show the crosshair on the slices',
+    slCmap:'Slice heatmap colormap',
     pbGrid:'Quick grid presets', pbRows:'Number of panel rows (1–12)', pbCols:'Number of panel columns (1–12)', pbClose:'Close the panel builder',
     pb6view:'Auto-fill a 2×3 of the six standard views', pbExport:'Export the figure (PNG / PDF / SVG)', pbScale:'Export resolution multiplier (higher = sharper)', pbFormat:'Export file format',
     pbSaveBwz:'Save this figure as a portable .bwz recipe', pbLoadBwz:'Load a .bwz figure recipe', pbClear:'Clear all tiles',
