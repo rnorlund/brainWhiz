@@ -139,6 +139,31 @@ const SPECS = [
   ok('editor: "Updating…" chip appears then clears', chip.exists && chip.hiddenAfter, JSON.stringify(chip));
   console.log(`\n[B] editor errors: ${errs.length?errs.slice(0,3).join(' | '):'none'}`);
 
+  // ============ [C] Multi-select styling applies to ALL selected brains ============
+  console.log('\n[C] Editor — outline/shadow apply to every brain in a multi-selection');
+  const ms = await page.evaluate(()=>{ const c=window.feCanvas; const panels=c.getObjects().filter(o=>o._panel!=null).slice(0,2);
+    if(panels.length<2) return {err:'need 2 panels', n:panels.length};
+    const sel=new fabric.ActiveSelection(panels,{canvas:c}); c.setActiveObject(sel); c.requestRenderAll();
+    const S=(id,v,ev)=>{const e=document.getElementById(id);if(e.type==='checkbox')e.checked=(v===true);else e.value=String(v);e.dispatchEvent(new Event(ev||'input',{bubbles:true}));};
+    S('feStrokeC','#00ff00'); S('feStrokeW','7'); S('feShadow',true); S('feShBlur','12'); S('feShDist','8');
+    return { type:c.getActiveObject().type, after:panels.map(o=>({sw:o.strokeWidth, stroke:(o.stroke||'').toLowerCase(), shadow:!!o.shadow})) }; });
+  ok('multi-select is an activeSelection', ms.type==='activeSelection', JSON.stringify(ms));
+  ok('outline applies to ALL selected brains', ms.after && ms.after.every(a=>a.sw===7 && a.stroke==='#00ff00'), JSON.stringify(ms.after));
+  ok('shadow applies to ALL selected brains', ms.after && ms.after.every(a=>a.shadow), JSON.stringify(ms.after));
+
+  // ============ [D] Fit-to-window: whole figure fits, export stays full-res ============
+  console.log('\n[D] Editor — fit-to-window scales display only (export stays full resolution)');
+  const fit = await page.evaluate(async ()=>{ const set=(id,v)=>{const e=document.getElementById(id);e.value=String(v);e.dispatchEvent(new Event('change',{bubbles:true}));};
+    set('feW',2400); set('feH',1600); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const c=window.feCanvas, el=c.getElement(), stage=document.getElementById('feStage');
+    const cssW=parseFloat(el.style.width), cssH=parseFloat(el.style.height);
+    const exportLen=(window.brainAPI.editorPNG(1)||'').length;
+    return { logicalW:c.getWidth(), cssW:Math.round(cssW), stageW:stage.clientWidth, stageH:stage.clientHeight, cssH:Math.round(cssH), exportLen,
+      fits: cssW<=stage.clientWidth+1 && cssH<=stage.clientHeight+1 }; });
+  ok('fit: whole figure fits inside the stage', fit.fits, JSON.stringify(fit));
+  ok('fit: logical/backstore stays full-res (export not shrunk)', fit.logicalW===2400 && fit.exportLen>1000, JSON.stringify(fit));
+  console.log(`\n[C/D] editor errors: ${errs.length?errs.slice(0,3).join(' | '):'none'}`);
+
   await browser.close();
   console.log(`\n──────── CONTROL RESULTS: ${PASS} passed, ${FAIL} failed ────────`);
   if(FAIL){ console.log('DEAD/broken controls:'); FAILURES.forEach(f=>console.log('  • '+f)); process.exit(1); }

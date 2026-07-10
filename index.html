@@ -64,7 +64,8 @@
   #figEditor.on{display:flex}
   body.feopen #sidebarR{z-index:62;box-shadow:-8px 0 24px rgba(0,0,0,.5)}   /* keep the appearance toolbar visible/usable beside the open Editor */
   body.feopen #sidebarR .grp{cursor:default}
-  #feBar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  #feBar{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;justify-content:space-between;padding:7px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  #feBar .fegrp{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}   /* keep related controls together; groups spread across the bar */
   .febtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
   .febtn:hover{border-color:var(--accent)}
   .febtn.active{background:#19c37d;color:#06281a;border-color:#19c37d;font-weight:600}
@@ -943,40 +944,44 @@
 
 <div id="figEditor">
   <div id="feBar">
-    <button class="febtn" id="feClose" title="Close the editor and return to the brain viewer (or press Esc)" style="background:#b3391f;color:#fff;font-weight:700;border-color:#b3391f">✕ Close editor</button>
-    <span class="fesep"></span>
-    <button class="febtn" id="feAddView" title="Add the current viewer image (3D / slices / mosaic) as a movable picture">＋ View</button>
-    <button class="febtn" id="feAddPanels" title="Import every tile from the 🗔 Panels builder">＋ Panels</button>
-    <button class="febtn" id="feAddImg" title="Add an image file from your computer">＋ Image…</button>
-    <button class="febtn" id="feSyncBrains" title="Re-render every brain in this figure with the CURRENT global appearance (surface / matcap / edges / lighting). Set the look in the appearance panel first, then click. Each brain keeps its overlay, camera & hemisphere.">🎨 Re-render brains</button>
-    <input type="file" id="feImgFile" accept="image/*" style="display:none">
-    <span class="fesep"></span>
-    <button class="febtn" id="feText" title="Add an editable text label (double-click it to type)">T Text</button>
-    <button class="febtn" id="feArrow" title="Add an arrow — point at a structure">↗ Arrow</button>
-    <button class="febtn" id="feLine" title="Add a line with a dot on each end (connector)">•— Line</button>
-    <button class="febtn" id="feBox" title="Add a rectangle outline (highlight a region)">▭ Box</button>
-    <span class="fesep"></span>
-    <label class="femut">Color</label><input type="color" id="feColor" value="#ff3b30" title="Color of the selected item (or the next item you add)">
-    <label class="femut">Size</label><input type="range" id="feSize" min="6" max="96" step="1" value="28" style="width:90px" title="Text font size for the selected/new label, and the thickness of new arrows / lines / boxes"><span id="feSizeV" class="femut">28</span>
-    <span class="fesep"></span>
-    <button class="febtn" id="feDup" title="Duplicate the selected item">⧉ Dup</button>
-    <button class="febtn" id="feFront" title="Bring the selected item to the front">⤒</button>
-    <button class="febtn" id="feBack" title="Send the selected item to the back">⤓</button>
-    <button class="febtn" id="feDel" title="Delete the selected item (Delete key)">🗑</button>
-    <span class="fesep"></span>
-    <button class="febtn" id="feCrop" title="Crop the canvas to fit your content — removes empty space after you've arranged things">⤢ Crop to fit</button>
-    <button class="febtn" id="feClipEdges" title="Clip edges: when ON, drag a selected image's side / top / bottom handles INWARD to trim empty space off that edge (corner handles still scale). Click again to turn off.">✂ Clip edges</button>
-    <button class="febtn" id="feUndo" title="Undo (⌘/Ctrl-Z)">↶</button>
-    <button class="febtn" id="feRedo" title="Redo (⌘/Ctrl-Shift-Z)">↷</button>
-    <span style="flex:1"></span>
-    <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:60px" title="Canvas width in pixels"> ×
-    <input type="number" id="feH" value="900" min="100" max="6000" style="width:60px" title="Canvas height in pixels">
-    <label class="femut">BG</label><input type="color" id="feBg" value="#ffffff" title="Figure background color"><label class="toggle femut" title="Export with a transparent background (PNG only)"><input type="checkbox" id="feBgTransparent"> transp</label>
-    <span class="fesep"></span>
-    <label class="femut">Format</label><select id="feFormat" class="tbsel" style="font-size:11px" title="Export file type"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="svg">SVG (vector)</option><option value="pdf">PDF</option></select>
-    <label class="femut" id="feQualWrap" style="display:none" title="JPG quality (higher = better, larger file)">q<input type="range" id="feQual" min="0.3" max="1" step="0.05" value="0.92" style="width:56px"></label>
-    <label class="femut">DPI</label><select id="feDpi" class="tbsel" style="font-size:11px" title="Export resolution — higher DPI = sharper & larger file (300 is typical for print)"><option>72</option><option>150</option><option selected>300</option><option>600</option></select>
-    <button class="febtn" id="feExport" title="Download the finished figure">⤓ Export</button>
+    <span class="fegrp"><button class="febtn" id="feClose" title="Close the editor and return to the brain viewer (or press Esc)" style="background:#b3391f;color:#fff;font-weight:700;border-color:#b3391f">✕ Close editor</button></span>
+    <span class="fegrp">
+      <button class="febtn" id="feAddView" title="Add the current viewer image (3D / slices / mosaic) as a movable picture">＋ View</button>
+      <button class="febtn" id="feAddPanels" title="Import every tile from the 🗔 Panels builder">＋ Panels</button>
+      <button class="febtn" id="feAddImg" title="Add an image file from your computer">＋ Image…</button>
+      <button class="febtn" id="feSyncBrains" title="Re-render every brain in this figure with the CURRENT global appearance (surface / matcap / edges / lighting). Set the look in the appearance panel first, then click. Each brain keeps its overlay, camera & hemisphere.">🎨 Re-render brains</button>
+      <input type="file" id="feImgFile" accept="image/*" style="display:none"></span>
+    <span class="fegrp">
+      <button class="febtn" id="feText" title="Add an editable text label (double-click it to type)">T Text</button>
+      <button class="febtn" id="feArrow" title="Add an arrow — point at a structure">↗ Arrow</button>
+      <button class="febtn" id="feLine" title="Add a line with a dot on each end (connector)">•— Line</button>
+      <button class="febtn" id="feBox" title="Add a rectangle outline (highlight a region)">▭ Box</button></span>
+    <span class="fegrp">
+      <label class="femut">Color</label><input type="color" id="feColor" value="#ff3b30" title="Color of the selected item (or the next item you add)">
+      <label class="femut">Size</label><input type="range" id="feSize" min="6" max="96" step="1" value="28" style="width:90px" title="Text font size for the selected/new label, and the thickness of new arrows / lines / boxes"><span id="feSizeV" class="femut">28</span></span>
+    <span class="fegrp">
+      <button class="febtn" id="feDup" title="Duplicate the selected item">⧉ Dup</button>
+      <button class="febtn" id="feFront" title="Bring the selected item to the front">⤒</button>
+      <button class="febtn" id="feBack" title="Send the selected item to the back">⤓</button>
+      <button class="febtn" id="feDel" title="Delete the selected item (Delete key)">🗑</button></span>
+    <span class="fegrp">
+      <button class="febtn" id="feCrop" title="Crop the canvas to fit your content — removes empty space after you've arranged things">⤢ Crop to fit</button>
+      <button class="febtn" id="feClipEdges" title="Clip edges: when ON, drag a selected image's side / top / bottom handles INWARD to trim empty space off that edge (corner handles still scale). Click again to turn off.">✂ Clip edges</button>
+      <button class="febtn" id="feUndo" title="Undo (⌘/Ctrl-Z)">↶</button>
+      <button class="febtn" id="feRedo" title="Redo (⌘/Ctrl-Shift-Z)">↷</button></span>
+    <span class="fegrp" title="Zoom the figure view (does not change export resolution)">
+      <button class="febtn" id="feZoomOut" title="Zoom out">−</button>
+      <button class="febtn" id="feZoomFit" title="Fit the whole figure in the window">⤢ <span id="feZoomPct">100%</span></button>
+      <button class="febtn" id="feZoomIn" title="Zoom in">＋</button></span>
+    <span class="fegrp">
+      <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:60px" title="Canvas width in pixels"> ×
+      <input type="number" id="feH" value="900" min="100" max="6000" style="width:60px" title="Canvas height in pixels">
+      <label class="femut">BG</label><input type="color" id="feBg" value="#ffffff" title="Figure background color"><label class="toggle femut" title="Export with a transparent background (PNG only)"><input type="checkbox" id="feBgTransparent"> transp</label></span>
+    <span class="fegrp">
+      <label class="femut">Format</label><select id="feFormat" class="tbsel" style="font-size:11px" title="Export file type"><option value="png">PNG</option><option value="jpeg">JPG</option><option value="svg">SVG (vector)</option><option value="pdf">PDF</option></select>
+      <label class="femut" id="feQualWrap" style="display:none" title="JPG quality (higher = better, larger file)">q<input type="range" id="feQual" min="0.3" max="1" step="0.05" value="0.92" style="width:56px"></label>
+      <label class="femut">DPI</label><select id="feDpi" class="tbsel" style="font-size:11px" title="Export resolution — higher DPI = sharper & larger file (300 is typical for print)"><option>72</option><option>150</option><option selected>300</option><option>600</option></select>
+      <button class="febtn" id="feExport" title="Download the finished figure">⤓ Export</button></span>
   </div>
   <div id="feBar2">
     <span class="femut">Selected item:</span>
@@ -4869,7 +4874,7 @@ window.brainAPI = {
       else if(it.type==='text'){ const t=new fabric.IText(it.text,{left:it.left,top:it.top,fontSize:it.size||20,fill:it.fill||'#fff',fontFamily:'system-ui',fontWeight:it.bold?'700':'normal'}); if(it.align==='right')t.set({originX:'right'}); feCanvas.add(t); }
       else if(it.type==='line'){ feCanvas.add(new fabric.Line([it.x1,it.y1,it.x2,it.y2],{stroke:it.color||'#fff',strokeWidth:it.width||2,strokeDashArray:it.dash||null,selectable:true})); }
     }
-    feCanvas.renderAll(); return true; },
+    feCanvas.renderAll(); if(typeof feFit==='function'){ feZoom=1; feFit(); } return true; },
   editorPNG(mult){ return feCanvas? feCanvas.toDataURL({format:'png',multiplier:mult||1}) : null; },
   showOnly(ids){ const S=new Set((ids||[]).map(Number)); meshes.forEach(o=>{ o.mesh.visible = S.size? S.has(o.meta.id) : true; }); requestRender(); },
   showAllRegions(){ meshes.forEach(o=>o.mesh.visible=true); requestRender(); },
@@ -6038,8 +6043,25 @@ async function ensureFabric(){ if(window.fabric) return true;
   const ok=await loadScript(window.__served ? 'vendor/fabric.min.js' : 'https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js');
   return ok && !!window.fabric; }
 function feSel(){ return feCanvas && feCanvas.getActiveObject(); }
+// objects the style controls (outline / shadow / gradient / color) act on — expands a shift-click
+// multi-selection (activeSelection wrapper) to its members, so styles apply to EVERY selected brain.
+function feSelObjs(){ if(!feCanvas) return []; const a=feCanvas.getActiveObject(); if(!a) return [];
+  return (a.type==='activeSelection' && a.getObjects) ? a.getObjects() : [a]; }
 function feDl(name,href){ const a=document.createElement('a'); a.download=name; a.href=href; a.click(); }
-function feResize(){ if(feCanvas){ feCanvas.setWidth(+$('feW').value); feCanvas.setHeight(+$('feH').value); feCanvas.renderAll(); } }
+let feZoom=1;   // user display-zoom multiplier on top of fit-to-window (1 = fit whole figure in the stage)
+// Scale ONLY the canvas's on-screen (CSS) size to fit the stage; the drawing backstore stays at the
+// full figure resolution, so exports remain full-res and fabric still maps pointer events correctly.
+function feFit(){ if(!feCanvas) return; const stage=$('feStage'); if(!stage) return;
+  const W=+$('feW').value||feCanvas.getWidth(), H=+$('feH').value||feCanvas.getHeight();
+  const availW=Math.max(60, stage.clientWidth-28), availH=Math.max(60, stage.clientHeight-28);
+  const fit=Math.min(availW/W, availH/H);
+  const z=Math.max(0.05, fit*feZoom);
+  feCanvas.setDimensions({width:Math.round(W*z)+'px', height:Math.round(H*z)+'px'}, {cssOnly:true});
+  feCanvas.calcOffset(); feCanvas.renderAll();   // re-render: setDimensions resets the retina context, blanking the display otherwise
+  const pct=$('feZoomPct'); if(pct) pct.textContent=Math.round(z*100)+'%';
+}
+function feResize(){ if(feCanvas){ feCanvas.setWidth(+$('feW').value); feCanvas.setHeight(+$('feH').value); feFit(); feCanvas.renderAll(); } }
+function feSetZoom(mult){ feZoom = mult==null ? 1 : Math.max(0.1, Math.min(5, mult)); feFit(); }
 function feAddObj(o){ feCanvas.add(o); feCanvas.setActiveObject(o); feCanvas.requestRenderAll(); }
 function feImg(dataURL, opts){ fabric.Image.fromURL(dataURL, img=>{ img.set(Object.assign({left:30,top:30},opts||{}));
   const maxW=feCanvas.getWidth()*0.5; if(img.width>maxW) img.scaleToWidth(maxW); feAddObj(img); }); }
@@ -6047,7 +6069,7 @@ function feAddCurrentView(){ let url; try{ url=window.brainAPI.captureView(900,6
 function feImportPanels(){ const [rows,cols]=pbDims(), cw=feCanvas.getWidth(), gap=14, tw=(cw-gap*(cols+1))/cols, rh=tw*0.8+gap+26;
   pbItems.forEach((it,i)=>{ if(!it||!it.dataURL) return; const col=i%cols, row=(i/cols)|0;
     const x=gap+col*(tw+gap), y=gap+row*rh;
-    fabric.Image.fromURL(it.dataURL, img=>{ img.scaleToWidth(tw); img.set({left:x, top:y+(it.label?22:0)}); feCanvas.add(img);
+    fabric.Image.fromURL(it.dataURL, img=>{ img.scaleToWidth(tw); img.set({left:x, top:y+(it.label?22:0)}); img._panel=i; feCanvas.add(img);   // tag _panel so live re-render / re-sync can update it
       if(it.label){ feCanvas.add(new fabric.IText(it.label,{left:x, top:y, fontSize:18, fill:'#111', fontFamily:'system-ui'})); }
       feCanvas.requestRenderAll(); }); }); }
 function feArrowObj(){ const c=$('feColor').value, w=Math.max(2,(+$('feSize').value)/8);
@@ -6060,11 +6082,11 @@ function feLineObj(){ const c=$('feColor').value, w=Math.max(2,(+$('feSize').val
   const d2=new fabric.Circle({left:120,top:0,originX:'center',originY:'center',radius:r,fill:c});
   return new fabric.Group([line,d1,d2],{left:60,top:60}); }
 function feDelSel(){ feCanvas.getActiveObjects().forEach(o=>feCanvas.remove(o)); feCanvas.discardActiveObject(); feCanvas.requestRenderAll(); }
-function feApplyColor(){ const o=feSel(); if(!o) return; const c=$('feColor').value;
+function feApplyColor(){ const c=$('feColor').value; feSelObjs().forEach(o=>{
   if(o.type==='i-text'||o.type==='text') o.set('fill',c);
   else if(o.type==='rect') o.set('stroke',c);
   else if(o.type==='group') o.forEachObject(x=>x.set(x.type==='line'?'stroke':'fill',c));
-  else o.set('stroke',c); feCanvas.requestRenderAll(); }
+  else o.set('stroke',c); }); feCanvas.requestRenderAll(); }
 function feExport(){ const fmt=$('feFormat').value, dpi=+$('feDpi').value, mult=dpi/96, q=+$('feQual').value, transp=$('feBgTransparent').checked && fmt!=='jpeg';
   const oldBg=feCanvas.backgroundColor;
   if(transp){ feCanvas.backgroundColor=null; }                  // jpeg has no alpha → always keep bg
@@ -6127,16 +6149,14 @@ function feLoad(i){ const s=feHist[i]; if(!s) return; const st=JSON.parse(s); fe
   feCanvas.loadFromJSON(st.json, ()=>{ feCanvas.backgroundColor=st.bg; feCanvas.renderAll(); feLock=false; }); }
 function feUndo(){ if(feHi>0){ feHi--; feLoad(feHi); } }
 function feRedo(){ if(feHi<feHist.length-1){ feHi++; feLoad(feHi); } }
-function feApplyStroke(){ const o=feSel(); if(!o) return; o.set('stroke',$('feStrokeC').value); o.set('strokeWidth',+$('feStrokeW').value); feCanvas.requestRenderAll(); }
-function feApplyShadow(){ const o=feSel(); if(!o) return;
-  if($('feShadow').checked){ const a=(+$('feShAng').value)*Math.PI/180, d=+$('feShDist').value;
-    o.set('shadow', new fabric.Shadow({color:$('feShColor').value, blur:+$('feShBlur').value, offsetX:Math.cos(a)*d, offsetY:Math.sin(a)*d})); }
-  else o.set('shadow', null); feCanvas.requestRenderAll(); }
-function feApplyGradient(){ const o=feSel(); if(!o) return;
-  if($('feGrad').checked && o.width){ const a=(+$('feGradAng').value)*Math.PI/180, cx=Math.cos(a)/2, cy=Math.sin(a)/2;
-    o.set('fill', new fabric.Gradient({type:'linear', gradientUnits:'percentage',
+function feApplyStroke(){ const c=$('feStrokeC').value, w=+$('feStrokeW').value; feSelObjs().forEach(o=>{ o.set('stroke',c); o.set('strokeWidth',w); }); feCanvas.requestRenderAll(); }
+function feApplyShadow(){ const on=$('feShadow').checked, a=(+$('feShAng').value)*Math.PI/180, d=+$('feShDist').value;
+  feSelObjs().forEach(o=>{ o.set('shadow', on ? new fabric.Shadow({color:$('feShColor').value, blur:+$('feShBlur').value, offsetX:Math.cos(a)*d, offsetY:Math.sin(a)*d}) : null); });
+  feCanvas.requestRenderAll(); }
+function feApplyGradient(){ const on=$('feGrad').checked, a=(+$('feGradAng').value)*Math.PI/180, cx=Math.cos(a)/2, cy=Math.sin(a)/2;
+  feSelObjs().forEach(o=>{ if(on && o.width){ o.set('fill', new fabric.Gradient({type:'linear', gradientUnits:'percentage',
       coords:{x1:0.5-cx,y1:0.5-cy,x2:0.5+cx,y2:0.5+cy}, colorStops:[{offset:0,color:$('feColor').value},{offset:1,color:$('feGradC2').value}]})); }
-  else o.set('fill', $('feColor').value);
+    else o.set('fill', $('feColor').value); });
   feCanvas.requestRenderAll(); }
 // Non-blocking banner shown when a dropped project's atlas differs from the loaded one. The figure
 // (baked images) is already displayed; this only offers to switch atlas for LIVE 3D re-rendering.
@@ -6159,8 +6179,8 @@ function projMismatchNote(atlas){
 }
 function feLoadProjectEditor(){ if(!feCanvas||!window._projEditor) return; const sz=window._projEditorSize||{w:1400,h:900};
   feLock=true; feCanvas.setWidth(sz.w); feCanvas.setHeight(sz.h); $('feW').value=sz.w; $('feH').value=sz.h;
-  feCanvas.loadFromJSON(window._projEditor, ()=>{ feCanvas.backgroundColor=sz.bg||'#ffffff'; feCanvas.renderAll(); feLock=false; window._projEditor=null; }); }
-function feSyncStyleBar(){ const o=feSel(); if(!o) return;
+  feCanvas.loadFromJSON(window._projEditor, ()=>{ feCanvas.backgroundColor=sz.bg||'#ffffff'; feCanvas.renderAll(); feLock=false; window._projEditor=null; feZoom=1; feFit(); }); }
+function feSyncStyleBar(){ const o=feSelObjs()[0]||feSel(); if(!o) return;   // reflect the first member of a multi-selection
   $('feStrokeW').value=o.strokeWidth||0; if(o.stroke&&typeof o.stroke==='string') $('feStrokeC').value=o.stroke;
   const sh=o.shadow; $('feShadow').checked=!!sh; if(sh){ $('feShBlur').value=sh.blur||0; const d=Math.round(Math.hypot(sh.offsetX||0,sh.offsetY||0)); $('feShDist').value=d; if(sh.color)$('feShColor').value=sh.color; }
   $('feGrad').checked = !!(o.fill && o.fill.colorStops); }
@@ -6191,6 +6211,7 @@ async function openFigEditor(){
     setTimeout(fePush, 400);   // initial history state (after imported images load)
   }
   feCanvas.requestRenderAll();
+  requestAnimationFrame(()=>{ feZoom=1; feFit(); });   // fit the whole figure into the window on open
 }
 (function initFigEditor(){
   $('feToggle').addEventListener('click', openFigEditor);
@@ -6219,6 +6240,11 @@ async function openFigEditor(){
   // ↺ Reset appearance also re-syncs the figure when the Editor is open
   if($('resetAppear')) $('resetAppear').addEventListener('click', ()=>{ if(document.body.classList.contains('feopen')){ showUpdating(true); clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); } });
   $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
+  // figure zoom: Fit resets to whole-figure-in-window; ± step around the current zoom
+  if($('feZoomFit')) $('feZoomFit').addEventListener('click', ()=>feSetZoom(1));
+  if($('feZoomIn'))  $('feZoomIn').addEventListener('click', ()=>feSetZoom(feZoom*1.25));
+  if($('feZoomOut')) $('feZoomOut').addEventListener('click', ()=>feSetZoom(feZoom/1.25));
+  window.addEventListener('resize', ()=>{ if(document.body.classList.contains('feopen')) feFit(); });
   $('feBg').addEventListener('input', ()=>{ if(feCanvas){ feCanvas.backgroundColor=$('feBg').value; feCanvas.renderAll(); } });
   $('feColor').addEventListener('input', feApplyColor);
   $('feSize').addEventListener('input', ()=>{ $('feSizeV').textContent=$('feSize').value; const o=feSel(); if(o&&(o.type==='i-text'||o.type==='text')){ o.set('fontSize',+$('feSize').value); feCanvas.requestRenderAll(); } });
