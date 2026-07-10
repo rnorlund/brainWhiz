@@ -111,6 +111,15 @@
   #sidebarR{position:absolute;top:46px;right:0;bottom:0;width:300px;background:var(--panel);
     border-left:1px solid var(--line);overflow-y:auto;z-index:10}
   body.navhiddenR #sidebarR{display:none}
+  /* Accessibility: UI text size. `zoom` scales panel text + controls together; resize() reads the
+     zoomed panel widths (getBoundingClientRect reflects zoom) so the 3D canvas re-insets correctly. */
+  :root{--uiScale:1}
+  #sidebar,#sidebarR,#panelBuilder{zoom:var(--uiScale)}
+  #uiSizeGrp{display:inline-flex;align-items:center;gap:2px}
+  .uiSizeBtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:5px;cursor:pointer;padding:1px 7px;line-height:1.1;font-family:Georgia,serif}
+  .uiSizeBtn:nth-of-type(1){font-size:10px}.uiSizeBtn:nth-of-type(2){font-size:12px}.uiSizeBtn:nth-of-type(3){font-size:15px}.uiSizeBtn:nth-of-type(4){font-size:18px}
+  .uiSizeBtn:hover{border-color:var(--accent)}
+  .uiSizeBtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   #sidebarR .sideRtitle{padding:10px 12px;font-weight:600;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line)}
   /* rich select: a dropdown that shows a colormap swatch / shader thumbnail next to each option */
   .richsel{position:relative;display:inline-flex;flex:1;min-width:0}
@@ -392,6 +401,14 @@
     <option value="mp4">MP4 (PPT/Slides)</option><option value="webm">WebM (smaller)</option></select>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
   <button id="feToggle" class="tbtn" title="Figure editor — arrange panels, add text / arrows / lines, export">📐 Editor</button>
+  <span class="tbsep"></span>
+  <span id="uiSizeGrp" role="group" aria-label="Text size" title="UI text size — make the panels & controls bigger for easier reading">
+    <span class="tbmuted" style="font-size:11px">Text</span>
+    <button class="uiSizeBtn" data-uiscale="0.9"  title="Small text">A</button>
+    <button class="uiSizeBtn" data-uiscale="1"    title="Normal text (default)">A</button>
+    <button class="uiSizeBtn" data-uiscale="1.2"  title="Large text">A</button>
+    <button class="uiSizeBtn" data-uiscale="1.45" title="Extra-large text — for low vision">A</button>
+  </span>
   <span class="tbsep"></span>
   <label class="tbmuted">Preset</label>
   <select id="presetSel" class="tbsel" style="width:118px"><option value="">—</option></select>
@@ -4745,6 +4762,19 @@ try{ feEnsureTooltips();
   const _tipObs=new MutationObserver(()=>{ clearTimeout(window._tipT); window._tipT=setTimeout(feEnsureTooltips,150); });
   ['sidebar','sidebarR'].forEach(id=>{ const el=document.getElementById(id); if(el) _tipObs.observe(el,{childList:true,subtree:true}); });
 }catch(e){ console.warn('tooltip pass failed', e); }
+// ---- Accessibility: UI text size (S / M / L / XL) — scales the panels for easier reading / low vision.
+// Persisted across reloads (a genuine user preference, unlike the per-session look carry). ----
+(function initUiSize(){ const KEY='bwUiScale'; const grp=document.getElementById('uiSizeGrp'); if(!grp) return;
+  const btns=[...grp.querySelectorAll('.uiSizeBtn')];
+  function apply(scale, save){ scale=+scale||1;
+    document.documentElement.style.setProperty('--uiScale', scale);
+    btns.forEach(b=>b.classList.toggle('active', Math.abs(+b.dataset.uiscale-scale)<0.001));
+    try{ if(typeof resize==='function') resize(); }catch(e){}
+    if(save){ try{ localStorage.setItem(KEY, String(scale)); }catch(e){} } }
+  btns.forEach(b=>b.addEventListener('click', ()=>apply(+b.dataset.uiscale, true)));
+  let saved=1; try{ const v=+localStorage.getItem(KEY); if(v>=0.5&&v<=3) saved=v; }catch(e){}
+  apply(saved, false);
+})();
 // move the slice controls out of the 2x2 grid into the left sidebar (no overlap on the render)
 { const _slh=document.getElementById('sliceCtlHost'); _slh.insertBefore(document.getElementById('sliceCtl'), _slh.firstChild); }   // Render mode at the very top
 // panel order: Underlay above Overlays · Volume render under View&appearance · Tools after Output&motion

@@ -49,6 +49,19 @@ function ok(name, cond, extra=''){ if(cond){PASS++;} else {FAIL++; FAILURES.push
   ok('fresh reload = default shading', fresh.shading===defShading, fresh.shading);
   ok('fresh reload = default mesh view', fresh.mode==='mesh', fresh.mode);
 
+  // ---- 4) accessibility: UI text size scales the panels, re-insets the canvas, and persists ----
+  console.log('\n[4] Text-size control scales the UI, keeps the canvas aligned, and persists');
+  await boot(BASE+'?atlas=neuromorph');
+  const base=await p.evaluate(()=>({ sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0) }));
+  await p.evaluate(()=>{ [...document.querySelectorAll('.uiSizeBtn')].find(b=>b.dataset.uiscale==='1.45').click(); }); await p.waitForTimeout(300);
+  const xl=await p.evaluate(()=>({ scale:getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim(), sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0) }));
+  ok('XL scales the panels up', parseFloat(xl.scale)===1.45 && xl.sb>base.sb, JSON.stringify(xl));
+  ok('canvas re-insets to the scaled panel (no overlap)', Math.abs(xl.cvL-xl.sb)<=2, `canvasLeft=${xl.cvL} sidebar=${xl.sb}`);
+  await boot(BASE+'?atlas=neuromorph');
+  const persist=await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim());
+  ok('text size persists across a fresh reload', parseFloat(persist)===1.45, persist);
+  await p.evaluate(()=>{ [...document.querySelectorAll('.uiSizeBtn')].find(b=>b.dataset.uiscale==='1').click(); });  // reset
+
   ok('no page errors across journeys', errs.length===0, errs.slice(0,3).join(' | '));
   await b.close();
   console.log(`\n──────── JOURNEY RESULTS: ${PASS} passed, ${FAIL} failed ────────`);
