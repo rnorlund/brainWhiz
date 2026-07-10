@@ -49,12 +49,14 @@
 
   /* ---- top toolbar ---- */
   #topbar{position:absolute;top:0;left:0;right:0;height:46px;background:var(--panel);
-    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:20}
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:20;
+    overflow-x:auto;overflow-y:hidden;zoom:var(--uiScale)}   /* text size scales the toolbar (one row, taller);
+       scrolls horizontally if the bigger controls don't fit, instead of clipping them off-screen */
   #topbar .brand{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px;white-space:nowrap}
   #topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
   /* Brand: logo + wordmark stay a FIXED size regardless of the UI text-size setting (topbar is
      never scaled by --uiScale) — keeps brainWhiz recognisable at every zoom. */
-  #topbar .brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none;flex:none}
+  #topbar .brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none;flex:none;zoom:calc(1/var(--uiScale))}   /* counter-scale so the logo+wordmark stay a FIXED size at every text size */
   #topbar .brandlogo{height:40px;width:40px;border-radius:50%;object-fit:cover;flex:none;
     box-shadow:0 0 0 1.5px var(--accent,#3b82f6), 0 2px 8px rgba(0,0,0,.4)}
   #topbar .brandname{font-size:19px;font-weight:600;letter-spacing:-0.2px;color:var(--txt,#e7eef7);white-space:nowrap}
@@ -112,15 +114,15 @@
   .viewmenu .vmwide{grid-column:1 / span 3}
 
   /* ---- left accordion ---- */
-  #sidebar{position:absolute;top:46px;left:0;bottom:0;width:316px;background:var(--panel);
-    border-right:1px solid var(--line);overflow-y:auto;z-index:10}
+  #sidebar{position:absolute;top:calc(var(--topH)/var(--uiScale));left:0;bottom:0;width:316px;background:var(--panel);
+    border-right:1px solid var(--line);overflow-y:auto;z-index:10}   /* top ÷ uiScale so, once zoomed, it sits exactly under the toolbar */
   body.navhidden #sidebar{display:none}
-  #sidebarR{position:absolute;top:46px;right:0;bottom:0;width:300px;background:var(--panel);
+  #sidebarR{position:absolute;top:calc(var(--topH)/var(--uiScale));right:0;bottom:0;width:300px;background:var(--panel);
     border-left:1px solid var(--line);overflow-y:auto;z-index:10}
   body.navhiddenR #sidebarR{display:none}
   /* Accessibility: UI text size. `zoom` scales panel text + controls together; resize() reads the
      zoomed panel widths (getBoundingClientRect reflects zoom) so the 3D canvas re-insets correctly. */
-  :root{--uiScale:1}
+  :root{--uiScale:1;--topH:46px}
   #sidebar,#sidebarR,#panelBuilder{zoom:var(--uiScale)}
   #uiSizeGrp{display:inline-flex;align-items:center;gap:2px}
   .uiSizeBtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:5px;cursor:pointer;padding:1px 7px;line-height:1.1;font-family:Georgia,serif}
@@ -386,8 +388,7 @@
     <span class="brandname">brain<b>Whiz</b></span></a>
   <select id="atlasSel" class="tbsel" title="atlas"></select>
   <span id="netBadge" class="netbadge" title="connection mode">● online</span>
-  <span style="flex:1"></span>
-  <button id="modeMesh" class="tbtn tbon" title="3D mesh view">🧠 Mesh</button>
+  <button id="modeMesh" class="tbtn tbon" title="3D mesh view" style="margin-left:auto">🧠 Mesh</button>
   <button id="modeSlice" class="tbtn" title="ortho slice view (axial · sagittal · coronal + 3D)">🔪 Slices</button>
   <button id="modeMosaic" class="tbtn" title="mosaic / lightbox: evenly-spaced slices tiled in one figure">▦ Mosaic</button>
   <span class="tbsep"></span>
@@ -4626,7 +4627,8 @@ $('delSet').addEventListener('click', ()=>{
 const cv = renderer.domElement;
 cv.style.position='absolute';
 function resize(){
-  const top = document.getElementById('topbar').getBoundingClientRect().height;   // toolbar
+  const top = document.getElementById('topbar').getBoundingClientRect().height;   // toolbar (real px, incl. text-size zoom + wrapping)
+  document.documentElement.style.setProperty('--topH', top+'px');                  // panels position under the (possibly taller) toolbar
   const sbL = document.body.classList.contains('navhidden')  ? 0 : document.getElementById('sidebar').getBoundingClientRect().width;
   const sbR = document.body.classList.contains('navhiddenR') ? 0 : document.getElementById('sidebarR').getBoundingClientRect().width;
   // when the panel builder is open and not dragged free, DOCK it on the right and reserve

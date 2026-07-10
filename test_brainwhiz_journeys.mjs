@@ -52,10 +52,19 @@ function ok(name, cond, extra=''){ if(cond){PASS++;} else {FAIL++; FAILURES.push
   // ---- 4) accessibility: UI text size scales the panels, re-insets the canvas, and persists ----
   console.log('\n[4] Text-size control scales the UI, keeps the canvas aligned, and persists');
   await boot(BASE+'?atlas=neuromorph');
-  const base=await p.evaluate(()=>({ sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0), logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height) }));
+  const snap=()=>p.evaluate(()=>({ scale:getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim(),
+    sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width),
+    cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0),
+    logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height),
+    tbH:Math.round(document.getElementById('topbar').getBoundingClientRect().height),
+    sbTop:Math.round(document.getElementById('sidebar').getBoundingClientRect().top),
+    tbBottom:Math.round(document.getElementById('topbar').getBoundingClientRect().bottom) }));
+  const base=await snap();
   await p.evaluate(()=>{ [...document.querySelectorAll('.uiSizeBtn')].find(b=>b.dataset.uiscale==='1.45').click(); }); await p.waitForTimeout(300);
-  const xl=await p.evaluate(()=>({ scale:getComputedStyle(document.documentElement).getPropertyValue('--uiScale').trim(), sb:Math.round(document.getElementById('sidebar').getBoundingClientRect().width), cvL:Math.round(parseFloat(document.querySelector('canvas').style.left)||0), logo:Math.round(document.querySelector('.brandlogo').getBoundingClientRect().height) }));
+  const xl=await snap();
   ok('XL scales the panels up', parseFloat(xl.scale)===1.45 && xl.sb>base.sb, JSON.stringify(xl));
+  ok('XL scales the TOP TOOLBAR too', xl.tbH>base.tbH+6, `tbH ${base.tbH}→${xl.tbH}`);
+  ok('sidebar sits flush under the (taller) toolbar — no gap', Math.abs(xl.sbTop-xl.tbBottom)<=2, `sbTop=${xl.sbTop} tbBottom=${xl.tbBottom}`);
   ok('brainWhiz logo stays fixed size regardless of text size', xl.logo===base.logo && base.logo>=38, `base=${base.logo} xl=${xl.logo}`);
   ok('canvas re-insets to the scaled panel (no overlap)', Math.abs(xl.cvL-xl.sb)<=2, `canvasLeft=${xl.cvL} sidebar=${xl.sb}`);
   await boot(BASE+'?atlas=neuromorph');
