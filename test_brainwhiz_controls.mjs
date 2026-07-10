@@ -162,7 +162,27 @@ const SPECS = [
       fits: cssW<=stage.clientWidth+1 && cssH<=stage.clientHeight+1 }; });
   ok('fit: whole figure fits inside the stage', fit.fits, JSON.stringify(fit));
   ok('fit: logical/backstore stays full-res (export not shrunk)', fit.logicalW===2400 && fit.exportLen>1000, JSON.stringify(fit));
+
+  // typable zoom + 10% steps
+  const z = await page.evaluate(async ()=>{ const el=document.getElementById('feZoomPct'), cv=window.feCanvas.getElement(), css=()=>Math.round(parseFloat(cv.style.width));
+    el.value='75'; el.dispatchEvent(new Event('change',{bubbles:true})); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); const a=css();
+    el.value='120'; el.dispatchEvent(new Event('change',{bubbles:true})); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); const b=css();
+    return { isInput: el.tagName==='INPUT', w75:a, w120:b, logical:window.feCanvas.getWidth() }; });
+  ok('zoom: % is a typable input', z.isInput);
+  ok('zoom: typing a % rescales the display (120% > 75%)', z.w120>z.w75, JSON.stringify(z));
   console.log(`\n[C/D] editor errors: ${errs.length?errs.slice(0,3).join(' | '):'none'}`);
+
+  // ============ [E] Tooltip coverage — every visible side-panel control has a hover tooltip ============
+  console.log('\n[E] Tooltips — every visible control in the side panels has a title');
+  await page.evaluate(()=>{ if(document.getElementById('feClose')) document.getElementById('feClose').click(); });  // leave editor
+  await page.waitForTimeout(300);
+  await page.evaluate(()=>{ document.querySelectorAll('#sidebar details').forEach(d=>d.open=true); });  // expand all sections to surface dynamic controls
+  await page.waitForTimeout(500);
+  const tips = await page.evaluate(()=>{ const sel='#sidebar input, #sidebar select, #sidebar button, #sidebar textarea, #sidebarR input, #sidebarR select, #sidebarR button, #sidebarR textarea';
+    const els=[...document.querySelectorAll(sel)].filter(e=>e.type!=='hidden' && e.offsetParent!==null);
+    return { total:els.length, missing:els.filter(e=>!(e.title&&e.title.trim())).map(e=>e.id||e.className||e.tagName) }; });
+  ok(`tooltips: all ${tips.total} visible controls have one`, tips.missing.length===0, tips.missing.slice(0,12).join(', '));
+  console.log(`\n[C/D/E] editor errors: ${errs.length?errs.slice(0,3).join(' | '):'none'}`);
 
   await browser.close();
   console.log(`\n──────── CONTROL RESULTS: ${PASS} passed, ${FAIL} failed ────────`);

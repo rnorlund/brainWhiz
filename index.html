@@ -66,6 +66,10 @@
   body.feopen #sidebarR .grp{cursor:default}
   #feBar{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;justify-content:space-between;padding:7px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
   #feBar .fegrp{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}   /* keep related controls together; groups spread across the bar */
+  #feBar .fezoomgrp{background:var(--panel2);border:1px solid var(--accent);border-radius:8px;padding:2px 7px}   /* make the zoom controls stand out */
+  #feBar .fezoombtn{min-width:26px;font-weight:700;font-size:14px;padding:4px 8px}
+  #feBar .fezoominput{width:44px;text-align:right;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:4px 5px;font-size:12px}
+  #feBar .fezoominput:focus{border-color:var(--accent);outline:none}
   .febtn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
   .febtn:hover{border-color:var(--accent)}
   .febtn.active{background:#19c37d;color:#06281a;border-color:#19c37d;font-weight:600}
@@ -969,10 +973,12 @@
       <button class="febtn" id="feClipEdges" title="Clip edges: when ON, drag a selected image's side / top / bottom handles INWARD to trim empty space off that edge (corner handles still scale). Click again to turn off.">✂ Clip edges</button>
       <button class="febtn" id="feUndo" title="Undo (⌘/Ctrl-Z)">↶</button>
       <button class="febtn" id="feRedo" title="Redo (⌘/Ctrl-Shift-Z)">↷</button></span>
-    <span class="fegrp" title="Zoom the figure view (does not change export resolution)">
-      <button class="febtn" id="feZoomOut" title="Zoom out">−</button>
-      <button class="febtn" id="feZoomFit" title="Fit the whole figure in the window">⤢ <span id="feZoomPct">100%</span></button>
-      <button class="febtn" id="feZoomIn" title="Zoom in">＋</button></span>
+    <span class="fegrp fezoomgrp" title="Zoom the figure preview — type a %, step with ±, or Fit. This only changes what you see; export resolution is unchanged.">
+      <span class="femut" style="font-weight:600">🔍</span>
+      <button class="febtn fezoombtn" id="feZoomOut" title="Zoom out 10%">−</button>
+      <input id="feZoomPct" class="fezoominput" value="100" inputmode="numeric" title="Type a zoom % and press Enter"><span class="femut">%</span>
+      <button class="febtn fezoombtn" id="feZoomIn" title="Zoom in 10%">＋</button>
+      <button class="febtn" id="feZoomFit" title="Fit the whole figure in the window">⤢ Fit</button></span>
     <span class="fegrp">
       <label class="femut">Canvas</label><input type="number" id="feW" value="1400" min="100" max="6000" style="width:60px" title="Canvas width in pixels"> ×
       <input type="number" id="feH" value="900" min="100" max="6000" style="width:60px" title="Canvas height in pixels">
@@ -4603,6 +4609,132 @@ function resize(){
 }
 // move the "creative" Appearance panel into the right sidebar (left = analytical/most-used)
 document.getElementById('sidebarR').appendChild(document.getElementById('accAppearance'));
+// ---- Tooltips: guarantee EVERY control in the side panels has a hover explanation ----
+// Curated descriptions for the non-obvious ones; anything not listed falls back to its visible label,
+// so no control is ever left without a tooltip.
+const CONTROL_TIPS = {
+  // Overlay / data
+  ovStyle:'How the active overlay is drawn — colormap, single color, or contour',
+  cmap:'Colormap for the active overlay (the color ramp from low → high values)',
+  cmin:'Low end of the color range — values at/below this get the first colormap color',
+  cmax:'High end of the color range — values at/above this get the last colormap color',
+  autoRange:'Auto-set min/max from the data (robust 2nd–98th percentile)',
+  cthresh:'Hide regions/voxels whose value is below this threshold (0 = show all)',
+  cthreshTwo:'Two-tailed threshold: keep BOTH high and low tails, hide the middle (for signed maps)',
+  cthreshCenter:'Center value for the two-tailed threshold (usually 0)',
+  cmapInvert:'Flip the colormap direction (swap low ↔ high colors)',
+  cmapAbs:'Color by absolute value (treat −x and +x the same)',
+  ovCropBg:'Clip the overlay to the brain — hide any out-of-brain signal',
+  ovBaseColor:'Color of regions with no overlay value (the neutral “uncolored” base)',
+  ovOpacity:'Opacity of the active overlay',
+  ovVivid:'Saturation boost for the overlay colors',
+  fxSparkle:'Animated sparkle FX on colored regions (for presentations)',
+  sparkAmt:'Sparkle amount', sparkSpeed:'Sparkle animation speed', sparkTw:'Sparkle twinkle sharpness',
+  ovFrame:'For 4D overlays: which timepoint/volume to show',
+  volOn:'Render the active overlay as a 3D volume (raymarched voxels) instead of per-region colors',
+  volCmap:'Colormap for the volume render', volThr:'Hide volume voxels below this value',
+  volOp:'Volume render opacity', volSteps:'Raymarch quality — more steps = smoother, slower',
+  ulFile:'Load a NIfTI as the slice/mosaic anatomical underlay (e.g. a subject T1)',
+  ulTabFile:'Load a NIfTI anatomical underlay for the slices',
+  // Appearance
+  figZoom:'Scale every brain in the figure up/down together (Editor only)',
+  scheme:'How regions are colored when no overlay is active (by lobe, hemisphere, random, or one color)',
+  singleColor:'The single color used when Color scheme = “Single color”',
+  opacity:'Overall opacity of all regions',
+  coloredOp:'Opacity of colored (overlay/scheme) regions',
+  grayOp:'Opacity of the uncolored/gray regions',
+  satCut:'Saturation cutoff that decides which regions count as “colored” vs “gray”',
+  glass:'Fade the visible uncolored regions to a faint glass shell so colored ones pop',
+  shellOn:'Add a translucent whole-brain shell as anatomical context (independent of which regions are on)',
+  shellColor:'Color of the glass brain shell', shellOp:'Opacity of the glass brain shell',
+  shellMNI:'Build the context shell from the full MNI152 brain (incl. cerebellum) instead of the atlas',
+  smooth:'Mesh smoothing iterations — higher = smoother, rounder surfaces',
+  surfStyle:'Surface style — solid, wireframe, or a pattern (checkerboard, stripes, dots…)',
+  matImgFile:'Drop/load an image to wrap the brain in as a custom material (matcap)',
+  outlineOn:'Draw a colored outline around each region', outlineW:'Region outline thickness',
+  edgeOn:'Constant-width ink outline on region borders & silhouette (great for figures)',
+  edgeW:'Edge ink line width (pixels)', edgeStr:'Edge ink darkness/strength',
+  ssaoOn:'Ambient occlusion — soft contact shadows in sulci/crevices for depth',
+  ssaoInt:'Ambient-occlusion strength', ssaoRadius:'Ambient-occlusion sampling radius',
+  wireWidth:'Wireframe line thickness (for wireframe surface styles)',
+  patScale:'Pattern cell size (for patterned surface styles)', patStr:'Pattern contrast/strength',
+  patTilt:'Pattern rotation angle', patMode:'How the pattern combines with the region color',
+  vivid:'Overall color vividness / saturation of the whole scene',
+  rim:'Rim-light glow strength around the brain silhouette', rimColor:'Rim-light color',
+  bg:'3D viewer background color (in the Editor, sets the figure background)',
+  auraOn:'Soft outward glow (Unity-style bloom) around the brain', auraColor:'Aura glow color',
+  auraRainbow:'Cycle the aura color through the rainbow', auraSize:'How far the aura reaches out',
+  auraIntensity:'Aura glow brightness', auraPulse:'Aura pulsing speed (0 = steady)',
+  // Regions
+  regionSet:'Load a saved subset of regions', saveSet:'Save the current visible regions as a named set',
+  delSet:'Delete the selected saved region set', saveColored:'Keep only regions that currently have a color',
+  hemiL:'Show the left hemisphere only', hemiR:'Show the right hemisphere only',
+  showAll:'Show every region', hideAll:'Hide every region', search:'Filter the region list by name',
+  // Connectivity / arcs
+  connOn:'Draw connectivity edges between regions', connType:'Connectivity modality (DTI or resting-state)',
+  connTh:'Only draw edges stronger than this threshold', connScale:'Edge thickness scale',
+  connAll:'Include edges to hidden regions too', connColorMode:'How edges are colored (by strength, single color…)',
+  connCmap:'Colormap for connectivity edges', connColor:'Single color for all edges',
+  connPulse:'Animate a pulse flowing along the edges', connPulseSpeed:'Edge-pulse speed',
+  arcThick:'Arc line thickness', arcHeight:'How high the arcs bow above the brain',
+  arcCapSize:'Size of the dot/arrow caps on arcs', arcColor:'Arc color',
+  // Tracts
+  cortexFade:'Fade the cortex so deep white-matter tracts read clearly',
+  tractOp:'Tract opacity', tractFiberD:'Fiber density (strands per tract)', tractLineW:'Fiber line width',
+  tractSlabMM:'Show only tracts within ± this many mm of the current slice',
+  tractSpotlight:'Spotlight the hovered tract, dim the rest', tractMaskR:'Tract clipping mask radius (mm)',
+  tractSmooth:'Tract mesh smoothing', tractExplode:'Explode the tracts outward',
+  // Axes / camera / animation
+  axisLines:'Show the L-R / A-P / S-I axis lines', axisLetters:'Show the L/R/A/P/S/I axis letters',
+  axisColor:'Axis line & label color', axisWidth:'Axis line thickness', axisSize:'Axis label size',
+  axisExplode:'How far the axis labels sit from the brain',
+  explode:'Explode the regions outward from the center', distance:'Camera distance / zoom',
+  zoomSpeed:'Mouse-wheel zoom sensitivity', autoRotate:'Slowly auto-rotate the brain',
+  rotSpeed:'Auto-rotate speed', spin:'Spin animation', animSpeed:'Animation speed',
+  // Projection / decal
+  projOp:'Projected image/video opacity', projScale:'Projection horizontal scale', projScaleY:'Projection vertical scale',
+  projOffX:'Projection horizontal offset', projOffY:'Projection vertical offset', projRot:'Projection rotation',
+  projRim:'Projection rim glow', projSpin:'Projection auto-spin', projVidSpeed:'Projected video playback speed',
+  projDecalSize:'Decal stamp size', projDecalRot:'Decal rotation', projDecalOutW:'Decal outline width',
+  // Slices / phantom / misc
+  phSize:'Phantom object size', phWidth:'Phantom line width', phRot:'Phantom rotation',
+  seedCmap:'Colormap for the seed-based map', seedThr:'Threshold for the seed-based map',
+  tcNorm:'How timecourses are normalized', sessScrub:'Scrub through session timepoints',
+  // file pickers / outputs (no visible label text of their own)
+  csvFile:'Load a CSV/TSV of per-region values to color the brain', statFile:'Load a NIfTI statistical map as an overlay',
+  sessFile:'Load a session file (multiple results to step through)', sessCsvFile:'Load a CSV of session values',
+  projImgFile:'Load an image to project onto the brain surface', projVidFile:'Load a video to project onto the brain surface',
+  projUrlBtn:'Use the entered image/video URL', projUrl:'Paste an image/video URL to project onto the brain',
+  methodsOut:'Auto-generated Methods text — copy into your paper', amCiteOut:'Auto-generated citations — copy into your reference list',
+  kfAdd:'Add the current view as a keyframe', kfPreview:'Preview the keyframe animation',
+};
+// buttons whose only content is an icon get a slightly richer tip from their class / data-attr
+function _btnTip(el){ const t=(el.textContent||'').replace(/\s+/g,' ').trim();
+  if(el.classList.contains('rs-btn')){ const sel=el.closest('.richsel')&&el.closest('.richsel').querySelector('select');   // rich-select: inherit the underlying <select>'s tip
+    const tip=sel&&(sel.title||CONTROL_TIPS[sel.id]); if(tip) return tip;
+    const row=el.closest('.ctl,.row'); const lab=row&&row.querySelector('.lab span,.lab'); return (lab&&lab.textContent.trim())||'Choose an option'; }
+  if(el.classList.contains('gtoggle')) return 'Show / hide all regions in this group';
+  if(el.dataset && el.dataset.v) return 'View the brain from the '+t.toLowerCase()+' side';
+  if(el.dataset && el.dataset.ph) return 'Add a “'+t.replace(/^[^\w]+/,'').trim()+'” to the brain';
+  return t; }
+function feEnsureTooltips(){
+  document.querySelectorAll('#sidebar input, #sidebar select, #sidebar button, #sidebar textarea, #sidebarR input, #sidebarR select, #sidebarR button, #sidebarR textarea').forEach(el=>{
+    if(el.type==='hidden') return;
+    if(el.title && el.title.trim()) return;                                    // native tooltip already present
+    let t = CONTROL_TIPS[el.id];
+    if(!t && el.tagName==='BUTTON'){ t=_btnTip(el); }                          // buttons: use their own icon/label text
+    if(!t){ const ctl=el.closest('.ctl'); const lab=ctl&&ctl.querySelector('.lab span, .lab');   // fall back to the visible label
+      if(lab && lab.textContent.trim()) t=lab.textContent.trim();
+      else { const wrap=el.closest('label,.row'); const txt=wrap&&wrap.textContent.trim(); if(txt) t=txt.replace(/\s+/g,' ').slice(0,80); } }
+    if(t){ el.title=t; const ctl=el.closest('.ctl'); if(ctl && !ctl.title) ctl.title=t; }
+  });
+}
+try{ feEnsureTooltips();
+  // re-run when the panels change (region list rebuilds, rich-selects, saved sets, keyframes…) so
+  // dynamically-created controls always get a tooltip too
+  const _tipObs=new MutationObserver(()=>{ clearTimeout(window._tipT); window._tipT=setTimeout(feEnsureTooltips,150); });
+  ['sidebar','sidebarR'].forEach(id=>{ const el=document.getElementById(id); if(el) _tipObs.observe(el,{childList:true,subtree:true}); });
+}catch(e){ console.warn('tooltip pass failed', e); }
 // move the slice controls out of the 2x2 grid into the left sidebar (no overlap on the render)
 { const _slh=document.getElementById('sliceCtlHost'); _slh.insertBefore(document.getElementById('sliceCtl'), _slh.firstChild); }   // Render mode at the very top
 // panel order: Underlay above Overlays · Volume render under View&appearance · Tools after Output&motion
@@ -6048,20 +6180,22 @@ function feSel(){ return feCanvas && feCanvas.getActiveObject(); }
 function feSelObjs(){ if(!feCanvas) return []; const a=feCanvas.getActiveObject(); if(!a) return [];
   return (a.type==='activeSelection' && a.getObjects) ? a.getObjects() : [a]; }
 function feDl(name,href){ const a=document.createElement('a'); a.download=name; a.href=href; a.click(); }
-let feZoom=1;   // user display-zoom multiplier on top of fit-to-window (1 = fit whole figure in the stage)
+let feZoom=1;        // user display-zoom multiplier on top of fit-to-window (1 = fit whole figure in the stage)
+let feFitScale=1;    // the fit-to-window scale at the current window size (so a typed % maps to feZoom)
 // Scale ONLY the canvas's on-screen (CSS) size to fit the stage; the drawing backstore stays at the
 // full figure resolution, so exports remain full-res and fabric still maps pointer events correctly.
 function feFit(){ if(!feCanvas) return; const stage=$('feStage'); if(!stage) return;
   const W=+$('feW').value||feCanvas.getWidth(), H=+$('feH').value||feCanvas.getHeight();
   const availW=Math.max(60, stage.clientWidth-28), availH=Math.max(60, stage.clientHeight-28);
-  const fit=Math.min(availW/W, availH/H);
-  const z=Math.max(0.05, fit*feZoom);
+  feFitScale=Math.min(availW/W, availH/H);
+  const z=Math.max(0.05, feFitScale*feZoom);
   feCanvas.setDimensions({width:Math.round(W*z)+'px', height:Math.round(H*z)+'px'}, {cssOnly:true});
   feCanvas.calcOffset(); feCanvas.renderAll();   // re-render: setDimensions resets the retina context, blanking the display otherwise
-  const pct=$('feZoomPct'); if(pct) pct.textContent=Math.round(z*100)+'%';
+  const pct=$('feZoomPct'); if(pct && document.activeElement!==pct) pct.value=Math.round(z*100);
 }
 function feResize(){ if(feCanvas){ feCanvas.setWidth(+$('feW').value); feCanvas.setHeight(+$('feH').value); feFit(); feCanvas.renderAll(); } }
-function feSetZoom(mult){ feZoom = mult==null ? 1 : Math.max(0.1, Math.min(5, mult)); feFit(); }
+function feSetZoom(mult){ feZoom = mult==null ? 1 : Math.max(0.05, Math.min(8, mult)); feFit(); }
+function feSetZoomPct(pct){ if(!isFinite(pct)||pct<=0) return; feZoom = Math.max(0.05, Math.min(8, (pct/100)/(feFitScale||1))); feFit(); }   // typed % is the on-screen display scale
 function feAddObj(o){ feCanvas.add(o); feCanvas.setActiveObject(o); feCanvas.requestRenderAll(); }
 function feImg(dataURL, opts){ fabric.Image.fromURL(dataURL, img=>{ img.set(Object.assign({left:30,top:30},opts||{}));
   const maxW=feCanvas.getWidth()*0.5; if(img.width>maxW) img.scaleToWidth(maxW); feAddObj(img); }); }
@@ -6240,10 +6374,14 @@ async function openFigEditor(){
   // ↺ Reset appearance also re-syncs the figure when the Editor is open
   if($('resetAppear')) $('resetAppear').addEventListener('click', ()=>{ if(document.body.classList.contains('feopen')){ showUpdating(true); clearTimeout(_lookTimer); _lookTimer=setTimeout(applyLookAll, 300); } });
   $('feW').addEventListener('change', feResize); $('feH').addEventListener('change', feResize);
-  // figure zoom: Fit resets to whole-figure-in-window; ± step around the current zoom
+  // figure zoom: Fit resets to whole-figure-in-window; ± step 10%; type a % directly
   if($('feZoomFit')) $('feZoomFit').addEventListener('click', ()=>feSetZoom(1));
-  if($('feZoomIn'))  $('feZoomIn').addEventListener('click', ()=>feSetZoom(feZoom*1.25));
-  if($('feZoomOut')) $('feZoomOut').addEventListener('click', ()=>feSetZoom(feZoom/1.25));
+  if($('feZoomIn'))  $('feZoomIn').addEventListener('click', ()=>feSetZoom(feZoom*1.1));
+  if($('feZoomOut')) $('feZoomOut').addEventListener('click', ()=>feSetZoom(feZoom/1.1));
+  if($('feZoomPct')){ const apply=()=>{ const v=parseFloat($('feZoomPct').value); if(isFinite(v)&&v>0) feSetZoomPct(v); };
+    $('feZoomPct').addEventListener('change', apply);
+    $('feZoomPct').addEventListener('keydown', e=>{ if(e.key==='Enter'){ apply(); e.target.blur(); }
+      else if(e.key==='ArrowUp'){ feSetZoom(feZoom*1.05); e.preventDefault(); } else if(e.key==='ArrowDown'){ feSetZoom(feZoom/1.05); e.preventDefault(); } }); }
   window.addEventListener('resize', ()=>{ if(document.body.classList.contains('feopen')) feFit(); });
   $('feBg').addEventListener('input', ()=>{ if(feCanvas){ feCanvas.backgroundColor=$('feBg').value; feCanvas.renderAll(); } });
   $('feColor').addEventListener('input', feApplyColor);
