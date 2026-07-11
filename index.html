@@ -1859,10 +1859,6 @@ renderer.domElement.addEventListener('wheel', (e)=>{
   }
   setCamDistance(Math.min(hi, want));
 }, {passive:false});
-// keep both sliders in sync while wheel-zooming / buttons (unless being dragged)
-controls.addEventListener('change', ()=>{ const n=distToNorm(camDistance());
-  const h=$('zoomSlider'); if(h && document.activeElement!==h) h.value=n; });
-
 // ---------- per-tier opacity (colored vs gray vs all) so colored regions pop ----------
 const _hsl={};
 function isColored(o){ new THREE.Color(o.meta.color||'#888').getHSL(_hsl); return _hsl.s >= (+$('satCut').value); }
@@ -4659,7 +4655,6 @@ function resize(){
   cv.style.left = sbL+'px'; cv.style.top = top+'px';
   renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
   for(const vid of ['sliceView','mosaicView']){ const q=$(vid); if(q){ q.style.left=sbL+'px'; q.style.top=top+'px'; q.style.width=w+'px'; q.style.height=h+'px'; } }
-  const zw=$('zoomWidget'); if(zw) zw.style.right=(sbR+pbW+16)+'px';                    // keep widgets clear of right panel + builder
   const hn=document.querySelector('.hint'); if(hn) hn.style.right=(sbR+pbW+12)+'px';
   const hud=$('hud'); if(hud){ hud.style.left=(sbL+12)+'px'; hud.style.top=(top+8)+'px'; }   // region-label popup clears the (text-size-scaled) sidebar + toolbar
   requestRender();
@@ -6072,8 +6067,8 @@ function setViewMode(m){   // 'mesh' | 'slice' | 'mosaic'
   $('orthoCtl').style.display = sliceMode?'block':'none';
   syncSliceCtx();   // Render row + Borders row + mode hint (context-sensitive)
   $('mosaicCtl').style.display = mosaicMode?'block':'none';
-  const hint=document.querySelector('.hint'), zw=$('zoomWidget'), off=(m!=='mesh');
-  if(hint) hint.style.display=off?'none':''; if(zw) zw.style.display=off?'none':'';
+  const hint=document.querySelector('.hint'), off=(m!=='mesh');
+  if(hint) hint.style.display=off?'none':'';
   resize();
   if(m!=='mesh'){ ensureMNI();
     const acc=$('accSlices'); if(acc){ acc.open=true; if(document.body.classList.contains('navhidden')){ document.body.classList.remove('navhidden'); $('navToggle').classList.add('tbon'); resize(); } } }
@@ -6211,7 +6206,7 @@ function sliceWheel(cv,ev){ ev.preventDefault(); const p=cv._plane; if(!p) retur
     shading:'Lit (Standard) vs studio Matcap shading', vivid:'Color vividness / saturation boost', rim:'Fresnel rim-glow strength', rimColor:'Rim glow color',
     bg:'Viewer background color',
     explode:'Explosion amount — push regions apart', distance:'How far regions spread when exploded', play:'Play / pause the explosion animation', animSpeed:'Explosion animation speed',
-    zoomSlider:'Zoom the camera', zoomSpeed:'Mouse-wheel zoom sensitivity', autoRotate:'Continuously rotate the brain', rotSpeed:'Auto-rotate speed', spin:'Slow idle spin',
+    zoomSpeed:'Mouse-wheel zoom sensitivity', autoRotate:'Continuously rotate the brain', rotSpeed:'Auto-rotate speed', spin:'Slow idle spin',
     axisLines:'Show L/R · A/P · D/V axis lines', axisLetters:'Show axis direction letters', axisColor:'Axis color', axisWidth:'Axis line thickness',
     connOn:'Show structural/functional connectivity edges (atlases with data)', connType:'Connectivity modality (DTI / resting-state)', connTh:'Minimum edge strength to draw',
     connScale:'Edge thickness scale', connAll:'Also connect hidden regions', connColorMode:'Color edges by strength (colormap), by direction (DEC: R=L↔R, G=A↔P, B=S↔I), or one fixed color', connCmap:'Connectivity colormap', connColor:'Single edge color',
