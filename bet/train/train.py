@@ -5,6 +5,7 @@ bet_unet.pt, a loss/Dice curve, and periodic val QC montages. Usage: train.py [E
 import os, sys, glob, re, time, random, json
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from scipy.ndimage import gaussian_filter, zoom
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) or '.')
 from unet3d import UNet3D
 
@@ -29,15 +30,35 @@ def _shift(a, s):                                                              #
     dst = tuple(slice(max(0, s[d]), a.shape[d] - max(0, -s[d])) for d in range(3))
     out[dst] = a[src]; return out
 
+def _bias(shape, strength):                                                    # smooth multiplicative inhomogeneity
+    lo = (np.random.randn(4, 4, 4).astype(np.float32)) * strength
+    f = zoom(lo, (shape[0] / 4, shape[1] / 4, shape[2] / 4), order=1)[:shape[0], :shape[1], :shape[2]]
+    return np.exp(f).astype(np.float32)
+
+def _renorm(x):                                                                # back to ~[0,1] like the inference conform
+    x = np.clip(x, 0, None); pos = x[x > 0]
+    p = np.percentile(pos, 99.5) if pos.size else 1.0
+    return np.clip(x / (p if p > 0 else 1.0), 0, 1).astype(np.float32)
+
+# Contrast-invariant augmentation: the brain MASK is the same anatomy no matter how tissues are
+# rendered, so we throw wildly varied intensity transforms at x (gamma, inversion≈T2/FLAIR, bias,
+# blur, noise) while keeping y fixed → the net learns to find the brain regardless of contrast.
 def augment(x, y):
     if random.random() < 0.5: x = x[::-1].copy(); y = y[::-1].copy()          # LR flip (RAS x)
-    if random.random() < 0.6:
+    if random.random() < 0.6:                                                  # zero-fill translation
         s = (random.randint(-4, 4), random.randint(-4, 4), random.randint(-4, 4))
         x = _shift(x, s); y = _shift(y, s)
-    if random.random() < 0.7:
-        g = random.uniform(0.7, 1.5); sc = random.uniform(0.85, 1.15)
-        x = np.clip((x ** g) * sc, 0, 1.5).astype(np.float32)
-    if random.random() < 0.3: x = np.clip(x + random.uniform(-0.05, 0.05), 0, 1.5).astype(np.float32)
+    x = x.astype(np.float32)
+    if random.random() < 0.5:                                                  # wide gamma
+        x = np.power(np.clip(x, 0, 1), random.uniform(0.5, 2.2))
+    if random.random() < 0.3:                                                  # foreground inversion (T1→T2-ish flip of tissue brightness)
+        fg = x > 0.03
+        if fg.any(): mx = float(x[fg].max()); x[fg] = mx - x[fg]
+    if random.random() < 0.4: x = x * _bias(x.shape, random.uniform(0.2, 0.5))  # scanner intensity inhomogeneity
+    if random.random() < 0.25: x = gaussian_filter(x, sigma=random.uniform(0.4, 1.1))  # resolution/SNR
+    if random.random() < 0.4: x = x + np.random.randn(*x.shape).astype(np.float32) * random.uniform(0.01, 0.06)  # noise
+    if random.random() < 0.5: x = x * random.uniform(0.8, 1.25) + random.uniform(-0.06, 0.06)  # brightness/contrast
+    x = _renorm(x)
     return np.ascontiguousarray(x, np.float32), np.ascontiguousarray(y, np.float32)
 
 class BetDS(Dataset):
