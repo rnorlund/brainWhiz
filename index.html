@@ -2772,6 +2772,7 @@ function looksLikeParcellation(nii){
   return mx>=1 && mx<=20000 && seen.size>=2 && seen.size<=6000;
 }
 function buildAtlasFromNifti(nii, labelsText, name){
+  if(typeof betSetSource==='function') betSetSource(nii, name);   // let BET/CHOP use a drag-loaded volume
   nii=_capNii(nii, 6_000_000);                       // keep AAL/HO full-res; only downsample very large label volumes
   const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
   const labelsMap = labelsText ? parseLabelsText(labelsText) : {};
@@ -2822,6 +2823,7 @@ function buildAtlasFromNifti(nii, labelsText, name){
 }
 // continuous volume (T1 / stat map) -> ONE smooth brain-surface mesh (intensity isosurface)
 function buildSurfaceFromNifti(nii, name){
+  if(typeof betSetSource==='function') betSetSource(nii, name);   // let BET/CHOP use a drag-loaded scan
   nii=_capNii(nii, 2_500_000);                       // downsample huge volumes so the tab never freezes
   const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
   let samp=[]; const stride=Math.max(1,(data.length/150000)|0);
@@ -5072,11 +5074,16 @@ function nextFrames(n=2){ return new Promise(res=>{ (function step(k){ k<=0?res(
    Runs our clean-room bet/tissue/chop modules in a Web Worker on the loaded subject scan.
    Requires the app to be SERVED (http/https) — module workers can't load on file://. */
 let _betWorker=null, _betResult=null, _betPrior=undefined;   // _betResult={mask,cortex,wm,gm,dim,M,T,voxels,total}
+let _betSource=null, _betSourceName='', _betSuppressCapture=false;   // most-recent subject volume loaded by ANY path
+// capture a loaded NIfTI volume as the BET/CHOP subject (drag-to-surface, atlas, or underlay). Latest wins.
+function betSetSource(nii,name){ if(_betSuppressCapture||!nii||!nii.data||!nii.dim||!nii.M||!nii.T) return;
+  _betSource={ data:nii.data, dim:nii.dim.slice(), M:nii.M.slice(), T:nii.T.slice() }; if(name) _betSourceName=name; betRefreshSrc(); }
 function betStatus(msg,err){ const s=$('betStatus'); if(s){ s.textContent=msg||''; s.style.color=err?'#ff6b6b':''; } }
 function betProgress(pct,msg){ const b=$('betBar'),bi=$('betBarIn'); if(b) b.style.display=(pct>0&&pct<100)?'block':'none'; if(bi) bi.style.width=(pct||0)+'%'; if(msg) betStatus(msg); }
 const betAffine=v=>[[v.M[0],v.M[1],v.M[2],v.T[0]],[v.M[3],v.M[4],v.M[5],v.T[1]],[v.M[6],v.M[7],v.M[8],v.T[2]],[0,0,0,1]];
 const betSpacing=v=>[Math.hypot(v.M[0],v.M[3],v.M[6])||1,Math.hypot(v.M[1],v.M[4],v.M[7])||1,Math.hypot(v.M[2],v.M[5],v.M[8])||1];
-function betRefreshSrc(){ const el=$('betSrc'); if(!el) return; if(underlayVol){ el.textContent=underlayName||'loaded scan'; el.style.opacity=''; } else { el.textContent='— none loaded (load a subject T1/T2) —'; el.style.opacity='.7'; } }
+function betRefreshSrc(){ const el=$('betSrc'); if(!el) return; const nm=_betSourceName||underlayName;
+  if(_betSource||underlayVol){ el.textContent=nm||'loaded scan'; el.style.opacity=''; } else { el.textContent='— none loaded (load a subject T1/T2) —'; el.style.opacity='.7'; } }
 function betLoadPrior(){ return new Promise(res=>{ if(_betPrior!==undefined) return res(_betPrior);
   const done=()=>{ try{ const P=window.MNI_BRAIN_PRIOR; if(!P){ res(_betPrior=null); return; }
       const bin=atob(P.data),u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
@@ -5084,11 +5091,13 @@ function betLoadPrior(){ return new Promise(res=>{ if(_betPrior!==undefined) ret
   if(window.MNI_BRAIN_PRIOR) return done();
   const s=document.createElement('script'); s.src='bet/mni_brain_prior.js'; s.onload=done; s.onerror=()=>res(_betPrior=null); document.head.appendChild(s); }); }
 async function betRun(){
-  const v=underlayVol;
-  if(!v){ betStatus('Load a subject T1/T2 first — MNI152 is a template, not a subject scan.', true); return; }
+  if(location.protocol==='file:'){ betStatus('BET can’t run from a file:// page (browsers block module workers there). Serve the folder — e.g. run  python3 -m http.server 8777  in the brainWhiz folder and open http://localhost:8777 — or use the live site.', true); return; }
+  const v=_betSource||underlayVol;
+  if(!v){ betStatus('Load a subject T1/T2 first — drag one in, or 🩻 Underlay → “＋ Load .nii”, or “＋ Load T1/T2” above. (MNI152 is a template, not a subject.)', true); return; }
   const refined=$('betQual')&&$('betQual').value==='refined', t2=$('betSeq')&&$('betSeq').value==='t2';
-  if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'}); }
-    catch(e){ betStatus('Brain extraction needs the app served (e.g. python3 -m http.server) — disabled on file://.', true); return; } }
+  if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'});
+      _betWorker.onerror=(ev)=>{ betProgress(0); betStatus('Extraction worker failed to load'+((ev&&ev.message)?': '+ev.message:'')+'. Try a hard refresh; BET needs the app served (not file://).', true); _betWorker=null; if($('betRun')) $('betRun').disabled=false; }; }
+    catch(e){ betStatus('Could not start the extraction worker: '+(e.message||e), true); return; } }
   $('betRun').disabled=true; betProgress(4,'Preparing…');
   const dim=v.dim.slice(), M=v.M.slice(), T=v.T.slice();
   const vol={ data:Float32Array.from(v.data), dims:dim, spacing:betSpacing(v), affine:betAffine(v) };
@@ -5101,7 +5110,7 @@ async function betRun(){
     if(d.type==='progress') return betProgress(d.pct,d.msg);
     if(d.type==='error'){ betProgress(0); betStatus('Extraction failed: '+d.msg, true); $('betRun').disabled=false; return; }
     if(d.type==='done'){ betProgress(0);
-      _betResult={ mask:d.mask, cortex:d.cortex, wm:d.wm, gm:d.gm, dim, M, T, voxels:d.voxels, total:d.total, centroids:d.centroids };
+      _betResult={ mask:d.mask, cortex:d.cortex, wm:d.wm, gm:d.gm, dim, M, T, voxels:d.voxels, total:d.total, centroids:d.centroids, srcData:v.data };
       betStatus(`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`);
       $('betResults').style.display='block'; ['chopCortex','chopWM','chopGM','chopTissueUnder'].forEach(id=>{ if($(id)) $(id).disabled=false; });
       if($('chopHint')) $('chopHint').textContent='Ready — pick a compartment.'; $('betRun').disabled=false; } };
@@ -5119,12 +5128,14 @@ function betCrop(arr,dim,M,T,margin=2){ const [nx,ny,nz]=dim; let x0=nx,y0=ny,z0
   const T2=[M[0]*x0+M[1]*y0+M[2]*z0+T[0], M[3]*x0+M[4]*y0+M[5]*z0+T[1], M[6]*x0+M[7]*y0+M[8]*z0+T[2]];
   return {data:out,dim:[di,dj,dk],M:M.slice(),T:T2}; }
 function betShowSurface(arr,name){ if(!_betResult) return; const c=betCrop(arr,_betResult.dim,_betResult.M,_betResult.T);
-  buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name); setViewMode('mesh'); betStatus(name+' surface — switch atlas from the picker to restore regions.'); }
-function betMaskedIntensity(){ const d=(underlayVol&&underlayVol.data)||[], a=new Float32Array(_betResult.total); for(let i=0;i<a.length;i++) a[i]=_betResult.mask[i]?(d[i]||0):0; return a; }
+  _betSuppressCapture=true; try{ buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name); } finally{ _betSuppressCapture=false; }
+  setViewMode('mesh'); betStatus(name+' surface — switch atlas from the picker to restore regions.'); }
+function betMaskedIntensity(){ const d=_betResult.srcData||(underlayVol&&underlayVol.data)||[], a=new Float32Array(_betResult.total); for(let i=0;i<a.length;i++) a[i]=_betResult.mask[i]?(d[i]||0):0; return a; }
 function betAsUnderlay(){ if(!_betResult) return; setUnderlay({data:betMaskedIntensity(), dim:_betResult.dim, M:_betResult.M, T:_betResult.T}); setViewMode('slice'); betStatus('Skull-stripped scan set as slice/mosaic underlay.'); }
 function betTissueRegions(){ if(!_betResult) return; const n=_betResult.total, lab=new Float32Array(n);
   for(let i=0;i<n;i++){ if(_betResult.wm[i]) lab[i]=3; else if(_betResult.gm[i]) lab[i]=2; else if(_betResult.mask[i]) lab[i]=1; }
-  buildAtlasFromNifti(makeVol(lab,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice()), null, 'Tissue (CSF·GM·WM)'); setViewMode('mesh'); betStatus('Tissue compartments as 3 colored regions.'); }
+  _betSuppressCapture=true; try{ buildAtlasFromNifti(makeVol(lab,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice()), null, 'Tissue (CSF·GM·WM)'); } finally{ _betSuppressCapture=false; }
+  setViewMode('mesh'); betStatus('Tissue compartments as 3 colored regions.'); }
 // minimal NIfTI-1 writer (gzipped) — dtype 2=uint8 mask, 16=float32 intensity
 function makeNiftiGz(arr,dim,M,T,dtype){ const [nx,ny,nz]=dim,n=nx*ny*nz,u8=dtype===2,bp=u8?1:4,le=true;
   const buf=new ArrayBuffer(352+n*bp), dv=new DataView(buf);
@@ -5981,6 +5992,8 @@ function setUnderlay(nii){
   arr.sort((a,b)=>a-b); const hi=arr.length?arr[Math.floor(arr.length*0.99)]||arr[arr.length-1]:1;
   const sc=255/(hi||1), out=new Float32Array(n); for(let i=0;i<n;i++){ const v=d[i]; out[i]=(v>0&&isFinite(v))?Math.min(255,v*sc):0; }
   underlayVol=makeVol(out, nii.dim.slice(), nii.M.slice(), nii.T.slice());
+  if(typeof betRefreshSrc==='function') betRefreshSrc();   // keep the BET "Scan" label current
+
   // overlays must re-reslice onto the new grid
   overlays.forEach(o=>{ o.volStats=null; o.tfceCache=null; if(o.vol){ const tvox=Math.abs(nii.M[0])||2, ovmin=Math.min(...o.vol.vox);
     o.volGrid = ovmin>=tvox-0.1 ? resliceToTemplate(o.vol) : o.vol; if(o===overlays[selOv]) overlay.volA_grid=o.volGrid; } });
