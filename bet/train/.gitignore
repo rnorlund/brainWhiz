@@ -1,0 +1,5 @@
+# training artifacts — regenerated locally, not shipped (the shipped artifact is bet/model/bet_unet.onnx)
+*.pt
+*.png
+*.json
+__pycache__/
