@@ -517,6 +517,48 @@
     <div id="ulTabInfo" style="font-size:11px;opacity:.8;min-height:13px;margin-top:4px"></div>
   </div></details>
 
+  <details class="acc" id="accBET"><summary><span class="chev">▸</span>🧠 Brain extraction (BET)</summary><div class="accb">
+    <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:8px">
+      Skull-strip a subject <b>T1 / T2</b> — 100% original, clean-room (no FSL/ANTs/copyrighted code).
+      Deep-core + curvature shape prior; <b>Refined</b> also warps an MNI/OASIS brain-probability prior
+      back to the subject to trim neck &amp; face. Then it segments <b>CSF / GM / WM</b> so the surface
+      shows real gyri &amp; sulci. Load a subject scan (below or via 🩻 Underlay); MNI152 isn't a subject.</div>
+    <div class="row"><label>Scan</label>
+      <span id="betSrc" class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">— none loaded —</span></div>
+    <div class="row" style="gap:5px">
+      <button class="sm" id="betLoad" title="Load a subject T1/T2 .nii/.nii.gz to extract">＋ Load T1/T2</button>
+      <input type="file" id="betFile" accept=".nii,.nii.gz,.gz" style="display:none"></div>
+    <div class="row"><label title="T1: CSF dark. T2: CSF bright (inverts tissue ordering).">Contrast</label>
+      <select id="betSeq"><option value="t1">T1 (CSF dark)</option><option value="t2">T2 (CSF bright)</option></select></div>
+    <div class="row"><label title="Fast = deep-core + shape prior only. Refined additionally gates with the MNI/OASIS brain-probability prior to remove neck/face (a bit slower).">Quality</label>
+      <select id="betQual"><option value="refined">Refined (OASIS prior)</option><option value="fast">Fast (geometry only)</option></select></div>
+    <div class="row"><button class="sm" id="betRun" style="flex:1;padding:5px" title="Run brain extraction on the loaded scan">🧠 Extract brain</button></div>
+    <div id="betBar" style="height:6px;background:#0003;border-radius:4px;overflow:hidden;display:none;margin:2px 0">
+      <div id="betBarIn" style="height:100%;width:0%;background:linear-gradient(90deg,#4ea3ff,#7ce0c0);transition:width .2s"></div></div>
+    <div id="betStatus" style="font-size:11px;opacity:.85;min-height:13px;margin-top:3px"></div>
+    <div id="betResults" style="display:none;margin-top:6px">
+      <div class="row" style="gap:5px">
+        <button class="sm" id="betSurf" title="Render the extracted brain as a 3D folded-cortex surface (replaces current meshes)">🧠 3D surface</button>
+        <button class="sm" id="betUnder" title="Use the skull-stripped scan as the slice/mosaic underlay">🔪 As underlay</button></div>
+      <div class="row" style="gap:5px;margin-top:4px">
+        <button class="sm" id="betDownload" title="Download the binary brain mask as .nii.gz (native space)">⬇ mask.nii.gz</button>
+        <button class="sm" id="betDownloadBrain" title="Download the skull-stripped scan as .nii.gz">⬇ brain.nii.gz</button></div>
+    </div>
+  </div></details>
+
+  <details class="acc" id="accCHOP"><summary><span class="chev">▸</span>✂️ Segment (CHOP)</summary><div class="accb">
+    <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:8px">
+      Parcel an extracted brain into <b>tissue compartments</b> (from the BET run above). Render any
+      compartment as a folded 3D surface or drop it under the slices. <span id="chopHint" style="opacity:.8">Run 🧠 Extract brain first.</span></div>
+    <div class="row" style="gap:5px">
+      <button class="sm" id="chopCortex" disabled title="GM∪WM cortex (CSF removed) — folded pial-like surface">Cortex (GM+WM)</button>
+      <button class="sm" id="chopWM" disabled title="White-matter core surface">White matter</button></div>
+    <div class="row" style="gap:5px;margin-top:4px">
+      <button class="sm" id="chopGM" disabled title="Gray-matter ribbon">Gray matter</button>
+      <button class="sm" id="chopTissueUnder" disabled title="Show CSF/GM/WM as three colored 3D regions">🎨 Tissue (3D)</button></div>
+    <div id="chopStatus" style="font-size:11px;opacity:.85;min-height:13px;margin-top:4px"></div>
+  </div></details>
+
   <details class="acc" id="accVolume"><summary><span class="chev">▸</span>🧊 Volume render</summary><div class="accb">
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:6px">
       Raymarch the <b>active overlay</b> (incl. 4D) as a true 3D volume — glowing voxels you can
@@ -5026,6 +5068,98 @@ function setControl(id,val){ const el=$(id); if(!el) return;
   if(el.type==='checkbox'){ el.checked=!!val; el.dispatchEvent(new Event('change')); }
   else { el.value=val; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); } }
 function nextFrames(n=2){ return new Promise(res=>{ (function step(k){ k<=0?res():requestAnimationFrame(()=>step(k-1)); })(n); }); }
+/* ===================== BET / CHOP — brain extraction + tissue segmentation ======================
+   Runs our clean-room bet/tissue/chop modules in a Web Worker on the loaded subject scan.
+   Requires the app to be SERVED (http/https) — module workers can't load on file://. */
+let _betWorker=null, _betResult=null, _betPrior=undefined;   // _betResult={mask,cortex,wm,gm,dim,M,T,voxels,total}
+function betStatus(msg,err){ const s=$('betStatus'); if(s){ s.textContent=msg||''; s.style.color=err?'#ff6b6b':''; } }
+function betProgress(pct,msg){ const b=$('betBar'),bi=$('betBarIn'); if(b) b.style.display=(pct>0&&pct<100)?'block':'none'; if(bi) bi.style.width=(pct||0)+'%'; if(msg) betStatus(msg); }
+const betAffine=v=>[[v.M[0],v.M[1],v.M[2],v.T[0]],[v.M[3],v.M[4],v.M[5],v.T[1]],[v.M[6],v.M[7],v.M[8],v.T[2]],[0,0,0,1]];
+const betSpacing=v=>[Math.hypot(v.M[0],v.M[3],v.M[6])||1,Math.hypot(v.M[1],v.M[4],v.M[7])||1,Math.hypot(v.M[2],v.M[5],v.M[8])||1];
+function betRefreshSrc(){ const el=$('betSrc'); if(!el) return; if(underlayVol){ el.textContent=underlayName||'loaded scan'; el.style.opacity=''; } else { el.textContent='— none loaded (load a subject T1/T2) —'; el.style.opacity='.7'; } }
+function betLoadPrior(){ return new Promise(res=>{ if(_betPrior!==undefined) return res(_betPrior);
+  const done=()=>{ try{ const P=window.MNI_BRAIN_PRIOR; if(!P){ res(_betPrior=null); return; }
+      const bin=atob(P.data),u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+      res(_betPrior={ data:window.pako.ungzip(u), dims:P.dim.slice(), affine:P.affine, n:P.n, pt:0.20 }); }catch(e){ res(_betPrior=null); } };
+  if(window.MNI_BRAIN_PRIOR) return done();
+  const s=document.createElement('script'); s.src='bet/mni_brain_prior.js'; s.onload=done; s.onerror=()=>res(_betPrior=null); document.head.appendChild(s); }); }
+async function betRun(){
+  const v=underlayVol;
+  if(!v){ betStatus('Load a subject T1/T2 first — MNI152 is a template, not a subject scan.', true); return; }
+  const refined=$('betQual')&&$('betQual').value==='refined', t2=$('betSeq')&&$('betSeq').value==='t2';
+  if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'}); }
+    catch(e){ betStatus('Brain extraction needs the app served (e.g. python3 -m http.server) — disabled on file://.', true); return; } }
+  $('betRun').disabled=true; betProgress(4,'Preparing…');
+  const dim=v.dim.slice(), M=v.M.slice(), T=v.T.slice();
+  const vol={ data:Float32Array.from(v.data), dims:dim, spacing:betSpacing(v), affine:betAffine(v) };
+  const transfer=[vol.data.buffer]; let mni=null, prior=null;
+  if(refined){ const m=ensureMNI();
+    if(m){ mni={ data:Float32Array.from(m.data), dims:m.dim.slice(), spacing:betSpacing(m), affine:betAffine(m) }; transfer.push(mni.data.buffer); }
+    const p=await betLoadPrior(); if(p){ const pd=Uint8Array.from(p.data); prior={ data:pd, dims:p.dims, affine:p.affine, n:p.n, pt:p.pt }; transfer.push(pd.buffer); }
+    if(!mni||!prior) betStatus('Refined prior unavailable — using fast geometry only…'); }
+  _betWorker.onmessage=(e)=>{ const d=e.data;
+    if(d.type==='progress') return betProgress(d.pct,d.msg);
+    if(d.type==='error'){ betProgress(0); betStatus('Extraction failed: '+d.msg, true); $('betRun').disabled=false; return; }
+    if(d.type==='done'){ betProgress(0);
+      _betResult={ mask:d.mask, cortex:d.cortex, wm:d.wm, gm:d.gm, dim, M, T, voxels:d.voxels, total:d.total, centroids:d.centroids };
+      betStatus(`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`);
+      $('betResults').style.display='block'; ['chopCortex','chopWM','chopGM','chopTissueUnder'].forEach(id=>{ if($(id)) $(id).disabled=false; });
+      if($('chopHint')) $('chopHint').textContent='Ready — pick a compartment.'; $('betRun').disabled=false; } };
+  _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ refined:refined&&!!(mni&&prior), t2, dilMM:6 } }, transfer);
+}
+const betNii=arr=>makeVol(arr,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice());
+// crop a native array to the nonzero bounding box (+margin) so the surface keeps FULL resolution
+// within the mesh-vertex budget → crisp gyri/sulci instead of a whole-volume downsample.
+function betCrop(arr,dim,M,T,margin=2){ const [nx,ny,nz]=dim; let x0=nx,y0=ny,z0=nz,x1=-1,y1=-1,z1=-1;
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){ const b=nx*(j+ny*k); for(let i=0;i<nx;i++) if(arr[b+i]){ if(i<x0)x0=i;if(i>x1)x1=i;if(j<y0)y0=j;if(j>y1)y1=j;if(k<z0)z0=k;if(k>z1)z1=k; } }
+  if(x1<0) return {data:arr,dim:dim.slice(),M:M.slice(),T:T.slice()};
+  x0=Math.max(0,x0-margin);y0=Math.max(0,y0-margin);z0=Math.max(0,z0-margin); x1=Math.min(nx-1,x1+margin);y1=Math.min(ny-1,y1+margin);z1=Math.min(nz-1,z1+margin);
+  const di=x1-x0+1,dj=y1-y0+1,dk=z1-z0+1,out=new Float32Array(di*dj*dk);
+  for(let k=0;k<dk;k++)for(let j=0;j<dj;j++){ const sb=nx*((j+y0)+ny*(k+z0))+x0, db=di*(j+dj*k); for(let i=0;i<di;i++) out[db+i]=arr[sb+i]; }
+  const T2=[M[0]*x0+M[1]*y0+M[2]*z0+T[0], M[3]*x0+M[4]*y0+M[5]*z0+T[1], M[6]*x0+M[7]*y0+M[8]*z0+T[2]];
+  return {data:out,dim:[di,dj,dk],M:M.slice(),T:T2}; }
+function betShowSurface(arr,name){ if(!_betResult) return; const c=betCrop(arr,_betResult.dim,_betResult.M,_betResult.T);
+  buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name); setViewMode('mesh'); betStatus(name+' surface — switch atlas from the picker to restore regions.'); }
+function betMaskedIntensity(){ const d=(underlayVol&&underlayVol.data)||[], a=new Float32Array(_betResult.total); for(let i=0;i<a.length;i++) a[i]=_betResult.mask[i]?(d[i]||0):0; return a; }
+function betAsUnderlay(){ if(!_betResult) return; setUnderlay({data:betMaskedIntensity(), dim:_betResult.dim, M:_betResult.M, T:_betResult.T}); setViewMode('slice'); betStatus('Skull-stripped scan set as slice/mosaic underlay.'); }
+function betTissueRegions(){ if(!_betResult) return; const n=_betResult.total, lab=new Float32Array(n);
+  for(let i=0;i<n;i++){ if(_betResult.wm[i]) lab[i]=3; else if(_betResult.gm[i]) lab[i]=2; else if(_betResult.mask[i]) lab[i]=1; }
+  buildAtlasFromNifti(makeVol(lab,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice()), null, 'Tissue (CSF·GM·WM)'); setViewMode('mesh'); betStatus('Tissue compartments as 3 colored regions.'); }
+// minimal NIfTI-1 writer (gzipped) — dtype 2=uint8 mask, 16=float32 intensity
+function makeNiftiGz(arr,dim,M,T,dtype){ const [nx,ny,nz]=dim,n=nx*ny*nz,u8=dtype===2,bp=u8?1:4,le=true;
+  const buf=new ArrayBuffer(352+n*bp), dv=new DataView(buf);
+  dv.setInt32(0,348,le); dv.setInt16(40,3,le); dv.setInt16(42,nx,le); dv.setInt16(44,ny,le); dv.setInt16(46,nz,le);
+  dv.setInt16(48,1,le); dv.setInt16(50,1,le); dv.setInt16(52,1,le); dv.setInt16(54,1,le);
+  dv.setInt16(70,dtype,le); dv.setInt16(72,u8?8:32,le);
+  const sp=[Math.hypot(M[0],M[3],M[6])||1,Math.hypot(M[1],M[4],M[7])||1,Math.hypot(M[2],M[5],M[8])||1];
+  dv.setFloat32(76,1,le); dv.setFloat32(80,sp[0],le); dv.setFloat32(84,sp[1],le); dv.setFloat32(88,sp[2],le);
+  dv.setFloat32(108,352,le); dv.setFloat32(112,1,le); dv.setFloat32(116,0,le); dv.setInt16(252,0,le); dv.setInt16(254,1,le);
+  dv.setFloat32(280,M[0],le);dv.setFloat32(284,M[1],le);dv.setFloat32(288,M[2],le);dv.setFloat32(292,T[0],le);
+  dv.setFloat32(296,M[3],le);dv.setFloat32(300,M[4],le);dv.setFloat32(304,M[5],le);dv.setFloat32(308,T[1],le);
+  dv.setFloat32(312,M[6],le);dv.setFloat32(316,M[7],le);dv.setFloat32(320,M[8],le);dv.setFloat32(324,T[2],le);
+  dv.setUint8(344,0x6e);dv.setUint8(345,0x2b);dv.setUint8(346,0x31);dv.setUint8(347,0);
+  if(u8){ for(let i=0;i<n;i++) dv.setUint8(352+i, arr[i]?1:0); } else { for(let i=0;i<n;i++) dv.setFloat32(352+i*4, arr[i]||0, le); }
+  return window.pako.gzip(new Uint8Array(buf)); }
+function betDownload(bytes,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([bytes],{type:'application/gzip'})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1500); }
+const betBaseName=()=>(underlayName||'scan').replace(/\.nii(\.gz)?$/i,'');
+function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wired=true;
+  $('betRun').addEventListener('click', betRun);
+  $('betLoad').addEventListener('click', ()=>$('betFile').click());
+  $('betFile').addEventListener('change', async e=>{ const f=e.target.files[0]; if(!f) return; betStatus('Loading '+f.name+'…');
+    try{ await loadUnderlayFromFile(f); betStatus('Loaded '+f.name+'. Click Extract brain.'); }catch(err){ betStatus('Load failed: '+(err.message||err), true); } betRefreshSrc(); e.target.value=''; });
+  $('betSurf').addEventListener('click', ()=>betShowSurface(_betResult.cortex,'BET cortex'));
+  $('betUnder').addEventListener('click', betAsUnderlay);
+  $('betDownload').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(_betResult.mask,_betResult.dim,_betResult.M,_betResult.T,2), betBaseName()+'_mask.nii.gz'); });
+  $('betDownloadBrain').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(betMaskedIntensity(),_betResult.dim,_betResult.M,_betResult.T,16), betBaseName()+'_brain.nii.gz'); });
+  $('chopCortex').addEventListener('click', ()=>betShowSurface(_betResult.cortex,'Cortex (GM+WM)'));
+  $('chopWM').addEventListener('click', ()=>betShowSurface(_betResult.wm,'White matter'));
+  $('chopGM').addEventListener('click', ()=>betShowSurface(_betResult.gm,'Gray matter'));
+  $('chopTissueUnder').addEventListener('click', betTissueRegions);
+  const acc=$('accBET'); if(acc) acc.addEventListener('toggle', ()=>{ if(acc.open) betRefreshSrc(); });
+  betRefreshSrc();
+}
+if(document.readyState!=='loading') betInit(); else document.addEventListener('DOMContentLoaded', betInit);
+
 let _readyResolve; const _ready = new Promise(r=>_readyResolve=r);
 window.__brainReady = _readyResolve;
 window.brainAPI = {
