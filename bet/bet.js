@@ -185,6 +185,57 @@ export function refineRadialHull(mask, dims, spacing=[1,1,1], opts={}){
   return out;
 }
 
+// ---- 2-D helpers on an nx×ny slice (Uint8Array) ----
+function largestComp2D(s, nx, ny, seedMask){   // keep comps overlapping seedMask (or the single largest if no seed)
+  const N=nx*ny, lab=new Int32Array(N), st=new Int32Array(N); let cur=0; const size=[0], touch=[false];
+  for(let p=0;p<N;p++){ if(!s[p]||lab[p]) continue; cur++; let sp=0; st[sp++]=p; lab[p]=cur; let c=0,tt=false;
+    while(sp){ const q=st[--sp]; c++; if(seedMask&&seedMask[q]) tt=true; const y=(q/nx)|0, x=q-y*nx;
+      if(x>0&&s[q-1]&&!lab[q-1]){lab[q-1]=cur;st[sp++]=q-1;} if(x<nx-1&&s[q+1]&&!lab[q+1]){lab[q+1]=cur;st[sp++]=q+1;}
+      if(y>0&&s[q-nx]&&!lab[q-nx]){lab[q-nx]=cur;st[sp++]=q-nx;} if(y<ny-1&&s[q+nx]&&!lab[q+nx]){lab[q+nx]=cur;st[sp++]=q+nx;} }
+    size[cur]=c; touch[cur]=tt; }
+  const out=new Uint8Array(N);
+  if(seedMask){ for(let p=0;p<N;p++) if(lab[p]&&touch[lab[p]]) out[p]=1; }
+  else { let bi=0,bs=0; for(let i=1;i<size.length;i++) if(size[i]>bs){bs=size[i];bi=i;} for(let p=0;p<N;p++) if(lab[p]===bi) out[p]=1; }
+  return out;
+}
+function dilate2D(s, nx, ny, r){ let a=s; for(let it=0;it<r;it++){ const b=new Uint8Array(a.length);
+  for(let y=0;y<ny;y++)for(let x=0;x<nx;x++){ const p=x+nx*y; let v=a[p];
+    if(!v){ v=(x>0&&a[p-1])||(x<nx-1&&a[p+1])||(y>0&&a[p-nx])||(y<ny-1&&a[p+nx])?1:0; } b[p]=v?1:0; } a=b; } return a; }
+function fillHoles2D(s, nx, ny){ const N=nx*ny, out=new Uint8Array(N), st=new Int32Array(N); let sp=0;
+  const push=p=>{ if(!s[p]&&!out[p]){ out[p]=1; st[sp++]=p; } };
+  for(let x=0;x<nx;x++){ push(x); push(x+nx*(ny-1)); } for(let y=0;y<ny;y++){ push(nx*y); push(nx-1+nx*y); }
+  while(sp){ const q=st[--sp], y=(q/nx)|0, x=q-y*nx; if(x>0)push(q-1); if(x<nx-1)push(q+1); if(y>0)push(q-nx); if(y<ny-1)push(q+nx); }
+  const r=new Uint8Array(N); for(let i=0;i<N;i++) r[i]= (s[i]||!out[i])?1:0; return r; }
+
+// ---- slice propagation (inter-slice continuity prior) ----
+// Seed on the most confident axial slice (largest brain-core area = mid-cerebrum, a big round blob),
+// then walk up and down one slice at a time. Each new slice may only GROW a few px beyond the
+// previous slice's contour (bounded within tissue), and must stay connected to it. The mask tapers
+// to nothing at the brain's superior/inferior tips and can't discontinuously balloon into the
+// neck/face below the foramen. Propagates along k (the 3rd voxel axis ≈ inferior–superior here).
+export function propagateSlices(core, tissue, dims, opts={}){
+  const [nx,ny,nz]=dims, nxy=nx*ny, grow=opts.grow??4;
+  let seedZ=0, seedArea=0;
+  for(let k=0;k<nz;k++){ let a=0; for(let i=0;i<nxy;i++) a+=core[k*nxy+i]; if(a>seedArea){seedArea=a;seedZ=k;} }
+  if(!seedArea) return core;
+  const out=new Uint8Array(nx*ny*nz);
+  let seed=largestComp2D(core.subarray(seedZ*nxy,(seedZ+1)*nxy), nx, ny);
+  seed=fillHoles2D(seed,nx,ny); out.set(seed, seedZ*nxy);
+  const minArea=(opts.minAreaFrac??0.05)*seedArea;
+  for(const dir of [1,-1]){ let prev=seed;
+    for(let k=seedZ+dir; k>=0&&k<nz; k+=dir){
+      const tis=tissue.subarray(k*nxy,(k+1)*nxy);
+      const allowed=dilate2D(prev,nx,ny,grow);
+      const cand=new Uint8Array(nxy); for(let i=0;i<nxy;i++) cand[i]= (tis[i]&&allowed[i])?1:0;
+      let c=largestComp2D(cand, nx, ny, prev);      // keep only parts continuous with the previous slice
+      c=fillHoles2D(c,nx,ny);
+      let a=0; for(let i=0;i<nxy;i++) a+=c[i]; if(a<minArea) break;   // reached the brain's tip → stop (never descends into neck)
+      out.set(c, k*nxy); prev=c;
+    }
+  }
+  return out;
+}
+
 // ---- full pipeline. method:
 //   'deepcore' (default, our invention): Otsu tissue → head → distance transform → keep the deepest
 //     central mass (brain core) → bounded geodesic regrowth (can't leak to scalp) → smooth + fill.
@@ -192,25 +243,30 @@ export function refineRadialHull(mask, dims, spacing=[1,1,1], opts={}){
 // opts: { threshMul=0.45, coreR=9 (mm; scalp+skull thickness to peel), pad=2, smooth=2, spacing=[1,1,1] }
 export function extractBrain(vol, opts={}){
   const {data,dims}=vol, spacing=vol.spacing||opts.spacing||[1,1,1];
-  const method=opts.method||'deepcore';
+  const method=opts.method||'deepcore';   // propagate is experimental — needs a brain-only per-slice seed
   const thr=otsu(data)*(opts.threshMul??0.45);
   let head=largestComponent(threshMask(data, thr), dims);
   head=fillHoles3D(head, dims);
   let m;
   if(method==='morph'){ const e=opts.erode??2; m=erode3D(head,dims,e); m=largestComponent(m,dims); m=dilate3D(m,dims,e); }
-  else { // deepcore
+  else {
+    // shared: distance-transform "deep core" = the single deepest central mass (brain, no thin scalp)
     const dt=distanceTransform3D(head, dims, spacing);
-    const R=opts.coreR??9;                                       // mm to peel (scalp+skull)
+    const R=opts.coreR??9;
     const core=new Uint8Array(dt.length); for(let i=0;i<dt.length;i++) core[i]= dt[i]>R ?1:0;
-    let seed=largestComponent(core, dims);                        // the deepest single mass = brain core
-    const minSp=Math.min(spacing[0],spacing[1],spacing[2])||1;
-    const iters=Math.ceil(R/minSp)+(opts.pad??2);
-    m=geodesicDilate(seed, head, dims, iters);                    // regrow to the brain boundary, bounded
-    m=largestComponent(m, dims);
-    const open=opts.open??7;                                      // neck cut: opening severs the narrow foramen-magnum bridge to the neck
-    if(open>0){ let e=erode3D(m,dims,open); e=largestComponent(e,dims); m=geodesicDilate(e, m, dims, open); }
+    let seed=largestComponent(core, dims);
+    if(method==='propagate'){                                     // inter-slice continuity prior (default)
+      m=propagateSlices(seed, head, dims, opts);
+      m=largestComponent(m, dims);
+    } else { // deepcore
+      const minSp=Math.min(spacing[0],spacing[1],spacing[2])||1;
+      const iters=Math.ceil(R/minSp)+(opts.pad??2);
+      m=geodesicDilate(seed, head, dims, iters);
+      m=largestComponent(m, dims);
+      const open=opts.open??0; if(open>0){ let e=erode3D(m,dims,open); e=largestComponent(e,dims); m=geodesicDilate(e, m, dims, open); }
+    }
   }
-  if(opts.hull!==false && method!=='morph'){                      // shape/curvature prior: trim out-of-hull neck/face spikes
+  if(opts.hull!==false && method==='deepcore'){                   // shape/curvature hull trims out-of-hull neck/face spikes
     const hull=refineRadialHull(m, dims, spacing, opts);
     for(let i=0;i<m.length;i++) m[i]= (m[i]&&hull[i])?1:0;
     m=largestComponent(m, dims);
