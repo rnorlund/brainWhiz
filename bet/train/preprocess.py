@@ -10,7 +10,8 @@ from common import conform
 
 SRC = '/Users/super/Downloads/OASIS_T1s_Only'
 WORK = '/Users/super/Downloads/OASIS_bet_work'
-CACHE = WORK + '/cache'
+CACHE = os.environ.get('BET_CACHE', WORK + '/cache')          # override for CAT12 teacher (e.g. cat_cache)
+MASK_GLOB = os.environ.get('BET_MASK_GLOB', f'{WORK}/mask/*_mask.nii.gz')   # FSL default; CAT12: cat_masks/*_p0.nii.gz
 JOBS = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 os.makedirs(CACHE, exist_ok=True)
 
@@ -33,7 +34,7 @@ def one(mask_path):
         return (sub, 'ERR:' + str(e)[:50])
 
 if __name__ == '__main__':
-    masks = sorted(glob.glob(f'{WORK}/mask/*_mask.nii.gz'))
+    masks = sorted(glob.glob(MASK_GLOB))
     print(f'{len(masks)} teacher masks found; caching -> {CACHE}', flush=True)
     t0 = time.time(); n = {}
     with ProcessPoolExecutor(max_workers=JOBS) as ex:

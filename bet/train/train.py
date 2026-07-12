@@ -104,8 +104,8 @@ def main():
     nval = max(4, int(0.15 * len(data))); val = data[:nval]; train = data[nval:]
     print(f'device {DEV} | {len(data)} subjects -> train {len(train)} val {len(val)} | base {BASE} batch {BATCH} workers {WORKERS} epochs {EPOCHS}', flush=True)
     pin = (DEV == 'cuda')
-    tl = DataLoader(BetDS(train, True), batch_size=BATCH, shuffle=True, num_workers=WORKERS, pin_memory=pin, persistent_workers=WORKERS > 0, drop_last=True)
-    vl = DataLoader(BetDS(val, False), batch_size=BATCH, shuffle=False, num_workers=max(2, WORKERS // 2), pin_memory=pin, persistent_workers=WORKERS > 0)
+    tl = DataLoader(BetDS(train, True), batch_size=BATCH, shuffle=True, num_workers=WORKERS, pin_memory=pin, persistent_workers=False, drop_last=True, timeout=120 if WORKERS>0 else 0)
+    vl = DataLoader(BetDS(val, False), batch_size=BATCH, shuffle=False, num_workers=max(2, WORKERS // 2), pin_memory=pin, persistent_workers=False, timeout=120 if WORKERS>0 else 0)
     model = UNet3D(base=BASE).to(DEV)
     opt = torch.optim.Adam(model.parameters(), 1e-3)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, EPOCHS)
