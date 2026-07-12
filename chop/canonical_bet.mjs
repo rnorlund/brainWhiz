@@ -42,8 +42,13 @@ const M0=extractBrain(vol,{method:'deepcore'});
 const brainVol={ data:applyMask(vol.data,M0.mask), dims:vol.dims, affine:vol.affine };
 const reg=registerAffine(brainVol, mni, {});
 console.log(`${base}: init ${(100*M0.voxels/(nx*ny*nz)).toFixed(1)}%  reg NMI=${reg.nmi.toFixed(3)}  (${(Date.now()-t0)}ms)`);
-// 3) MNI brain-envelope prior (threshold the template)
-const mthr=otsu(mni.data)*0.5; const mniMask=new Int32Array(mni.data.length); for(let i=0;i<mni.data.length;i++) mniMask[i]= mni.data[i]>mthr?1:0;
+// 3) MNI brain-envelope prior — use the OASIS population probability prior if built, else template threshold
+let mniMask, priorSrc='template';
+try{ const src=fs.readFileSync('bet/mni_brain_prior.js','utf8'); const w={}; new Function('window',src)(w);
+  const P=w.MNI_BRAIN_PRIOR, raw=zlib.gunzipSync(Buffer.from(P.data,'base64')); const PT=255*0.15;
+  mniMask=new Int32Array(raw.length); for(let i=0;i<raw.length;i++) mniMask[i]= raw[i]>=PT?1:0; priorSrc='OASIS n='+P.n;
+}catch(e){ const mthr=otsu(mni.data)*0.5; mniMask=new Int32Array(mni.data.length); for(let i=0;i<mni.data.length;i++) mniMask[i]= mni.data[i]>mthr?1:0; }
+console.log('  prior: '+priorSrc);
 // 4) warp prior -> native: for each native voxel -> MNI (invert MNI→subject), sample prior
 const S2M=invert4x4(reg.matrix);   // reg.matrix = MNI→subject world; invert = subject→MNI world
 let nativePrior=resampleLabels({data:mniMask,dims:mni.dims,affine:mni.affine}, {dims:vol.dims,affine:vol.affine}, S2M);
