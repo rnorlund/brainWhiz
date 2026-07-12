@@ -25,7 +25,7 @@ try{
   await page.waitForFunction(`/Loaded|failed/i.test((document.getElementById('betStatus')||{}).textContent||'')`,{timeout:30000});
   console.log('load status:', await page.$eval('#betStatus',e=>e.textContent), '| src:', await page.$eval('#betSrc',e=>e.textContent));
   // choose Refined + T1, run
-  await page.selectOption('#betQual','refined'); await page.selectOption('#betSeq','t1');
+  await page.selectOption('#betQual','learned'); await page.selectOption('#betSeq','t1');
   const t0=Date.now(); await page.click('#betRun');
   await page.waitForFunction(`/^Brain:/.test((document.getElementById('betStatus')||{}).textContent||'')`,{timeout:120000});
   const status=await page.$eval('#betStatus',e=>e.textContent);

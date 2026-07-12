@@ -530,8 +530,8 @@
       <input type="file" id="betFile" accept=".nii,.nii.gz,.gz" style="display:none"></div>
     <div class="row"><label title="T1: CSF dark. T2: CSF bright (inverts tissue ordering).">Contrast</label>
       <select id="betSeq"><option value="t1">T1 (CSF dark)</option><option value="t2">T2 (CSF bright)</option></select></div>
-    <div class="row"><label title="Fast = deep-core + shape prior only. Refined additionally gates with the MNI/OASIS brain-probability prior to remove neck/face (a bit slower).">Quality</label>
-      <select id="betQual"><option value="refined">Refined (OASIS prior)</option><option value="fast">Fast (geometry only)</option></select></div>
+    <div class="row"><label title="Learned AI = our distilled 3D U-Net (trained on OASIS) run in-browser — best quality. Refined = deep-core + MNI/OASIS prior gate. Fast = geometry only.">Quality</label>
+      <select id="betQual"><option value="learned">🤖 Learned AI (best)</option><option value="refined">Refined (OASIS prior)</option><option value="fast">Fast (geometry only)</option></select></div>
     <div class="row"><button class="sm" id="betRun" style="flex:1;padding:5px" title="Run brain extraction on the loaded scan">🧠 Extract brain</button></div>
     <div id="betBar" style="height:6px;background:#0003;border-radius:4px;overflow:hidden;display:none;margin:2px 0">
       <div id="betBarIn" style="height:100%;width:0%;background:linear-gradient(90deg,#4ea3ff,#7ce0c0);transition:width .2s"></div></div>
@@ -1476,8 +1476,9 @@ const SHADE_GLSL = `
     } else if(sh==6){   // Subsurface — waxy translucent glow
       float w = max(0.0,(ndl+0.6)/1.6);
       col = base*(0.4 + 0.6*w) + base*vec3(1.0,0.5,0.45)*pow(fres,2.0)*0.55;
-    } else if(sh==7){   // X-ray — fresnel glow, dark core
-      col = base*0.12 + base*pow(fres,1.6)*1.9;
+    } else if(sh==7){   // X-ray — cyan fresnel glow, dark core (matches the dropdown thumbnail)
+      vec3 xr = mix(base, vec3(0.45,0.78,1.0), 0.7);   // impose the x-ray cyan look regardless of colour scheme
+      col = xr*0.10 + xr*pow(fres,1.6)*2.0;
     } else if(sh==8){   // Curvature — darken sulci (anatomical depth)
       float sulc = smoothstep(0.4,1.6, length(fwidth(N)));
       col = base*(0.45 + 0.7*max(ndl,0.0)) * (1.0 - 0.65*sulc);
@@ -5094,7 +5095,7 @@ async function betRun(){
   if(location.protocol==='file:'){ betStatus('BET can’t run from a file:// page (browsers block module workers there). Serve the folder — e.g. run  python3 -m http.server 8777  in the brainWhiz folder and open http://localhost:8777 — or use the live site.', true); return; }
   const v=_betSource||underlayVol;
   if(!v){ betStatus('Load a subject T1/T2 first — drag one in, or 🩻 Underlay → “＋ Load .nii”, or “＋ Load T1/T2” above. (MNI152 is a template, not a subject.)', true); return; }
-  const refined=$('betQual')&&$('betQual').value==='refined', t2=$('betSeq')&&$('betSeq').value==='t2';
+  const qual=$('betQual')?$('betQual').value:'learned', refined=qual==='refined', t2=$('betSeq')&&$('betSeq').value==='t2';
   if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'});
       _betWorker.onerror=(ev)=>{ betProgress(0); betStatus('Extraction worker failed to load'+((ev&&ev.message)?': '+ev.message:'')+'. Try a hard refresh; BET needs the app served (not file://).', true); _betWorker=null; if($('betRun')) $('betRun').disabled=false; }; }
     catch(e){ betStatus('Could not start the extraction worker: '+(e.message||e), true); return; } }
@@ -5114,7 +5115,7 @@ async function betRun(){
       betStatus(`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`);
       $('betResults').style.display='block'; ['chopCortex','chopWM','chopGM','chopTissueUnder'].forEach(id=>{ if($(id)) $(id).disabled=false; });
       if($('chopHint')) $('chopHint').textContent='Ready — pick a compartment.'; $('betRun').disabled=false; } };
-  _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ refined:refined&&!!(mni&&prior), t2, dilMM:6 } }, transfer);
+  _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ method:qual, refined:refined&&!!(mni&&prior), t2, dilMM:6 } }, transfer);
 }
 const betNii=arr=>makeVol(arr,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice());
 // crop a native array to the nonzero bounding box (+margin) so the surface keeps FULL resolution
