@@ -8,11 +8,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from unet3d import UNet3D
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = '/Users/super/Downloads/OASIS_bet_work/cache'
+CACHE = os.environ.get('BET_CACHE', '/Users/super/Downloads/OASIS_bet_work/cache')
 EPOCHS = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 BATCH  = int(sys.argv[2]) if len(sys.argv) > 2 else 2
 BASE   = int(sys.argv[3]) if len(sys.argv) > 3 else 16
-DEV = 'mps' if torch.backends.mps.is_available() else 'cpu'
+DEV = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
 
 def load_all():
     files = sorted(glob.glob(f'{CACHE}/*.npz'))
@@ -26,8 +26,17 @@ def dice_loss(logit, y):
     p = torch.sigmoid(logit); inter = (p * y).sum((2, 3, 4)); s = p.sum((2, 3, 4)) + y.sum((2, 3, 4))
     return (1 - (2 * inter + 1) / (s + 1)).mean()
 
+def _shift(a, s):                                                              # zero-fill translation (NO wrap)
+    out = np.zeros_like(a)
+    src = tuple(slice(max(0, -s[d]), a.shape[d] - max(0, s[d])) for d in range(3))
+    dst = tuple(slice(max(0, s[d]), a.shape[d] - max(0, -s[d])) for d in range(3))
+    out[dst] = a[src]; return out
+
 def augment(x, y):
     if random.random() < 0.5: x = x[::-1].copy(); y = y[::-1].copy()          # LR flip (RAS x)
+    if random.random() < 0.6:                                                  # small translation (robust to bbox jitter)
+        s = (random.randint(-4, 4), random.randint(-4, 4), random.randint(-4, 4))
+        x = _shift(x, s); y = _shift(y, s)
     if random.random() < 0.7:                                                  # intensity gamma + scale
         g = random.uniform(0.7, 1.5); s = random.uniform(0.85, 1.15)
         x = np.clip((x ** g) * s, 0, 1.5).astype(np.float32)
@@ -86,7 +95,7 @@ def main():
             X, Y = batch(train[i:i + BATCH], True)
             opt.zero_grad(); out = model(X)
             loss = 0.5 * F.binary_cross_entropy_with_logits(out, Y) + 0.5 * dice_loss(out, Y)
-            loss.backward(); opt.step(); tot += float(loss); nb += 1
+            loss.backward(); opt.step(); tot += float(loss.detach()); nb += 1
         sched.step(); vd = val_dice(model, val); hist.append((float(tot / max(nb, 1)), vd))
         print(f'ep {ep+1}/{EPOCHS} loss {tot/max(nb,1):.4f} valDice {vd:.4f} best {best:.4f} {(time.time()-t0)/60:.1f}m', flush=True)
         if vd > best:

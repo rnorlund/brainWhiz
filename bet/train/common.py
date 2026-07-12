@@ -29,27 +29,38 @@ def head_bbox(data, pad_mm=8, zooms=(1,1,1)):
     hi = [min(data.shape[d] - 1, hi[d] + pad[d]) for d in range(3)]
     return lo, hi
 
+def target_affine(aff, data_shape=None, lo=None, hi=None, data=None):
+    """Explicit axis-aligned RAS target grid (VOX mm, SHAPE), centered on the head-bbox world center.
+    Fully specified (no nibabel.conform black box) so JS can reproduce it exactly for in-browser use."""
+    aff = np.asarray(aff, float)
+    if lo is None or hi is None:
+        lo, hi = head_bbox(data, 8, (1, 1, 1))
+    cvox = (np.asarray(lo, float) + np.asarray(hi, float)) / 2.0
+    center = aff[:3, :3] @ cvox + aff[:3, 3]                    # world center of the head bbox
+    S = np.array(SHAPE, float)
+    Ta = np.eye(4); Ta[0, 0] = Ta[1, 1] = Ta[2, 2] = VOX        # +RAS, isotropic
+    Ta[:3, 3] = center - Ta[:3, :3] @ ((S - 1) / 2.0)          # center the FOV on the head
+    return Ta, lo, hi
+
+def _resample(data, src_aff, Ta, order):
+    from scipy.ndimage import map_coordinates
+    S = SHAPE
+    gi, gj, gk = np.meshgrid(np.arange(S[0]), np.arange(S[1]), np.arange(S[2]), indexing='ij')
+    tv = np.stack([gi.ravel(), gj.ravel(), gk.ravel(), np.ones(gi.size)], 0)    # 4 x N target voxels
+    world = Ta @ tv                                                            # -> world (RAS mm)
+    coords = (np.linalg.inv(np.asarray(src_aff, float)) @ world)[:3]           # -> native voxel coords
+    return map_coordinates(data, coords, order=order, cval=0.0, prefilter=False).reshape(S)
+
 def conform(t1_path, mask_path=None):
-    """Return (x[float32, SHAPE], y[float32 or None], meta) with x normalized to ~[0,1]."""
-    import nibabel.processing as nip
-    img = nib.as_closest_canonical(nib.load(t1_path))
-    data = np.asanyarray(img.dataobj).astype(np.float32)
-    z = img.header.get_zooms()[:3]
-    lo, hi = head_bbox(data, 8, z)
-    sl = tuple(slice(lo[d], hi[d] + 1) for d in range(3))
-    aff = img.affine.copy(); aff[:3, 3] = img.affine[:3, :3] @ np.array(lo) + img.affine[:3, 3]
-    cimg = nib.Nifti1Image(data[sl], aff)
-    ct1 = nip.conform(cimg, out_shape=SHAPE, voxel_size=(VOX,) * 3, order=1, cval=0.0)
-    x = ct1.get_fdata().astype(np.float32)
-    p = np.percentile(x[x > 0], 99.5) if (x > 0).any() else 1.0
+    """Return (x[float32, SHAPE] ~[0,1], y[float32 or None], meta). Explicit reproducible conform."""
+    img = nib.load(t1_path); data = np.asanyarray(img.dataobj).astype(np.float32); aff = img.affine.astype(np.float64)
+    Ta, lo, hi = target_affine(aff, data=data)
+    x = _resample(data, aff, Ta, order=1).astype(np.float32)
+    pos = x[x > 0]; p = np.percentile(pos, 99.5) if pos.size else 1.0
     x = np.clip(x / (p if p > 0 else 1.0), 0, 1).astype(np.float32)
     y = None
     if mask_path:
-        m = nib.as_closest_canonical(nib.load(mask_path))
-        md = np.asanyarray(m.dataobj).astype(np.float32)
-        maff = m.affine.copy(); maff[:3, 3] = m.affine[:3, :3] @ np.array(lo) + m.affine[:3, 3]
-        # crop mask with the SAME native bbox (same canonical grid as the T1)
-        cm = nib.Nifti1Image(md[sl], maff)
-        cmy = nip.conform(cm, out_shape=SHAPE, voxel_size=(VOX,) * 3, order=0, cval=0.0)
-        y = (cmy.get_fdata() > 0.5).astype(np.float32)
-    return x, y, {'affine': ct1.affine, 'src_affine': img.affine, 'bbox': (lo, hi), 'src_shape': data.shape}
+        mimg = nib.load(mask_path); md = np.asanyarray(mimg.dataobj).astype(np.float32)
+        y = (_resample(md, mimg.affine.astype(np.float64), Ta, order=0) > 0.5).astype(np.float32)
+    return x, y, {'Ta': Ta.tolist(), 'aff': aff.tolist(), 'lo': list(map(int, lo)), 'hi': list(map(int, hi)),
+                  'shape': list(SHAPE), 'vox': VOX, 'src_shape': list(data.shape)}
