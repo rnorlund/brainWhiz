@@ -54,14 +54,81 @@ export function resampleLabels(atlas, target, xform16){
   return out;
 }
 
-// ---------- affine registration subject -> reference (SCAFFOLD) ----------
-// Plan: multi-resolution (downsample pyramid); parameterize a 12-DOF affine as
-// translation(3) + rotation(3, Euler) + scale(3) + shear(3); maximize normalized mutual
-// information between resampled subject and reference via Nelder-Mead / Powell (gradient-free).
-// Returns a 16-element affine mapping subject world -> reference world.
-export function registerAffine(subject, reference, opts={}){
-  throw new Error('registerAffine: not implemented yet — see chop/README.md pipeline. '+
-    'Deterministic pieces (invert4x4, resampleLabels) are ready; the NMI + optimizer is the next build step.');
+// center of mass of a volume in WORLD mm (intensity-weighted over a threshold)
+function centerOfMass(vol){ const [nx,ny,nz]=vol.dims, A=affTo16(vol.affine), d=vol.data;
+  let lo=Infinity,hi=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]<lo)lo=d[i]; if(d[i]>hi)hi=d[i]; }
+  const thr=lo+(hi-lo)*0.12; let sx=0,sy=0,sz=0,sw=0;
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){ const v=d[i+nx*(j+ny*k)]; if(v<=thr) continue;
+    const w=applyAffine(A,i,j,k); sx+=w[0]*v; sy+=w[1]*v; sz+=w[2]*v; sw+=v; }
+  return sw? [sx/sw,sy/sw,sz/sw] : [0,0,0];
+}
+// rough world-extent radius of the above-threshold region (for scale init)
+function extentRadius(vol){ const [nx,ny,nz]=vol.dims, A=affTo16(vol.affine), d=vol.data;
+  let lo=Infinity,hi=-Infinity; for(let i=0;i<d.length;i++){ if(d[i]<lo)lo=d[i]; if(d[i]>hi)hi=d[i]; }
+  const thr=lo+(hi-lo)*0.12; const c=centerOfMass(vol); let s=0,n=0;
+  for(let k=0;k<nz;k+=2)for(let j=0;j<ny;j+=2)for(let i=0;i<nx;i+=2){ if(d[i+nx*(j+ny*k)]<=thr) continue;
+    const w=applyAffine(A,i,j,k); s+=(w[0]-c[0])**2+(w[1]-c[1])**2+(w[2]-c[2])**2; n++; }
+  return n? Math.sqrt(s/n) : 1;
+}
+const eulerMat=(rx,ry,rz)=>{ const cx=Math.cos(rx),sx=Math.sin(rx),cy=Math.cos(ry),sy=Math.sin(ry),cz=Math.cos(rz),sz=Math.sin(rz);
+  return [ cy*cz, -cy*sz, sy,  cx*sz+sx*sy*cz, cx*cz-sx*sy*sz, -sx*cy,  sx*sz-cx*sy*cz, sx*cz+cx*sy*sz, cx*cy ]; };  // 3x3 row-major
+
+// NMI cost for a fixed→moving transform param set p=[tx,ty,tz,rx,ry,rz,logs], sampling the fixed grid
+// at `stride`. cF/cM are fixed/moving centers of mass (world); Minv = inverse moving affine.
+function nmiCost(p, fixed, moving, Minv, cF, cM, stride, bins=48){
+  const [fx,fy,fz]=fixed.dims, F=affTo16(fixed.affine), fd=fixed.data, md=moving.data, [mx,my,mz]=moving.dims;
+  const R=eulerMat(p[3],p[4],p[5]), s=Math.exp(p[6]);
+  const HA=new Float64Array(bins), HB=new Float64Array(bins), HJ=new Float64Array(bins*bins);
+  // intensity ranges (precomputed once by caller via fixed._lo etc.)
+  const fl=fixed._lo, fs=(bins-1)/((fixed._hi-fl)||1), ml=moving._lo, ms=(bins-1)/((moving._hi-ml)||1);
+  let n=0;
+  for(let k=0;k<fz;k+=stride)for(let j=0;j<fy;j+=stride)for(let i=0;i<fx;i+=stride){
+    const fv=fd[i+fx*(j+fy*k)]; if(fv<=fl) continue;                 // skip background of fixed
+    const w=applyAffine(F,i,j,k), dx=w[0]-cF[0],dy=w[1]-cF[1],dz=w[2]-cF[2];
+    const wx=cM[0]+p[0]+s*(R[0]*dx+R[1]*dy+R[2]*dz), wy=cM[1]+p[1]+s*(R[3]*dx+R[4]*dy+R[5]*dz), wz=cM[2]+p[2]+s*(R[6]*dx+R[7]*dy+R[8]*dz);
+    const v=applyAffine(Minv, wx,wy,wz); const ix=v[0],iy=v[1],iz=v[2];
+    if(ix<0||iy<0||iz<0||ix>=mx-1||iy>=my-1||iz>=mz-1) continue;
+    const x0=ix|0,y0=iy|0,z0=iz|0, fxk=ix-x0,fyk=iy-y0,fzk=iz-z0;    // trilinear
+    const idx=(a,b,c)=>a+mx*(b+my*c);
+    const c00=md[idx(x0,y0,z0)]*(1-fxk)+md[idx(x0+1,y0,z0)]*fxk, c10=md[idx(x0,y0+1,z0)]*(1-fxk)+md[idx(x0+1,y0+1,z0)]*fxk;
+    const c01=md[idx(x0,y0,z0+1)]*(1-fxk)+md[idx(x0+1,y0,z0+1)]*fxk, c11=md[idx(x0,y0+1,z0+1)]*(1-fxk)+md[idx(x0+1,y0+1,z0+1)]*fxk;
+    const mv=(c00*(1-fyk)+c10*fyk)*(1-fzk)+(c01*(1-fyk)+c11*fyk)*fzk;
+    let a=(fv-fl)*fs|0; if(a<0)a=0; if(a>=bins)a=bins-1; let b=(mv-ml)*ms|0; if(b<0)b=0; if(b>=bins)b=bins-1;
+    HA[a]++; HB[b]++; HJ[a*bins+b]++; n++;
+  }
+  if(n<50) return 0;
+  let Ha=0,Hb=0,Hab=0; for(let x=0;x<bins;x++){ if(HA[x]){const q=HA[x]/n;Ha-=q*Math.log(q);} if(HB[x]){const q=HB[x]/n;Hb-=q*Math.log(q);} }
+  for(let i=0;i<HJ.length;i++) if(HJ[i]){const q=HJ[i]/n;Hab-=q*Math.log(q);}
+  return Hab>0 ? (Ha+Hb)/Hab : 0;   // normalized MI, maximize
+}
+
+// ---- clean-room affine (rigid + isotropic scale, 7-DOF) registration: MOVING -> FIXED ----
+// Returns { params, matrix, nmi } where matrix (16) maps FIXED world -> MOVING world (use its inverse
+// for MOVING->FIXED / to resample moving into fixed). Multi-resolution coordinate descent on NMI.
+export function registerAffine(moving, fixed, opts={}){
+  const prep=v=>{ let lo=Infinity,hi=-Infinity; for(let i=0;i<v.data.length;i++){const x=v.data[i]; if(x<lo)lo=x; if(x>hi)hi=x;}
+    v._lo=lo+(hi-lo)*0.06; v._hi=hi; };  // _lo doubles as a background cutoff
+  prep(fixed); prep(moving);
+  const Minv=invert4x4(affTo16(moving.affine)); if(!Minv) throw new Error('moving affine not invertible');
+  const cF=centerOfMass(fixed), cM=centerOfMass(moving);
+  let p=[0,0,0, 0,0,0, Math.log((extentRadius(moving)/(extentRadius(fixed)||1))||1)];  // COM + scale init
+  // step sizes: mm, radians, log-scale
+  const levels=opts.levels|| [[4, [8,0.12,0.10]], [2, [4,0.06,0.05]], [1, [2,0.03,0.02]]];
+  for(const [stride, step0] of levels){
+    let steps=[step0[0],step0[0],step0[0], step0[1],step0[1],step0[1], step0[2]];
+    let best=nmiCost(p, fixed, moving, Minv, cF, cM, stride);
+    for(let sweep=0; sweep<(opts.sweeps||12); sweep++){ let improved=false;
+      for(let d=0; d<7; d++){ for(const sgn of [1,-1]){ const q=p.slice(); q[d]+=sgn*steps[d];
+        const c=nmiCost(q, fixed, moving, Minv, cF, cM, stride); if(c>best){ best=c; p=q; improved=true; } } }
+      if(!improved){ for(let d=0;d<7;d++) steps[d]*=0.5; if(steps[0]<0.25) break; }
+    }
+  }
+  // build FIXED->MOVING matrix from p (xM = cM + t + s R (xF - cF))
+  const R=eulerMat(p[3],p[4],p[5]), s=Math.exp(p[6]);
+  const M=[ s*R[0],s*R[1],s*R[2], cM[0]+p[0]-s*(R[0]*cF[0]+R[1]*cF[1]+R[2]*cF[2]),
+            s*R[3],s*R[4],s*R[5], cM[1]+p[1]-s*(R[3]*cF[0]+R[4]*cF[1]+R[5]*cF[2]),
+            s*R[6],s*R[7],s*R[8], cM[2]+p[2]-s*(R[6]*cF[0]+R[7]*cF[1]+R[8]*cF[2]), 0,0,0,1 ];
+  return { params:p, matrix:M, nmi: nmiCost(p, fixed, moving, Minv, cF, cM, 1) };
 }
 
 // Normalized mutual information between two equal-length samples (bins histograms) — metric for
