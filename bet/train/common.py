@@ -61,6 +61,7 @@ def conform(t1_path, mask_path=None):
     y = None
     if mask_path:
         mimg = nib.load(mask_path); md = np.asanyarray(mimg.dataobj).astype(np.float32)
-        y = (_resample(md, mimg.affine.astype(np.float64), Ta, order=0) > 0.5).astype(np.float32)
+        # ROUND to nearest label: binary masks -> 0/1; CAT12 p0 -> 0/1/2/3 (bg/CSF/GM/WM). brain = y>0.
+        y = np.clip(np.round(_resample(md, mimg.affine.astype(np.float64), Ta, order=0)), 0, 10).astype(np.float32)
     return x, y, {'Ta': Ta.tolist(), 'aff': aff.tolist(), 'lo': list(map(int, lo)), 'hi': list(map(int, hi)),
                   'shape': list(SHAPE), 'vox': VOX, 'src_shape': list(data.shape)}

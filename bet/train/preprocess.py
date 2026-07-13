@@ -27,8 +27,10 @@ def one(mask_path):
     if not t1: return (sub, 'no-t1')
     try:
         x, y, meta = conform(t1, mask_path)
-        if y is None or y.mean() < 0.02 or y.mean() > 0.6: return (sub, f'bad-mask {y.mean():.3f}')
-        np.savez_compressed(out, x=x.astype(np.float16), y=y.astype(np.uint8))
+        if y is None: return (sub, 'no-mask')
+        br = float((y > 0).mean())
+        if br < 0.02 or br > 0.6: return (sub, f'bad-mask {br:.3f}')
+        np.savez_compressed(out, x=x.astype(np.float16), y=y.astype(np.uint8))   # y: 0=bg,1=CSF,2=GM,3=WM (or 0/1 binary)
         return (sub, 'ok')
     except Exception as e:
         return (sub, 'ERR:' + str(e)[:50])

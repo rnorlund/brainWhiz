@@ -19,8 +19,9 @@ class Up(nn.Module):
         return self.conv(x)
 
 class UNet3D(nn.Module):
-    """Downsamples with stride-2 convs (not MaxPool3d) so it runs natively on Apple MPS."""
-    def __init__(self, base=16, depth=4, ch_in=1):
+    """Downsamples with stride-2 convs (not MaxPool3d) so it runs natively on Apple MPS.
+    ch_out=1 -> binary brain (sigmoid); ch_out>1 -> tissue compartments (bg/CSF/GM/WM, softmax)."""
+    def __init__(self, base=16, depth=4, ch_in=1, ch_out=1):
         super().__init__()
         self.depth = depth
         chs = [base * (2 ** i) for i in range(depth)]         # e.g. 16,32,64,128
@@ -34,7 +35,7 @@ class UNet3D(nn.Module):
         for c in reversed(chs):
             self.up.append(Up(prev, c))
             self.dec.append(ConvBlock(c * 2, c)); prev = c
-        self.head = nn.Conv3d(chs[0], 1, 1)
+        self.head = nn.Conv3d(chs[0], ch_out, 1)
     def forward(self, x):
         skips = []
         for i, e in enumerate(self.enc):

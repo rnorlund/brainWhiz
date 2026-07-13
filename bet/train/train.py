@@ -15,6 +15,7 @@ EPOCHS  = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 BATCH   = int(sys.argv[2]) if len(sys.argv) > 2 else 12
 BASE    = int(sys.argv[3]) if len(sys.argv) > 3 else 16
 WORKERS = int(sys.argv[4]) if len(sys.argv) > 4 else 8
+NCLASS  = int(sys.argv[5]) if len(sys.argv) > 5 else 1   # 1=binary brain; 4=bg/CSF/GM/WM compartments
 DEV = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
 
 def load_all():
@@ -69,16 +70,24 @@ class BetDS(Dataset):
         if self.train: x, y = augment(x, y)
         return torch.from_numpy(x)[None], torch.from_numpy(y)[None]
 
-def dice_loss(logit, y):
+def dice_loss(logit, y):                                   # binary
     p = torch.sigmoid(logit); inter = (p * y).sum((2, 3, 4)); s = p.sum((2, 3, 4)) + y.sum((2, 3, 4))
     return (1 - (2 * inter + 1) / (s + 1)).mean()
 
+def dice_mc(logit, y_long):                                # multi-class (foreground classes)
+    C = logit.shape[1]; p = torch.softmax(logit, 1)
+    oh = F.one_hot(y_long.clamp(0, C - 1), C).permute(0, 4, 1, 2, 3).float()
+    inter = (p * oh).sum((2, 3, 4)); s = p.sum((2, 3, 4)) + oh.sum((2, 3, 4))
+    return (1 - ((2 * inter + 1) / (s + 1))[:, 1:].mean())
+
 @torch.no_grad()
-def val_dice(model, vl):
+def val_dice(model, vl):                                   # brain Dice (foreground) — comparable across modes
     model.eval(); ds = []
     for X, Y in vl:
-        X = X.to(DEV); Y = Y.to(DEV); p = (torch.sigmoid(model(X)) > 0.5).float()
-        inter = (p * Y).sum((2, 3, 4)); s = p.sum((2, 3, 4)) + Y.sum((2, 3, 4))
+        X = X.to(DEV); Y = Y.to(DEV); out = model(X)
+        p = (torch.sigmoid(out) > 0.5).float() if out.shape[1] == 1 else (out.argmax(1, keepdim=True) > 0).float()
+        yb = (Y > 0).float()
+        inter = (p * yb).sum((2, 3, 4)); s = p.sum((2, 3, 4)) + yb.sum((2, 3, 4))
         ds += ((2 * inter + 1) / (s + 1)).cpu().numpy().tolist()
     return float(np.mean(ds))
 
@@ -87,12 +96,18 @@ def qc(model, val_items, epoch):
         from PIL import Image; from scipy.ndimage import binary_erosion
         model.eval(); _, xf, yf = val_items[0]; x = xf.astype(np.float32); y = yf.astype(np.float32)
         with torch.no_grad():
-            p = (torch.sigmoid(model(torch.from_numpy(x)[None, None].to(DEV))) > 0.5).cpu().numpy()[0, 0]
+            out = model(torch.from_numpy(x)[None, None].to(DEV)); mc = out.shape[1] > 1
+            lab = out.argmax(1).cpu().numpy()[0] if mc else (torch.sigmoid(out) > 0.5).cpu().numpy()[0, 0].astype(np.uint8)
+        COL = {1: [.3, .5, 1], 2: [.2, 1, .3], 3: [1, .4, .3]}   # CSF blue / GM green / WM red
         nz = x.shape[2]; cols, rows = 6, 2; n = cols * rows; tiles = []
         for i in range(n):
             z = int((0.18 + 0.64 * i / (n - 1)) * nz); sl = x[:, :, z].T[::-1]; rgb = np.stack([sl] * 3, -1)
-            pt = (p[:, :, z] > 0.5).T[::-1]; gt = (y[:, :, z] > 0.5).T[::-1]
-            rgb[gt ^ binary_erosion(gt)] = [0.1, 1, 0.1]; rgb[pt ^ binary_erosion(pt)] = [1, 0.2, 0.2]
+            L = lab[:, :, z].T[::-1]
+            if mc:
+                for c, col in COL.items(): m = (L == c); rgb[m ^ binary_erosion(m)] = col
+            else:
+                m = (L > 0); rgb[m ^ binary_erosion(m)] = [1, .2, .2]
+                gt = (y[:, :, z] > 0).T[::-1]; rgb[gt ^ binary_erosion(gt)] = [.1, 1, .1]
             tiles.append((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
         h, w = tiles[0].shape[:2]; canv = np.zeros((rows * h, cols * w, 3), np.uint8)
         for i, t in enumerate(tiles): r, c = divmod(i, cols); canv[r*h:(r+1)*h, c*w:(c+1)*w] = t
@@ -106,7 +121,7 @@ def main():
     pin = (DEV == 'cuda')
     tl = DataLoader(BetDS(train, True), batch_size=BATCH, shuffle=True, num_workers=WORKERS, pin_memory=pin, persistent_workers=False, drop_last=True, timeout=120 if WORKERS>0 else 0)
     vl = DataLoader(BetDS(val, False), batch_size=BATCH, shuffle=False, num_workers=max(2, WORKERS // 2), pin_memory=pin, persistent_workers=False, timeout=120 if WORKERS>0 else 0)
-    model = UNet3D(base=BASE).to(DEV)
+    model = UNet3D(base=BASE, ch_out=NCLASS).to(DEV)
     opt = torch.optim.Adam(model.parameters(), 1e-3)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, EPOCHS)
     best = 0.0; hist = []
@@ -117,13 +132,18 @@ def main():
             opt.zero_grad()
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=(DEV == 'cuda')):
                 out = model(X)
-                loss = 0.5 * F.binary_cross_entropy_with_logits(out, Y) + 0.5 * dice_loss(out, Y)
+                if NCLASS > 1:
+                    yl = Y.squeeze(1).long()
+                    loss = F.cross_entropy(out, yl) + dice_mc(out, yl)
+                else:
+                    yb = (Y > 0).float()
+                    loss = 0.5 * F.binary_cross_entropy_with_logits(out, yb) + 0.5 * dice_loss(out, yb)
             loss.backward(); opt.step(); tot += float(loss.detach()); nb += 1
         sched.step(); vd = val_dice(model, vl); hist.append((tot / max(nb, 1), vd))
         print(f'ep {ep+1}/{EPOCHS} loss {tot/max(nb,1):.4f} valDice {vd:.4f} best {best:.4f} {(time.time()-t0)/60:.2f}m', flush=True)
         if vd > best:
             best = vd
-            torch.save({'state_dict': model.state_dict(), 'base': BASE, 'depth': 4, 'shape': [96, 112, 96], 'vox': 2.0, 'valDice': best}, f'{HERE}/bet_unet.pt')
+            torch.save({'state_dict': model.state_dict(), 'base': BASE, 'depth': 4, 'ch_out': NCLASS, 'shape': [96, 112, 96], 'vox': 2.0, 'valDice': best}, f'{HERE}/bet_unet.pt')
         if (ep + 1) % 5 == 0 or ep == EPOCHS - 1: qc(model, val, ep + 1)
     json.dump(hist, open(f'{HERE}/train_hist.json', 'w'))
     try:
