@@ -1,0 +1,179 @@
+<meta charset="utf-8">
+<style>
+:root{--bg:#090c11;--panel:#121821;--panel2:#0d121a;--line:#232c38;--txt:#c7d0dc;--mut:#7c8899;
+  --accent:#4fb0cf;--gm:#3cdc78;--wm:#ff9646;--csf:#5096ff;--watch:#e0a83e}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-columns:274px 1fr;height:100vh}
+#sidebar{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.shdr{padding:14px 16px;border-bottom:1px solid var(--line)}
+.eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:10px;color:var(--accent);font-weight:700}
+.shdr h1{font-size:15px;margin:4px 0 8px;letter-spacing:-.01em}
+.shdr dl{display:grid;grid-template-columns:auto auto;gap:3px 14px;margin:0;font-size:11px}
+.shdr dt{color:var(--mut)} .shdr dd{margin:0;font-family:ui-monospace,Menlo,monospace}
+#subs{overflow:auto;flex:1;padding:6px}
+.sub{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12.5px}
+.sub:hover{background:var(--panel2)} .sub.on{background:color-mix(in srgb,var(--accent) 18%,transparent);outline:1px solid var(--accent)}
+.sub .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub .pc{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--gm);flex:none}
+.dot.hard{background:var(--watch)}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#topbar{display:flex;align-items:center;gap:13px;padding:9px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs{display:flex;gap:3px;background:var(--panel2);padding:3px;border-radius:8px}
+.tabs button{background:none;border:0;color:var(--mut);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
+.tabs button.on{background:var(--accent);color:#04141a}
+.ctl{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut)}
+.ctl input[type=range]{width:90px;accent-color:var(--accent)}
+select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 8px;font-size:12px}
+button.mini{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}
+button.mini:hover{border-color:var(--accent)}
+.spacer{flex:1}
+#readout{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--mut);padding:6px 16px;border-bottom:1px solid var(--line)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+#stage{flex:1;position:relative;background:#04070b;min-height:0;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;cursor:grab;display:block}
+#cv.drag{cursor:grabbing}
+#hint{position:absolute;left:12px;bottom:10px;font-size:11px;color:var(--mut);background:#0009;padding:5px 9px;border-radius:6px;pointer-events:none}
+#bottom{display:flex;align-items:center;gap:12px;padding:9px 16px;border-top:1px solid var(--line)}
+#slice{flex:1;accent-color:var(--accent)}
+#slabel{font-family:ui-monospace,Menlo,monospace;font-size:12px;min-width:96px;text-align:right;font-variant-numeric:tabular-nums}
+.chip{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:999px}
+.chip.hard{background:color-mix(in srgb,var(--watch) 22%,transparent);color:var(--watch)}
+#load{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--mut);font-size:13px;background:#04070b}
+</style>
+<div id="app">
+  <aside id="sidebar">
+    <div class="shdr">
+      <div class="eyebrow">brainWhiz · tissue QC</div>
+      <h1 id="mtitle">High-res extraction</h1>
+      <dl><dt>Model</dt><dd id="mmodel">—</dd><dt>Val Dice</dt><dd id="mdice">—</dd><dt>Subjects</dt><dd id="mn">—</dd></dl>
+    </div>
+    <div id="subs"></div>
+  </aside>
+  <main>
+    <div id="topbar">
+      <div class="tabs" id="planes"><button data-p="0" class="on">Axial</button><button data-p="1">Coronal</button><button data-p="2">Sagittal</button></div>
+      <label class="ctl">view
+        <select id="view">
+          <option value="broccoli" selected>GM+WM (broccoli)</option>
+          <option value="tissue">CSF / GM / WM</option>
+          <option value="brain">brain (all tissue)</option>
+          <option value="off">T1 only</option>
+        </select></label>
+      <label class="ctl">fill <input type="range" id="op" min="0" max="100" value="42"></label>
+      <button class="mini" id="reset">Reset view</button>
+      <span class="spacer"></span>
+      <span id="readout"></span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--gm)"></i>GM</span><span><i style="background:var(--wm)"></i>WM</span>
+      <span><i style="background:var(--csf)"></i>CSF</span>
+      <span style="color:var(--mut)">broccoli = GM+WM surface (CSF excluded) — should hug the gyri</span>
+    </div>
+    <div id="stage"><canvas id="cv"></canvas>
+      <div id="hint">scroll = zoom · drag = pan · ←/→ = slice · [ ] = plane</div>
+      <div id="load">decoding volume…</div></div>
+    <div id="bottom"><span style="color:var(--mut);font-size:12px">Slice</span>
+      <input type="range" id="slice" min="0" max="1" value="0"><span id="slabel"></span></div>
+  </main>
+</div>
+<script>
+const META=/*__META__*/, DATA=/*__DATA__*/;
+document.getElementById('mmodel').textContent=META.model;
+document.getElementById('mdice').textContent=META.dice;
+document.getElementById('mn').textContent=META.n;
+const PLANE=['Axial','Coronal','Sagittal'];
+const COL={1:[80,150,255],2:[60,220,120],3:[255,150,70]};   // CSF, GM, WM
+let cur=-1, plane=0, slice=0, zoom=1, panx=0, pany=0, view='broccoli', op=0.42;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const off=document.createElement('canvas'), octx=off.getContext('2d');
+
+async function inflate(b64){
+  const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const st=new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(st).arrayBuffer());
+}
+const subsEl=document.getElementById('subs');
+DATA.forEach((s,i)=>{const d=document.createElement('div');d.className='sub';d.dataset.i=i;
+  d.innerHTML=`<span class="dot ${s.hard?'hard':''}"></span><span class="nm">${s.name}</span>`+
+    (s.hard?'<span class="chip hard">check</span>':'')+`<span class="pc">${s.pct}%</span>`;
+  d.title=s.tag; d.onclick=()=>select(i); subsEl.appendChild(d);});
+
+function sliceDims(){const [nx,ny,nz]=DATA[cur].dims;
+  return plane===0?[nx,ny,nz]:plane===1?[nx,nz,ny]:[ny,nz,nx];}
+
+async function select(i){
+  cur=i; [...subsEl.children].forEach((c,j)=>c.classList.toggle('on',j===i));
+  const s=DATA[i];
+  if(!s._t1){document.getElementById('load').style.display='flex';
+    s._t1=await inflate(s.t1); s._lab=await inflate(s.lab);
+    document.getElementById('load').style.display='none';}
+  const [w,h,dep]=sliceDims(); slice=dep>>1; zoom=1; panx=0; pany=0;
+  const sl=document.getElementById('slice'); sl.max=dep-1; sl.value=slice;
+  render();
+}
+// which label values are "active" (get an edge) for the current view
+function active(L){ if(view==='broccoli')return L>=2; if(view==='brain')return L>=1; if(view==='tissue')return L>=1; return false; }
+function tint(g,L){   // returns [R,G,B] for a voxel with gray g and label L
+  if(view==='off'||L===0) return [g,g,g];
+  if(view==='broccoli'&&L<2) return [g,g,g];        // hide CSF in broccoli mode
+  const c = view==='brain' ? [255,77,77] : COL[L];  // brain = single fill; else per-tissue color
+  return [g*(1-op)+c[0]*op, g*(1-op)+c[1]*op, g*(1-op)+c[2]*op];
+}
+function buildImage(){
+  const s=DATA[cur], [nx,ny,nz]=s.dims, t1=s._t1, lab=s._lab, [w,h]=sliceDims();
+  off.width=w; off.height=h; const img=octx.createImageData(w,h), D=img.data;
+  const vox=(x,y,z)=>x+nx*(y+ny*z);
+  const px=(c,r)=>{if(plane===0)return[c,h-1-r,slice];if(plane===1)return[c,slice,h-1-r];return[slice,c,h-1-r];};
+  for(let r=0;r<h;r++)for(let c=0;c<w;c++){
+    const [x,y,z]=px(c,r); const g=t1[vox(x,y,z)], L=lab[vox(x,y,z)];
+    const [R,G,B]=tint(g,L); const o=(r*w+c)*4; D[o]=R; D[o+1]=G; D[o+2]=B; D[o+3]=255;
+  }
+  if(view!=='off'){ for(let r=1;r<h-1;r++)for(let c=1;c<w-1;c++){
+    const gi=(cc,rr)=>{const [X,Y,Z]=px(cc,rr);return lab[X+nx*(Y+ny*Z)];};
+    const L=gi(c,r); if(!active(L)) continue;
+    const bnd = !active(gi(c-1,r))||!active(gi(c+1,r))||!active(gi(c,r-1))||!active(gi(c,r+1));
+    if(bnd){const o=(r*w+c)*4; const e=view==='brain'?[255,90,90]:[120,255,170]; D[o]=e[0];D[o+1]=e[1];D[o+2]=e[2];}
+  }}
+  octx.putImageData(img,0,0);
+}
+function render(){
+  if(cur<0) return; buildImage();
+  const cw=cv.clientWidth, ch=cv.clientHeight, dpr=Math.min(2,window.devicePixelRatio||1);
+  cv.width=cw*dpr; cv.height=ch*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,cw,ch);
+  const sw=off.width, sh=off.height, base=Math.min(cw/sw,ch/sh)*0.94, sc=base*zoom;
+  const dw=sw*sc, dh=sh*sc, dx=(cw-dw)/2+panx, dy=(ch-dh)/2+pany;
+  ctx.imageSmoothingEnabled=false; ctx.drawImage(off,0,0,sw,sh,dx,dy,dw,dh);
+  const s=DATA[cur];
+  document.getElementById('slabel').textContent=`${PLANE[plane]} ${slice+1}/${sliceDims()[2]}`;
+  document.getElementById('readout').textContent=`${s.name} · GM+WM ${s.pct}% · brain ${s.brain}% · ${s.dims.join('×')} · ${(zoom*100|0)}%`;
+}
+document.querySelectorAll('#planes button').forEach(b=>b.onclick=()=>{
+  plane=+b.dataset.p; document.querySelectorAll('#planes button').forEach(x=>x.classList.toggle('on',x===b));
+  const dep=sliceDims()[2]; slice=Math.min(slice,dep-1); zoom=1;panx=0;pany=0;
+  const sl=document.getElementById('slice'); sl.max=dep-1; sl.value=slice; render();});
+const sliceEl=document.getElementById('slice');
+sliceEl.oninput=e=>{slice=+e.target.value; render();};
+document.getElementById('view').onchange=e=>{view=e.target.value; render();};
+document.getElementById('op').oninput=e=>{op=+e.target.value/100; render();};
+document.getElementById('reset').onclick=()=>{zoom=1;panx=0;pany=0;render();};
+cv.addEventListener('wheel',e=>{e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left-r.width/2-panx, my=e.clientY-r.top-r.height/2-pany;
+  const f=e.deltaY<0?1.12:1/1.12, nz=Math.max(1,Math.min(14,zoom*f)); const k=nz/zoom;
+  panx-=mx*(k-1); pany-=my*(k-1); zoom=nz; render();},{passive:false});
+let drag=false,lx,ly;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.classList.add('drag');cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{if(!drag)return;panx+=e.clientX-lx;pany+=e.clientY-ly;lx=e.clientX;ly=e.clientY;render();});
+cv.addEventListener('pointerup',e=>{drag=false;cv.classList.remove('drag');});
+sliceEl.addEventListener('wheel',e=>{e.preventDefault();slice=Math.max(0,Math.min(+sliceEl.max,slice+(e.deltaY<0?1:-1)));sliceEl.value=slice;render();},{passive:false});
+addEventListener('keydown',e=>{if(cur<0)return;const dep=sliceDims()[2];
+  if(e.key==='ArrowRight'||e.key==='ArrowUp'){slice=Math.min(dep-1,slice+1);sliceEl.value=slice;render();}
+  else if(e.key==='ArrowLeft'||e.key==='ArrowDown'){slice=Math.max(0,slice-1);sliceEl.value=slice;render();}
+  else if(e.key==='['){document.querySelectorAll('#planes button')[(plane+2)%3].click();}
+  else if(e.key===']'){document.querySelectorAll('#planes button')[(plane+1)%3].click();}});
+addEventListener('resize',render);
+select(0);
+</script>

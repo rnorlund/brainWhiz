@@ -1,0 +1,47 @@
+{
+  "name": "brainwhiz-nii-viewer",
+  "displayName": "brainWhiz NIfTI Viewer",
+  "description": "Open .nii/.nii.gz in VS Code — orthogonal slices, a 3D brain surface, and full header details. Self-contained (no network); works over SSH/WSL/containers.",
+  "version": "0.1.0",
+  "publisher": "brainwhiz",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Visualization"],
+  "keywords": ["nifti", "nii", "neuroimaging", "MRI", "brain", "medical imaging"],
+  "repository": { "type": "git", "url": "https://github.com/rnorlund/brainWhiz.git", "directory": "vscode" },
+  "homepage": "https://github.com/rnorlund/brainWhiz/tree/main/vscode#readme",
+  "bugs": { "url": "https://github.com/rnorlund/brainWhiz/issues" },
+  "icon": "media/brainwhiz_logo.png",
+  "galleryBanner": { "color": "#0b0e13", "theme": "dark" },
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "brainwhiz.niiViewer",
+        "displayName": "brainWhiz NIfTI Viewer",
+        "selector": [
+          { "filenamePattern": "*.nii" },
+          { "filenamePattern": "*.nii.gz" }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "brainwhiz.openFull",
+        "title": "Open Full brainWhiz Viewer",
+        "category": "brainWhiz"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "brainwhiz.openFull",
+          "when": "activeCustomEditorId == brainwhiz.niiViewer",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}

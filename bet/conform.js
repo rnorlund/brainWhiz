@@ -1,7 +1,7 @@
 // bet/conform.js — JS reproduction of bet/train/common.py's explicit conform, so the ONNX model
-// sees the SAME 96x112x96 @2mm RAS input in-browser as it did in training. Also maps the model's
-// probability volume back into native space. Dependency-free (usable in the worker and in node).
-export const BET_SHAPE = [96, 112, 96], BET_VOX = 2.0;
+// sees the SAME 192x224x192 @1mm RAS input in-browser as it did in training. Also maps the model's
+// probability/label volume back into native space. Dependency-free (usable in the worker and in node).
+export const BET_SHAPE = [192, 224, 192], BET_VOX = 1.0;   // high-res 3-class tissue model (was 96x112x96 @2mm)
 
 function inv3(m) {  // 3x3 inverse, row-major
   const [a,b,c,d,e,f,g,h,i] = m;
@@ -29,7 +29,7 @@ function otsuThresh(data) {
   return thr;
 }
 // vol: {data:Float32Array, dims:[nx,ny,nz], M:[9 row-major], T:[3]}  (M,T = native voxel->world)
-export function conformVol(vol) {
+export function conformVol(vol, shape, vox) {
   const [nx, ny, nz] = vol.dims, M = vol.M, T = vol.T, data = vol.data;
   const thr = otsuThresh(data) * 0.5;
   let lo = [nx, ny, nz], hi = [-1, -1, -1];
@@ -42,7 +42,7 @@ export function conformVol(vol) {
   for (let d = 0; d < 3; d++) { const p = Math.round(8 / zoom[d]); lo[d] = Math.max(0, lo[d] - p); hi[d] = Math.min([nx,ny,nz][d]-1, hi[d] + p); }
   const cvox = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
   const center = [ M[0]*cvox[0]+M[1]*cvox[1]+M[2]*cvox[2]+T[0], M[3]*cvox[0]+M[4]*cvox[1]+M[5]*cvox[2]+T[1], M[6]*cvox[0]+M[7]*cvox[1]+M[8]*cvox[2]+T[2] ];
-  const [SX, SY, SZ] = BET_SHAPE, V = BET_VOX;
+  const [SX, SY, SZ] = shape || BET_SHAPE, V = vox || BET_VOX;
   const Tat = [ center[0]-V*(SX-1)/2, center[1]-V*(SY-1)/2, center[2]-V*(SZ-1)/2 ];   // Ta diag(V) + Tat
   const Ri = inv3(M);  // native world->voxel = Ri @ (world - T)
   const x = new Float32Array(SX*SY*SZ);
@@ -73,13 +73,26 @@ function trilin(a, nx, ny, nz, sx, sy, sz, x, y, z) {
   return (c00*(1-fy)+c10*fy)*(1-fz) + (c01*(1-fy)+c11*fy)*fz;
 }
 // map a model probability volume (SHAPE, C-order) back to native voxels (i-fastest)
-export function probToNative(prob, Tat, vol) {
-  const [nx, ny, nz] = vol.dims, M = vol.M, T = vol.T, [SX, SY, SZ] = BET_SHAPE, V = BET_VOX;
+export function probToNative(prob, Tat, vol, shape, vox) {
+  const [nx, ny, nz] = vol.dims, M = vol.M, T = vol.T, [SX, SY, SZ] = shape || BET_SHAPE, V = vox || BET_VOX;
   const out = new Float32Array(nx*ny*nz);
   for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const wx = M[0]*i+M[1]*j+M[2]*k+T[0], wy = M[3]*i+M[4]*j+M[5]*k+T[1], wz = M[6]*i+M[7]*j+M[8]*k+T[2];
     const tx = (wx - Tat[0])/V, ty = (wy - Tat[1])/V, tz = (wz - Tat[2])/V;
     out[i + nx*(j + ny*k)] = trilin(prob, SX, SY, SZ, SY*SZ, SZ, 1, tx, ty, tz);   // prob is C-order
+  }
+  return out;
+}
+// map a model LABEL volume (SHAPE, C-order, integer classes) back to native voxels by NEAREST neighbour
+// (trilinear would blur class boundaries). Used by the multi-class tissue model.
+export function labelToNative(label, Tat, vol, shape, vox) {
+  const [nx, ny, nz] = vol.dims, M = vol.M, T = vol.T, [SX, SY, SZ] = shape || BET_SHAPE, V = vox || BET_VOX;
+  const out = new Uint8Array(nx*ny*nz);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const wx = M[0]*i+M[1]*j+M[2]*k+T[0], wy = M[3]*i+M[4]*j+M[5]*k+T[1], wz = M[6]*i+M[7]*j+M[8]*k+T[2];
+    const tx = Math.round((wx - Tat[0])/V), ty = Math.round((wy - Tat[1])/V), tz = Math.round((wz - Tat[2])/V);
+    if (tx < 0 || ty < 0 || tz < 0 || tx >= SX || ty >= SY || tz >= SZ) continue;
+    out[i + nx*(j + ny*k)] = label[(tx*SY + ty)*SZ + tz];   // label is C-order
   }
   return out;
 }

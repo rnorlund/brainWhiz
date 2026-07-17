@@ -13,6 +13,7 @@ const server=http.createServer((req,res)=>{ let p=decodeURIComponent(req.url.spl
 await new Promise(r=>server.listen(PORT,r));
 const browser=await chromium.launch({args:['--use-angle=swiftshader','--ignore-gpu-blocklist','--enable-unsafe-swiftshader']});
 const page=await browser.newPage({viewport:{width:1400,height:900}});
+page.setDefaultTimeout(180000);   // 1mm 3-class model runs ~40-70s single-threaded WASM; give waits room
 const errs=[]; page.on('pageerror',e=>errs.push('PAGEERR '+e.message)); page.on('console',m=>{ if(m.type()==='error') errs.push('CONSOLE '+m.text()); });
 try{
   await page.goto(`http://localhost:${PORT}/index.html?atlas=jhu`,{waitUntil:'domcontentloaded'});

@@ -1,0 +1,54 @@
+<!-- TEMP smoke-test harness: mirrors extension.js getHtml() DOM, points window.NII at the repo's test T1.
+     Served from repo root so ../T1_.nii.gz and media/* resolve. Deleted by _smoke_test.mjs after the run. -->
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="media/viewer.css"><title>smoke</title></head>
+<body><div id="app">
+  <div id="toolbar">
+    <span id="brand"><img class="brandlogo" src="media/brainwhiz_logo.png" alt="">brainWhiz</span>
+    <span id="status">Loading…</span>
+    <label>Colormap <select id="cmap">
+      <option value="gray">gray</option><option value="gray-inv">gray-inv</option><option value="bone">bone</option>
+      <option value="hot">hot</option><option value="viridis">viridis</option><option value="inferno">inferno</option>
+      <option value="magma">magma</option><option value="plasma">plasma</option><option value="turbo">turbo</option>
+      <option value="jet">jet</option><option value="cividis">cividis</option></select></label>
+    <label>Window <input id="winr" type="range" min="1" max="100" value="50"></label>
+    <label>Level <input id="levr" type="range" min="0" max="100" value="50"></label>
+    <span id="framewrap" style="display:none">Frame <input id="frame" type="range" min="0" value="0"><span id="frameV">0</span></span>
+    <button id="xhairBtn" class="active" title="Toggle crosshair">✛</button>
+    <button id="ovBtn" title="Overlay a second .nii">+ Overlay</button>
+    <input id="ovFile" type="file" accept=".nii,.nii.gz,.gz" style="display:none">
+    <span id="ovGroup" style="display:none">
+      <label>Map <select id="ovCmap"><option value="hot">hot</option><option value="viridis">viridis</option><option value="inferno">inferno</option><option value="plasma">plasma</option><option value="turbo">turbo</option><option value="jet">jet</option></select></label>
+      <label>Thr <input id="ovThr" type="range" min="0" max="100" value="20"></label>
+      <label>α <input id="ovOp" type="range" min="10" max="100" value="80"></label>
+      <button id="ovClear" title="Remove overlay">✕</button>
+    </span>
+    <span style="flex:1"></span>
+    <button id="openFull" title="Open the full brainWhiz app">brainWhiz ↗</button>
+    <button id="hdrBtn">Header</button>
+  </div>
+  <div id="grid">
+    <div class="cell"><span class="celllabel">Axial</span><canvas id="cv_axi"></canvas><input id="sl_axi" type="range" min="0" value="0"></div>
+    <div class="cell"><span class="celllabel">Coronal</span><canvas id="cv_cor"></canvas><input id="sl_cor" type="range" min="0" value="0"></div>
+    <div class="cell"><span class="celllabel">Sagittal</span><canvas id="cv_sag"></canvas><input id="sl_sag" type="range" min="0" value="0"></div>
+    <div class="cell" id="view3d"><span class="celllabel">3D surface</span>
+      <div id="v3dctl">
+        <span class="v3dl">Level</span>
+        <input id="thr3d" type="range" min="1" max="90" value="12">
+        <button id="wire3d">Wire</button>
+        <button id="spin3d">Spin</button>
+        <button id="cut3d">Cut</button>
+        <input id="cutlev3d" type="range" min="0" value="0">
+        <button id="face3d">Face</button>
+      </div>
+    </div>
+  </div>
+  <div id="readout"></div>
+  <div id="hdrpanel">
+    <div class="hdrhead"><b>NIfTI header</b><button id="hdrCopy">Copy</button><button id="hdrClose">✕</button></div>
+    <div id="hdrbody" class="hgrid"></div>
+  </div>
+</div>
+<script>window.NII = { uri: "../T1_.nii.gz", name: "T1_.nii.gz" };</script>
+<script type="module" src="media/viewer.js"></script>
+</body></html>

@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.ndimage import gaussian_filter, zoom
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) or '.')
 from unet3d import UNet3D
+import common   # SHAPE/VOX (env-configurable) — baked into the checkpoint so inference reproduces the conform
 
 HERE = os.path.dirname(os.path.abspath(__file__)) or '.'
 CACHE = os.environ.get('BET_CACHE', '/Users/super/Downloads/OASIS_bet_work/cache')
@@ -21,7 +22,7 @@ DEV = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_a
 def load_all():
     out = []
     for f in sorted(glob.glob(f'{CACHE}/*.npz')):
-        sub = re.search(r'(sub-OAS\d+)', os.path.basename(f)).group(1)
+        m = re.search(r'(sub-[A-Za-z0-9]+)', os.path.basename(f)); sub = m.group(1) if m else os.path.basename(f)[:-4]
         d = np.load(f); out.append((sub, d['x'].astype(np.float16), d['y'].astype(np.uint8)))
     return out
 
@@ -143,7 +144,7 @@ def main():
         print(f'ep {ep+1}/{EPOCHS} loss {tot/max(nb,1):.4f} valDice {vd:.4f} best {best:.4f} {(time.time()-t0)/60:.2f}m', flush=True)
         if vd > best:
             best = vd
-            torch.save({'state_dict': model.state_dict(), 'base': BASE, 'depth': 4, 'ch_out': NCLASS, 'shape': [96, 112, 96], 'vox': 2.0, 'valDice': best}, f'{HERE}/bet_unet.pt')
+            torch.save({'state_dict': model.state_dict(), 'base': BASE, 'depth': 4, 'ch_out': NCLASS, 'shape': list(common.SHAPE), 'vox': common.VOX, 'valDice': best}, f'{HERE}/bet_unet.pt')
         if (ep + 1) % 5 == 0 or ep == EPOCHS - 1: qc(model, val, ep + 1)
     json.dump(hist, open(f'{HERE}/train_hist.json', 'w'))
     try:

@@ -1,0 +1,5 @@
+_smoke.html
+_smoke_test.mjs
+_*.png
+.vscode/**
+**/.DS_Store

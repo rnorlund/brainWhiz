@@ -2,10 +2,12 @@
 We crop to the foreground (head) bounding box first, then resample to a fixed shape+voxel so the
 brain is reliably centered regardless of how much neck/FOV the scan includes. The SAME transform
 is reproduced at inference time and inverted to paint the mask back into native space."""
-import numpy as np, nibabel as nib
+import os, numpy as np   # nibabel imported lazily in conform() so training (cache-only) needs no nibabel
 
-SHAPE = (96, 112, 96)      # fixed model input (x,y,z) in canonical RAS
-VOX   = 2.0                # mm isotropic  -> 192 x 224 x 192 mm box (covers brain + margin)
+# Default = the shipped 2mm envelope model. Override via env for the high-res tissue model
+# (e.g. BET_SHAPE=192,224,192 BET_VOX=1.0), so the same conform code serves both without a fork.
+SHAPE = tuple(int(v) for v in os.environ.get('BET_SHAPE', '96,112,96').split(','))
+VOX   = float(os.environ.get('BET_VOX', '2.0'))   # mm isotropic; 2.0 -> 192x224x192mm box (brain+margin)
 
 def _otsu(a, nbins=256):
     a = a[np.isfinite(a)];
@@ -53,6 +55,7 @@ def _resample(data, src_aff, Ta, order):
 
 def conform(t1_path, mask_path=None):
     """Return (x[float32, SHAPE] ~[0,1], y[float32 or None], meta). Explicit reproducible conform."""
+    import nibabel as nib
     img = nib.load(t1_path); data = np.asanyarray(img.dataobj).astype(np.float32); aff = img.affine.astype(np.float64)
     Ta, lo, hi = target_affine(aff, data=data)
     x = _resample(data, aff, Ta, order=1).astype(np.float32)

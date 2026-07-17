@@ -1,0 +1,166 @@
+<meta charset="utf-8">
+<style>
+:root{--bg:#090c11;--panel:#121821;--panel2:#0d121a;--line:#232c38;--txt:#c7d0dc;--mut:#7c8899;
+  --accent:#4fb0cf;--red:#ff4d4d;--ok:#2fbf9f;--watch:#e0a83e}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-columns:270px 1fr;height:100vh}
+#sidebar{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.shdr{padding:14px 16px;border-bottom:1px solid var(--line)}
+.eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:10px;color:var(--accent);font-weight:700}
+.shdr h1{font-size:16px;margin:4px 0 8px;letter-spacing:-.01em}
+.shdr dl{display:grid;grid-template-columns:auto auto;gap:3px 14px;margin:0;font-size:11px}
+.shdr dt{color:var(--mut)} .shdr dd{margin:0;font-family:ui-monospace,Menlo,monospace}
+#subs{overflow:auto;flex:1;padding:6px}
+.sub{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12.5px}
+.sub:hover{background:var(--panel2)} .sub.on{background:color-mix(in srgb,var(--accent) 18%,transparent);outline:1px solid var(--accent)}
+.sub .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub .pc{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;color:var(--accent);font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.hard{background:var(--watch)}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#topbar{display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs{display:flex;gap:3px;background:var(--panel2);padding:3px;border-radius:8px}
+.tabs button{background:none;border:0;color:var(--mut);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
+.tabs button.on{background:var(--accent);color:#04141a}
+.ctl{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut)}
+.ctl input[type=range]{width:96px;accent-color:var(--accent)}
+button.mini{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}
+button.mini:hover{border-color:var(--accent)}
+.spacer{flex:1}
+#readout{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+#stage{flex:1;position:relative;background:#04070b;min-height:0;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;cursor:grab;display:block}
+#cv.drag{cursor:grabbing}
+#hint{position:absolute;left:12px;bottom:10px;font-size:11px;color:var(--mut);background:#0009;padding:5px 9px;border-radius:6px;pointer-events:none}
+#bottom{display:flex;align-items:center;gap:12px;padding:9px 16px;border-top:1px solid var(--line)}
+#slice{flex:1;accent-color:var(--accent)}
+#slabel{font-family:ui-monospace,Menlo,monospace;font-size:12px;min-width:96px;text-align:right;font-variant-numeric:tabular-nums}
+.chip{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:999px}
+.chip.hard{background:color-mix(in srgb,var(--watch) 22%,transparent);color:var(--watch)}
+#load{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--mut);font-size:13px;background:#04070b}
+</style>
+<div id="app">
+  <aside id="sidebar">
+    <div class="shdr">
+      <div class="eyebrow">brainWhiz · BET QC</div>
+      <h1 id="mtitle">Extraction viewer</h1>
+      <dl><dt>Model</dt><dd id="mmodel">—</dd><dt>Train Dice</dt><dd id="mdice">—</dd><dt>Subjects</dt><dd id="mn">—</dd></dl>
+    </div>
+    <div id="subs"></div>
+  </aside>
+  <main>
+    <div id="topbar">
+      <div class="tabs" id="planes"><button data-p="0" class="on">Axial</button><button data-p="1">Coronal</button><button data-p="2">Sagittal</button></div>
+      <label class="ctl"><input type="checkbox" id="maskOn" checked> mask</label>
+      <label class="ctl">opacity <input type="range" id="maskOp" min="0" max="100" value="45"></label>
+      <button class="mini" id="reset">Reset view</button>
+      <span class="spacer"></span>
+      <span id="readout"></span>
+    </div>
+    <div id="stage"><canvas id="cv"></canvas>
+      <div id="hint">scroll = zoom · drag = pan · ←/→ or scroll-on-slider = slice · [ ] = plane</div>
+      <div id="load">decoding volume…</div></div>
+    <div id="bottom"><span style="color:var(--mut);font-size:12px">Slice</span>
+      <input type="range" id="slice" min="0" max="1" value="0"><span id="slabel"></span></div>
+  </main>
+</div>
+<script>
+const META=/*__META__*/, DATA=/*__DATA__*/;
+document.getElementById('mmodel').textContent=META.model;
+document.getElementById('mdice').textContent=META.dice;
+document.getElementById('mn').textContent=META.n;
+const PLANE=['Axial','Coronal','Sagittal'];
+let cur=-1, plane=0, slice=0, zoom=1, panx=0, pany=0, maskOn=true, maskOp=0.45;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const off=document.createElement('canvas'), octx=off.getContext('2d');
+
+async function inflate(b64){
+  const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const st=new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(st).arrayBuffer());
+}
+// build subject list
+const subsEl=document.getElementById('subs');
+DATA.forEach((s,i)=>{const d=document.createElement('div');d.className='sub';d.dataset.i=i;
+  d.innerHTML=`<span class="dot ${s.hard?'hard':''}"></span><span class="nm">${s.name}</span>`+
+    (s.hard?'<span class="chip hard">check</span>':'')+`<span class="pc">${s.pct}%</span>`;
+  d.title=s.tag; d.onclick=()=>select(i); subsEl.appendChild(d);});
+
+function sliceDims(){const [nx,ny,nz]=DATA[cur].dims;
+  return plane===0?[nx,ny,nz]:plane===1?[nx,nz,ny]:[ny,nz,nx];}  // [w,h,depth]
+
+async function select(i){
+  cur=i; [...subsEl.children].forEach((c,j)=>c.classList.toggle('on',j===i));
+  const s=DATA[i];
+  if(!s._t1){document.getElementById('load').style.display='flex';
+    s._t1=await inflate(s.t1); s._mask=await inflate(s.mask);
+    document.getElementById('load').style.display='none';}
+  const [w,h,dep]=sliceDims(); slice=dep>>1; zoom=1; panx=0; pany=0;
+  const sl=document.getElementById('slice'); sl.max=dep-1; sl.value=slice;
+  render();
+}
+function buildImage(){
+  const s=DATA[cur], [nx,ny,nz]=s.dims, t1=s._t1, mk=s._mask, [w,h]=sliceDims();
+  off.width=w; off.height=h; const img=octx.createImageData(w,h), D=img.data;
+  const vox=(x,y,z)=>x+nx*(y+ny*z);
+  for(let r=0;r<h;r++)for(let c=0;c<w;c++){
+    let x,y,z;
+    if(plane===0){x=c; y=h-1-r; z=slice;}                 // axial: cols=x(L-R), rows=y(P-A) flipped, A up
+    else if(plane===1){x=c; y=slice; z=h-1-r;}            // coronal: cols=x, rows=z flipped, S up
+    else {y=c; x=slice; z=h-1-r;}                          // sagittal: cols=y(P-A), rows=z flipped, S up
+    const g=t1[vox(x,y,z)], on=mk[vox(x,y,z)];
+    const o=(r*w+c)*4; let R=g,G=g,B=g;
+    if(on && maskOn){ R=Math.min(255,g*(1-maskOp)+255*maskOp); G=g*(1-maskOp); B=g*(1-maskOp); }
+    D[o]=R; D[o+1]=G; D[o+2]=B; D[o+3]=255;
+  }
+  // bright mask edge (helps spot leaks) when mask on
+  if(maskOn){ for(let r=1;r<h-1;r++)for(let c=1;c<w-1;c++){
+    let x,y,z,xa,ya,za; const px=(cc,rr)=>{if(plane===0)return[cc,h-1-rr,slice];if(plane===1)return[cc,slice,h-1-rr];return[slice,cc,h-1-rr];};
+    const gi=(cc,rr)=>{const [X,Y,Z]=px(cc,rr);return mk[X+nx*(Y+ny*Z)];};
+    if(gi(c,r) && (!gi(c-1,r)||!gi(c+1,r)||!gi(c,r-1)||!gi(c,r+1))){const o=(r*w+c)*4;D[o]=255;D[o+1]=70;D[o+2]=70;}
+  }}
+  octx.putImageData(img,0,0);
+}
+function render(){
+  if(cur<0) return;
+  buildImage();
+  const cw=cv.clientWidth, ch=cv.clientHeight, dpr=Math.min(2,window.devicePixelRatio||1);
+  cv.width=cw*dpr; cv.height=ch*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cw,ch);
+  const sw=off.width, sh=off.height, base=Math.min(cw/sw,ch/sh)*0.94, sc=base*zoom;
+  const dw=sw*sc, dh=sh*sc, dx=(cw-dw)/2+panx, dy=(ch-dh)/2+pany;
+  ctx.imageSmoothingEnabled=false; ctx.drawImage(off,0,0,sw,sh,dx,dy,dw,dh);
+  const s=DATA[cur];
+  document.getElementById('slabel').textContent=`${PLANE[plane]} ${slice+1}/${sliceDims()[2]}`;
+  document.getElementById('readout').textContent=`${s.name} · ${s.pct}% brain · ${s.dims.join('×')} · ${(zoom*100|0)}%`;
+}
+// plane tabs
+document.querySelectorAll('#planes button').forEach(b=>b.onclick=()=>{
+  plane=+b.dataset.p; document.querySelectorAll('#planes button').forEach(x=>x.classList.toggle('on',x===b));
+  const dep=sliceDims()[2]; slice=Math.min(slice,dep-1); zoom=1;panx=0;pany=0;
+  const sl=document.getElementById('slice'); sl.max=dep-1; sl.value=slice; render();});
+const sliceEl=document.getElementById('slice');
+sliceEl.oninput=e=>{slice=+e.target.value; render();};
+document.getElementById('maskOn').onchange=e=>{maskOn=e.target.checked; render();};
+document.getElementById('maskOp').oninput=e=>{maskOp=+e.target.value/100; render();};
+document.getElementById('reset').onclick=()=>{zoom=1;panx=0;pany=0;render();};
+// zoom to cursor
+cv.addEventListener('wheel',e=>{e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left-r.width/2-panx, my=e.clientY-r.top-r.height/2-pany;
+  const f=e.deltaY<0?1.12:1/1.12, nz=Math.max(1,Math.min(12,zoom*f)); const k=nz/zoom;
+  panx-=mx*(k-1); pany-=my*(k-1); zoom=nz; render();},{passive:false});
+let drag=false,lx,ly;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.classList.add('drag');cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{if(!drag)return;panx+=e.clientX-lx;pany+=e.clientY-ly;lx=e.clientX;ly=e.clientY;render();});
+cv.addEventListener('pointerup',e=>{drag=false;cv.classList.remove('drag');});
+sliceEl.addEventListener('wheel',e=>{e.preventDefault();slice=Math.max(0,Math.min(+sliceEl.max,slice+(e.deltaY<0?1:-1)));sliceEl.value=slice;render();},{passive:false});
+addEventListener('keydown',e=>{if(cur<0)return;const dep=sliceDims()[2];
+  if(e.key==='ArrowRight'||e.key==='ArrowUp'){slice=Math.min(dep-1,slice+1);sliceEl.value=slice;render();}
+  else if(e.key==='ArrowLeft'||e.key==='ArrowDown'){slice=Math.max(0,slice-1);sliceEl.value=slice;render();}
+  else if(e.key==='['){document.querySelectorAll('#planes button')[(plane+2)%3].click();}
+  else if(e.key===']'){document.querySelectorAll('#planes button')[(plane+1)%3].click();}});
+addEventListener('resize',render);
+select(0);
+</script>

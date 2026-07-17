@@ -1,0 +1,1 @@
+{"shape": [160, 192, 160], "vox": 1.4, "valDice": 0.9647108033902383, "base": 16, "ch_out": 6, "classes": ["bg", "CSF", "GM", "WM", "skull", "scalp"]}

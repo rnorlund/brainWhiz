@@ -48,10 +48,10 @@
   canvas{display:block}
 
   /* ---- top toolbar ---- */
-  #topbar{position:absolute;top:0;left:0;right:0;height:46px;background:var(--panel);
-    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:20;
-    overflow-x:auto;overflow-y:hidden;zoom:var(--uiScale)}   /* text size scales the toolbar (one row, taller);
-       scrolls horizontally if the bigger controls don't fit, instead of clipping them off-screen */
+  #topbar{position:absolute;top:0;left:0;right:0;min-height:46px;background:var(--panel);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:4px 10px;z-index:20;
+    overflow:visible;zoom:var(--uiScale)}   /* WRAPS to multiple rows on narrow windows so nothing (Panels/Editor) is ever
+       hidden or clipped; resize() reads the real height into --topH so the content below moves down to match */
   #topbar .brand{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px;white-space:nowrap}
   #topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
   /* Brand: logo + wordmark stay a FIXED size regardless of the UI text-size setting (topbar is
@@ -111,8 +111,8 @@
   .netbadge{font-size:11px;color:#3fb950;border:1px solid #2a3346;border-radius:10px;padding:2px 8px;white-space:nowrap}
   .netbadge.off{color:#ff7a59;border-color:#ff7a5955;background:#ff7a5915}
   .vmwrap{position:relative;display:inline-flex}
-  .viewmenu{display:none;position:absolute;top:32px;left:0;background:var(--panel);border:1px solid var(--line);
-    border-radius:9px;padding:6px;grid-template-columns:repeat(3,52px);gap:5px;z-index:60;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .viewmenu{display:none;position:fixed;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:6px;grid-template-columns:repeat(3,52px);gap:5px;z-index:300;box-shadow:0 8px 22px rgba(0,0,0,.45)}
   .viewmenu.on{display:grid}
   .viewmenu .vm{width:100%;text-align:center}
   .viewmenu .vmwide{grid-column:1 / span 3}
@@ -414,6 +414,7 @@
   <button id="recBtn" class="tbtn" title="Record the 3D viewport to a video (toolbars excluded). Click to start, click again to stop &amp; save">⏺ Record</button>
   <select id="recFmt" class="tbsel" style="font-size:11px" title="Recording format. MP4 (H.264) drops straight into PowerPoint / Google Slides / Keynote. WebM is smaller but PPT/Slides often can't play it.">
     <option value="mp4">MP4 (PPT/Slides)</option><option value="webm">WebM (smaller)</option></select>
+  <button id="tbSaveProj" class="tbtn" title="Save a self-contained Project (.bwzproj) — embeds all data, meshes, materials & settings so it recreates exactly">💾 Save</button>
   <button id="pbToggle" class="tbtn">🗔 Panels</button>
   <button id="feToggle" class="tbtn" title="Figure editor — arrange panels, add text / arrows / lines, export">📐 Editor</button>
   <span class="tbsep"></span>
@@ -533,12 +534,17 @@
       <input type="file" id="betFile" accept=".nii,.nii.gz,.gz" style="display:none"></div>
     <div class="row"><label title="T1: CSF dark. T2: CSF bright (inverts tissue ordering).">Contrast</label>
       <select id="betSeq"><option value="t1">T1 (CSF dark)</option><option value="t2">T2 (CSF bright)</option></select></div>
-    <div class="row"><label title="Learned AI = our distilled 3D U-Net (trained on OASIS) run in-browser — best quality. Refined = deep-core + MNI/OASIS prior gate. Fast = geometry only.">Quality</label>
-      <select id="betQual"><option value="learned">🤖 Learned AI (best)</option><option value="refined">Refined (OASIS prior)</option><option value="fast">Fast (geometry only)</option></select></div>
-    <div class="row"><button class="sm" id="betRun" style="flex:1;padding:5px" title="Run brain extraction on the loaded scan">🧠 Extract brain</button></div>
+    <div class="row"><label title="Learned AI = our distilled 3D U-Net (trained on OASIS) run in-browser — best quality. Fast = geometry only.">Quality</label>
+      <select id="betQual"><option value="learned">🤖 Learned AI (best)</option><option value="fast">Fast (geometry only)</option></select></div>
+    <div class="row"><label title="Compute backend for the AI model. WASM = CPU, numerically exact (matches the reference). WebGPU = GPU, faster but kernels/precision can differ by device — run both and compare.">Compute</label>
+      <select id="betBackend"><option value="wasm">WASM · CPU (exact)</option><option value="webgpu">WebGPU · GPU (fast)</option></select></div>
+    <div class="row" style="gap:5px">
+      <button class="sm" id="betRun" style="flex:1;padding:5px" title="Run brain extraction on the loaded scan">🧠 Extract brain</button>
+      <button class="sm" id="betHead" style="flex:1;padding:5px" title="Full-head 6-tissue segmentation (scalp · skull · CSF · GM · WM) as peelable colored layers">🧑 Head layers</button></div>
     <div id="betBar" style="height:6px;background:#0003;border-radius:4px;overflow:hidden;display:none;margin:2px 0">
       <div id="betBarIn" style="height:100%;width:0%;background:linear-gradient(90deg,#4ea3ff,#7ce0c0);transition:width .2s"></div></div>
     <div id="betStatus" style="font-size:11px;opacity:.85;min-height:13px;margin-top:3px"></div>
+    <div id="betLayerCtl" style="display:none;margin-top:6px;border-top:1px solid var(--line);padding-top:6px"></div>
     <div id="betResults" style="display:none;margin-top:6px">
       <div class="row" style="gap:5px">
         <button class="sm" id="betSurf" title="Render the extracted brain as a 3D folded-cortex surface (replaces current meshes)">🧠 3D surface</button>
@@ -546,6 +552,18 @@
       <div class="row" style="gap:5px;margin-top:4px">
         <button class="sm" id="betDownload" title="Download the binary brain mask as .nii.gz (native space)">⬇ mask.nii.gz</button>
         <button class="sm" id="betDownloadBrain" title="Download the skull-stripped scan as .nii.gz">⬇ brain.nii.gz</button></div>
+      <div id="betCtl" style="margin-top:7px;border-top:1px solid var(--line);padding-top:7px;display:grid;gap:5px;font-size:11px">
+        <div class="row" style="gap:6px"><label style="min-width:86px;opacity:.82" title="Grow the boundary outward toward the true cortex/pial edge (intensity-guided; stops at CSF/skull). Re-derives instantly — no re-run.">Boundary reach</label>
+          <input type="range" id="betPial" min="0" max="2" step="1" value="0" style="flex:1" title="Grow the brain boundary outward toward the true cortex/pial edge (intensity-guided, stops at CSF/skull). Re-derives instantly — no re-run."><span id="betPialV" style="min-width:16px;text-align:right;font-family:ui-monospace,monospace">0</span></div>
+        <div class="row" style="gap:6px"><label style="min-width:86px;opacity:.82" title="Smooth the extracted surface (de-jag) without losing sulci">Smoothing</label>
+          <input type="range" id="betSmooth" min="0" max="4" step="1" value="1" style="flex:1" title="Smooth (de-jag) the extracted surface. Lower = crisper folds but rougher; higher = smoother. Rebuilds on release."><span id="betSmoothV" style="min-width:16px;text-align:right;font-family:ui-monospace,monospace">1</span></div>
+        <div class="row" style="gap:6px"><label style="min-width:86px;opacity:.82" title="Mesh detail vs rotation speed — lower = coarser mesh, smoother to rotate">Detail</label>
+          <input type="range" id="betDetail" min="40" max="100" step="10" value="100" style="flex:1" title="Mesh detail vs rotation speed — higher = finer mesh with more gyral detail; lower = coarser, smoother to rotate. Rebuilds on release."><span id="betDetailV" style="min-width:30px;text-align:right;font-family:ui-monospace,monospace">100%</span></div>
+        <div class="row" style="gap:6px"><label style="min-width:86px;opacity:.82" title="Sulcal detail — carve the surface along the actual T1 intensity so it dips into sulci for crisp gyri (like tuning FSL BET). 0 = smooth mask envelope; higher = deeper, sharper folds.">Sulcal detail</label>
+          <input type="range" id="betIso" min="0" max="0.5" step="0.02" value="0.30" style="flex:1" title="Sulcal detail — carve the surface along the actual T1 intensity so it dips into sulci for crisp gyri (like tuning FSL BET). 0 = smooth mask envelope; higher = deeper, sharper folds. Rebuilds on release."><span id="betIsoV" style="min-width:30px;text-align:right;font-family:ui-monospace,monospace">0.30</span></div>
+        <div class="row" style="gap:6px"><label style="min-width:86px;opacity:.82" title="Cortical = GM+WM (tight folded surface). Whole brain = +CSF envelope (what normalization/CHOP wants).">Mask type</label>
+          <select id="betMaskType" style="flex:1" title="Cortical = GM+WM (tight folded surface). Whole brain = +CSF envelope (what normalization / CHOP wants). Re-derives instantly."><option value="cortical">Cortical (GM+WM)</option><option value="whole">Whole brain (+CSF)</option></select></div>
+      </div>
     </div>
   </div></details>
 
@@ -676,6 +694,16 @@
     </div></details>
 
     <details class="sub"><summary><span class="chev">▸</span>💡 Lighting &amp; glow</summary><div class="subb">
+      <div class="ctl"><div class="lab"><span title="Overall scene brightness (tone-mapping exposure) — the master brightness for mesh mode">Brightness</span><span id="exposureV">0.98</span></div>
+        <input type="range" id="exposure" min="0.2" max="3" step="0.02" value="0.98" title="Overall brightness of the 3D scene (exposure). Higher = brighter."></div>
+      <div class="ctl"><div class="lab"><span title="Flat fill light from every direction — raises the whole brain evenly">Ambient</span><span id="ambIntV">0.70</span></div>
+        <input type="range" id="ambInt" min="0" max="3" step="0.05" value="0.7" title="Ambient (flat, shadowless) fill-light intensity"></div>
+      <div class="ctl"><div class="lab"><span title="Main directional key light">Key light</span><span id="keyIntV">0.70</span></div>
+        <input type="range" id="keyInt" min="0" max="3" step="0.05" value="0.7" title="Main directional (key) light intensity"></div>
+      <div class="row" style="justify-content:space-between"><label title="Point lights you place in 3D — drag each glowing handle in the view to move it anywhere">💡 Point lights</label>
+        <button class="sm" id="lightAdd" title="Add a movable point light, then drag its glowing handle in the 3D view to position it anywhere in space">＋ Add light</button></div>
+      <div id="lightList" style="display:grid;gap:6px;font-size:11px"></div>
+      <div id="lightHint" style="font-size:10px;color:var(--muted);display:none;margin:2px 0 4px">Drag a glowing handle in the 3D view to move that light.</div>
       <div class="ctl"><div class="lab"><span>Vividness</span><span id="vividVal"></span></div>
         <input type="range" id="vivid" min="1" max="2.5" step="0.05" value="1.3"></div>
       <div class="ctl"><div class="lab"><span>Rim glow</span><span id="rimVal"></span></div>
@@ -1301,6 +1329,7 @@ const MATCAP_PRESETS={
 };
 const MATCAP_NAMES=Object.keys(MATCAP_PRESETS);
 const MATCAPS={}; for(const k of MATCAP_NAMES) MATCAPS[k]=makeMatcapTex(MATCAP_PRESETS[k]);
+const customMatcaps={};   // dropped-material key -> data URL, so custom matcaps bake into saved projects/presets
 function makeMatcap(){ return makeMatcapTex({type:'matte',base:'#cfd6e0',amb:0.34,sExp:30,sInt:0.5,refl:0.5}); }
 const matcapTex = makeMatcap();
 let activeMatcap = matcapTex;   // current matcap texture (set by setShading for named materials)
@@ -1323,7 +1352,7 @@ controls.addEventListener('change', requestRender);
 ['input','change','click','dblclick','pointerdown'].forEach(ev =>
   document.addEventListener(ev, requestRender, true));
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); scene.add(ambientLight);   // referenceable for the Lighting panel
 const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x202028, 0.9); scene.add(hemi);
 const key = new THREE.DirectionalLight(0xffffff, 0.7); key.position.set(1,1,1); scene.add(key);
 const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(-1,-0.5,-1); scene.add(fill);
@@ -1351,13 +1380,14 @@ const LOBE_COLORS = {
 const HEMI_COLORS = { L:'#4e79a7', R:'#e15759', M:'#edc948' };
 function hslHex(h,s,l){const c=new THREE.Color();c.setHSL(h,s,l);return '#'+c.getHexString();}
 function seededRand(i){const x=Math.sin(i*97.13+0.7)*43758.5453;return x-Math.floor(x);}
+let _randSeed=1;   // re-rolled each time the user picks/re-applies "Random"; saved in projects so a random look reproduces
 
 function colorFor(scheme, m, idx){
   switch(scheme){
     case 'lobe':   return LOBE_COLORS[m.lobe] || '#888';
     case 'hemi':   return HEMI_COLORS[m.hemi] || '#888';
     case 'rainbow':return hslHex(((idx!=null?idx:m.id)/(meshes.length||189))%1, 0.6, 0.55);   // even spread across regions
-    case 'random': return hslHex(seededRand(m.id), 0.55, 0.55);
+    case 'random': return hslHex(seededRand(m.id*7.3 + _randSeed*911.1), 0.45+0.2*seededRand(m.id+_randSeed*3.1), 0.5+0.12*seededRand(m.id*1.7+_randSeed));
     case 'single': return document.getElementById('singleColor').value;
   }
 }
@@ -1592,7 +1622,9 @@ function setShading(type){
   const isMatcap = (type==='Matcap') || !!mat;
   patternUniforms.uCartoon.value = cartoon ? 1 : 0;
   patternUniforms.uShade.value = (mat || isMatcap) ? 0 : (SHADE_MODE[type] || 0);  // analytic shading models
-  activeMatcap = mat ? (MATCAPS[mat] || matcapTex) : matcapTex;
+  if(mat) activeMatcap = MATCAPS[mat] || matcapTex;             // a specific matcap was chosen
+  // else (lit shader or plain "Matcap"): KEEP the loaded custom material — don't reset to the default
+  // texture, so switching shaders never silently drops a dropped material (esp. on forceMatcap surfaces).
   const baseType = isMatcap ? 'Matcap' : 'Standard';            // Cartoon/Gooch/… are Standard material + custom frag
   for(const o of meshes){ const old=o.mesh.material;
     const nm=buildMaterial(o.mesh.userData.forceMatcap ? 'Matcap' : baseType, o.meta.color);  // built surfaces stay matcap (never blow out)
@@ -1609,6 +1641,7 @@ const _matcapLoader = new THREE.TextureLoader();
 function applyDroppedMatcap(url, name){ _matcapLoader.load(url, tex=>{
   tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
   const short = (name||'custom').replace(/\.[^.]+$/,'').slice(0,26), key = '✎ '+short; MATCAPS[key] = tex;
+  if(/^data:/.test(url)) customMatcaps[key] = url;   // remember the image so it bakes into saved projects
   const sel = $('shading'); let grp = sel.querySelector('optgroup[label="Dropped materials"]');
   if(!grp){ grp = document.createElement('optgroup'); grp.label = 'Dropped materials'; sel.appendChild(grp); }
   let opt = [...grp.children].find(o=>o.value === 'matcap:'+key);
@@ -1748,6 +1781,7 @@ function finishInit(box, sphere){
   requestRender();   // meshes loaded async — render the initial scene
   setTimeout(()=>{ try{ restoreLook(); }catch(e){}
     try{ const pend=sessionStorage.getItem('mwPendingCSV'); if(pend){ sessionStorage.removeItem('mwPendingCSV'); const o=JSON.parse(pend); if(o&&o.text){ if(typeof clearEmptyState==='function')clearEmptyState(); loadRegionCSV(o.text,o.name); openSection('Overlays'); } } }catch(e){}   // auto-applied CSV after an atlas auto-switch
+    try{ const pp=sessionStorage.getItem('mwPendingProject'); if(pp){ sessionStorage.removeItem('mwPendingProject'); const pj=JSON.parse(pp); if(pj&&window.brainAPI) window.brainAPI.loadProject(pj); } }catch(e){}   // re-apply a .bwzproj after an atlas auto-switch (restores the glass brain etc.)
   }, 0);   // re-apply the saved look after this atlas is ready (survives atlas switches)
   if(window.__brainReady) window.__brainReady();   // signal scripting API
   if(params.get('embed')){ document.body.classList.add('embed');   // iframe-friendly: hide all chrome
@@ -1783,6 +1817,11 @@ async function loadEmbedData(){ try{
   const expl=params.get('explode'); if(expl!=null) setExplode(+expl);
   const m=params.get('mode'); if(m==='slice') setViewMode('slice'); else if(m==='mosaic') setViewMode('mosaic');
   const vw=params.get('view'); if(vw) brainAPI.setView(vw);
+  if(params.get('slim')!=null){          // start with both sidebars collapsed for a wider brain (user reopens via ☰ / 🎨)
+    document.body.classList.add('navhidden','navhiddenR');
+    $('navToggle').classList.remove('tbon'); $('navToggleR').classList.remove('tbon');
+    resize(); if(typeof refreshSliceViews==='function') refreshSliceViews();
+  }
   requestRender();
 }catch(e){ console.error('embed data load failed:', e); } }
 function showEmptyState(){ if(document.getElementById('emptyState')) return;
@@ -1943,7 +1982,7 @@ $('saveColored').addEventListener('click', ()=>{
 // ---------- render style (shading / vividness / rim glow) ----------
 $('shading').addEventListener('change', e=>setShading(e.target.value));
 $('matImgBtn').addEventListener('click', ()=>$('matImgFile').click());
-$('matImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f) applyDroppedMatcap(URL.createObjectURL(f), f.name); e.target.value=''; });
+$('matImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader(); r.onload=()=>applyDroppedMatcap(r.result, f.name); r.readAsDataURL(f); } e.target.value=''; });   // data URL → persists in saved projects
 
 // ---- AutoMethods: auto-write a Methods / figure-caption paragraph from the loaded atlas + underlay + overlays ----
 const ATLAS_CITE = { jhu:'the JHU DTI-based white-matter atlas (Mori et al., 2008)', aal:'the AAL atlas (Tzourio-Mazoyer et al., 2002)', aalcat:'the AAL atlas (Tzourio-Mazoyer et al., 2002)', aal3:'the AAL3 atlas (Rolls et al., 2020)', aicha:'the AICHA atlas (Joliot et al., 2015)', ho:'the Harvard-Oxford atlas (Desikan et al., 2006)', bro:'the Brodmann areas', cobra:'the CoBrA subcortical atlas (Winterburn et al., 2013)', hammers:'the Hammers atlas (Hammers et al., 2003)', lpba40:'the LPBA40 atlas (Shattuck et al., 2008)', neuromorph:'the Neuromorphometrics atlas', xtract:'the XTRACT white-matter atlas (Warrington et al., 2020)', catani:'the Catani white-matter atlas (Catani & Thiebaut de Schotten, 2008)', fox:'the meta-analytic (Fox) atlas', anatomy3:'the SPM Anatomy toolbox atlas (Eickhoff et al., 2005)', hcp:'the HCP-MMP1 atlas (Glasser et al., 2016)' };
@@ -2196,6 +2235,7 @@ $('shellColor').addEventListener('input', updateGlassShell);
 $('shellOp').addEventListener('input', e=>{ $('shellOpV').textContent=(+e.target.value).toFixed(2); updateGlassShell(); });
 // ================= PROJECTOR: image / video / webcam onto the brain =================
 let projLayer=null, projTex=null, projVideo=null, projStream=null, projDecals=[], projDecalSel=null, projPick=false, _projT=0;
+let projMediaSrc=null;   // {type:'image'|'video'|'url'|'webcam', src:dataURL-or-URL, name} — persisted so projects recreate the projection
 const PROJ_UN={ uTex:{value:null}, uHasTex:{value:0}, uMode:{value:0}, uScale:{value:new THREE.Vector2(1,1)}, uOffset:{value:new THREE.Vector2(0,0)},
   uRot:{value:0}, uSpin:{value:0}, uTime:{value:0}, uOpacity:{value:0.85}, uReplace:{value:0},
   uProj:{value:new THREE.Matrix4()}, uProjDir:{value:new THREE.Vector3(0,0,1)}, uProjCenter:{value:new THREE.Vector3()},
@@ -2218,7 +2258,8 @@ function loadProjVideo(url, name){ const v=document.createElement('video'); v.sr
 async function startWebcam(){ try{ const s=await navigator.mediaDevices.getUserMedia({video:true});
   const v=document.createElement('video'); v.srcObject=s; v.muted=true; v.playsInline=true; await v.play();
   const t=new THREE.VideoTexture(v); t.colorSpace=THREE.NoColorSpace; projStream=s;
-  setProjTexture(t,'webcam',v); if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Webcam live.'); }
+  setProjTexture(t,'webcam',v); projMediaSrc={type:'webcam'};   // live feed — can't be baked into a project
+  if(!$('projOn').checked){ $('projOn').checked=true; } updateProjector(); projStatus('Webcam live.'); }
   catch(e){ projStatus('Webcam unavailable / denied.'); } }
 function ensureProjLayer(){ if(projLayer || !meshes.length) return;
   const mat=new THREE.ShaderMaterial({ uniforms:PROJ_UN, transparent:true, depthWrite:false, side:THREE.DoubleSide,
@@ -2359,7 +2400,7 @@ function clearDecals(){ projDecals.forEach(d=>{ group.remove(d.mesh); d.mesh.geo
   if(d.outline){ group.remove(d.outline); d.outline.geometry.dispose(); d.outline.material.dispose(); } }); projDecals=[]; projDecalSel=null; requestRender(); }
 // remove EVERYTHING the projector set up: media, wrap/projector layer, all decal stamps, webcam, picked set
 function clearProjectorAll(){
-  clearDecals();
+  clearDecals(); projMediaSrc=null;
   setProjTexture(null,'');                                  // drops the texture + stops any webcam stream
   if(projVideo){ try{projVideo.pause();}catch(e){} projVideo=null; }
   if(projLayer){ group.remove(projLayer); projLayer.geometry.dispose(); projLayer.material.dispose(); projLayer=null; }
@@ -2368,6 +2409,35 @@ function clearProjectorAll(){
   if($('projImgFile')) $('projImgFile').value=''; if($('projVidFile')) $('projVidFile').value=''; if($('projUrl')) $('projUrl').value='';
   $('projMediaName').textContent='';
   updateProjector(); projStatus('Projector cleared.'); requestRender();
+}
+// ---- persist the FULL projector state so a project recreates it precisely ----
+// (scalar controls save via PRESET_IDS; this captures the non-control state: media, aim, region set, decals)
+function captureProjector(){
+  if(!projMediaSrc && !projDecals.length) return null;                 // nothing projected
+  const p={ aimed:_projAimed };
+  if(projMediaSrc){ p.media = projMediaSrc.type==='webcam' ? {type:'webcam'}
+    : {type:projMediaSrc.type, src:projMediaSrc.src||null, name:projMediaSrc.name||'', tooBig:!!projMediaSrc.tooBig}; }
+  if(_projAimed) p.aim={ proj:PROJ_UN.uProj.value.toArray(), dir:PROJ_UN.uProjDir.value.toArray(), center:PROJ_UN.uProjCenter.value.toArray() };
+  if(projRegionSet.size) p.regionSet=[...projRegionSet];
+  if(projDecals.length) p.decals=projDecals.map(d=>({ p:[d.pL.x,d.pL.y,d.pL.z], n:[d.nL.x,d.nL.y,d.nL.z],
+    size:d.size, rot:d.rot, shape:d.shape, outlineW:d.outlineW||0, outlineColor:d.outlineColor||'#000000' }));
+  return p;
+}
+function restoreProjector(pj){
+  if(!pj) return; clearProjectorAll();
+  if(pj.regionSet){ pj.regionSet.forEach(id=>{ projRegionSet.add(id); projSetEmissive(byId.get(id),true); }); if($('projPickCount')) $('projPickCount').textContent=projRegionSet.size+' region(s)'; }
+  const finish=()=>{
+    if(pj.aim && projTex){ PROJ_UN.uProj.value.fromArray(pj.aim.proj); PROJ_UN.uProjDir.value.fromArray(pj.aim.dir); PROJ_UN.uProjCenter.value.fromArray(pj.aim.center); _projAimed=true; }
+    (pj.decals||[]).forEach(d=>{ if(!projTex) return; const rec={ pL:new THREE.Vector3().fromArray(d.p), nL:new THREE.Vector3().fromArray(d.n),
+      size:d.size, rot:d.rot, shape:d.shape, outlineW:d.outlineW||0, outlineColor:d.outlineColor||'#000000' };
+      rec.mesh=new THREE.Mesh(buildDecalGeo(rec, rec.size), decalMaterial(rec.shape)); rec.mesh.renderOrder=3; rec.mesh.userData.decalRec=rec; group.add(rec.mesh); projDecals.push(rec); rebuildDecal(rec); });
+    updateProjector(); requestRender();
+  };
+  const m=pj.media;
+  if(m && m.type!=='webcam' && m.src){ projMediaSrc={type:m.type, src:m.src, name:m.name};
+    if(m.type==='video') loadProjVideo(m.src, m.name); else loadProjImage(m.src, m.name);
+    let n=0; const iv=setInterval(()=>{ if(projTex||++n>80){ clearInterval(iv); finish(); } }, 50);   // media loads async → wait for the texture
+  } else { if(m && m.tooBig) projStatus('This project used a video too large to embed — reload it via 🎞 Video.'); finish(); }
 }
 $('projOn').addEventListener('change', updateProjector);
 $('projMode').addEventListener('change', updateProjector);
@@ -2389,9 +2459,12 @@ $('projPickClear').addEventListener('click', projClearSet);
 $('projImgBtn').addEventListener('click', ()=>$('projImgFile').click());
 $('projVidBtn').addEventListener('click', ()=>$('projVidFile').click());
 $('projCamBtn').addEventListener('click', startWebcam);
-$('projImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ loadProjImage(URL.createObjectURL(f), f.name); } e.target.value=''; });
-$('projVidFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ loadProjVideo(URL.createObjectURL(f), f.name); } e.target.value=''; });
-$('projUrlBtn').addEventListener('click', ()=>{ const u=$('projUrl').value.trim(); if(u) loadProjImage(u, u.split('/').pop()); });
+$('projImgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();   // data URL → bakes into saved projects
+  r.onload=()=>{ loadProjImage(r.result, f.name); projMediaSrc={type:'image', src:r.result, name:f.name}; }; r.readAsDataURL(f); } e.target.value=''; });
+$('projVidFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(f){
+  if(f.size>25*1024*1024){ loadProjVideo(URL.createObjectURL(f), f.name); projMediaSrc={type:'video', src:null, name:f.name, tooBig:true}; projStatus('Video loaded — too large (>25MB) to embed, so it won’t persist in a saved project.'); }
+  else { const r=new FileReader(); r.onload=()=>{ loadProjVideo(r.result, f.name); projMediaSrc={type:'video', src:r.result, name:f.name}; }; r.readAsDataURL(f); } } e.target.value=''; });
+$('projUrlBtn').addEventListener('click', ()=>{ const u=$('projUrl').value.trim(); if(u){ loadProjImage(u, u.split('/').pop()); projMediaSrc={type:'url', src:u, name:u.split('/').pop()}; } });
 $('projPlay').addEventListener('click', ()=>{ if(!projVideo) return; if(projVideo.paused){ projVideo.play(); $('projPlay').textContent='⏸ Pause'; } else { projVideo.pause(); $('projPlay').textContent='▶ Play'; } });
 $('projVidSpeed').addEventListener('input', e=>{ $('projVidSpeedV').textContent=(+e.target.value)+'×'; if(projVideo) projVideo.playbackRate=+e.target.value; });
 $('projDecalAdd').addEventListener('click', ()=>{ if(!projTex){ projStatus('Load media first.'); return; } projPick=true; projStatus('Click a spot on the brain to stamp the media…'); });
@@ -2538,7 +2611,9 @@ function view(pos, dist){ // pos = direction the camera sits from center; dist d
 const VIEW_DIRS={left:[-1,0,0],right:[1,0,0],superior:[0,1,0.0001],inferior:[0,-1,0.0001],anterior:[0,0,-1],posterior:[0,0,1]};
 document.querySelectorAll('.vbtn, .vm').forEach(b=>{ if(!b.dataset.v) return;
   b.addEventListener('click',()=>{ view(VIEW_DIRS[b.dataset.v]||VIEW_DIRS.left); $('viewMenu').classList.remove('on'); }); });
-$('viewMenuBtn').addEventListener('click', e=>{ e.stopPropagation(); $('viewMenu').classList.toggle('on'); });
+$('viewMenuBtn').addEventListener('click', e=>{ e.stopPropagation(); const vm=$('viewMenu');
+  if(!vm.classList.contains('on')){ const r=$('viewMenuBtn').getBoundingClientRect(); vm.style.top=(r.bottom+4)+'px'; vm.style.left=r.left+'px'; }  // fixed-position under the button so #topbar's overflow clip can't hide it
+  vm.classList.toggle('on'); });
 document.addEventListener('click', e=>{ const vm=$('viewMenu');
   if(vm && vm.classList.contains('on') && !vm.contains(e.target) && e.target!==$('viewMenuBtn')) vm.classList.remove('on'); });
 $('snap').onclick = ()=>{ const a=document.createElement('a'); a.download='brainWhiz.png';
@@ -2655,7 +2730,7 @@ window.addEventListener('drop',async e=>{ if(!e.dataTransfer) return; e.preventD
   const recipe=files.filter(f=>/\.(bwz|bwzproj|json)$/i.test(f.name));
   let rest=files.filter(f=>!/\.(bwz|bwzproj|json)$/i.test(f.name));
   const imgs=rest.filter(f=>/\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(f.name));   // an image → wear it as a material (matcap)
-  if(imgs.length){ imgs.forEach(f=>applyDroppedMatcap(URL.createObjectURL(f), f.name)); rest=rest.filter(f=>!imgs.includes(f)); }
+  if(imgs.length){ imgs.forEach(f=>{ const r=new FileReader(); r.onload=()=>applyDroppedMatcap(r.result,f.name); r.readAsDataURL(f); }); rest=rest.filter(f=>!imgs.includes(f)); }   // data URL → persists in saved projects
   for(const f of recipe) await handleDroppedFile(f, false);
   // a label .nii dropped together with a labels .txt/.lut/.label is unambiguously an atlas build —
   // honor it regardless of which band it landed on (so the labels file never hits the CSV loader)
@@ -2833,9 +2908,9 @@ function buildAtlasFromNifti(nii, labelsText, name){
   return finalRecs.length;
 }
 // continuous volume (T1 / stat map) -> ONE smooth brain-surface mesh (intensity isosurface)
-function buildSurfaceFromNifti(nii, name){
+function buildSurfaceFromNifti(nii, name, opts={}){
   if(typeof betSetSource==='function') betSetSource(nii, name);   // let BET/CHOP use a drag-loaded scan
-  nii=_capNii(nii, 2_500_000);                       // downsample huge volumes so the tab never freezes
+  nii=_capNii(nii, opts.cap||2_500_000);             // downsample huge volumes so the tab never freezes (detail control)
   const {data, dim, worldOf}=nii, nx=dim[0], ny=dim[1], nz=dim[2];
   let samp=[]; const stride=Math.max(1,(data.length/150000)|0);
   for(let i=0;i<data.length;i+=stride){ const v=data[i]; if(v>0) samp.push(v); }
@@ -2846,10 +2921,22 @@ function buildSurfaceFromNifti(nii, name){
     if(data[jo+i]>thr){ cnt++; if(i<minx)minx=i;if(i>maxx)maxx=i;if(j<miny)miny=j;if(j>maxy)maxy=j;if(k<minz)minz=k;if(k>maxz)maxz=k; } } } }
   if(cnt<100) throw new Error('Could not find a surface (try a brain-extracted / masked volume).');
   const bw=maxx-minx+1,bh=maxy-miny+1,bd=maxz-minz+1, PAD=3, fw=bw+2*PAD,fh=bh+2*PAD,fd=bd+2*PAD, occ=new Float32Array(fw*fh*fd);
-  for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
-    if(data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny]>thr) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
-  gaussianBlur3D(occ,[fw,fh,fd],1.1);
-  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.5-occ[i];
+  // iso=null → binary-mask surface (smooth envelope; good for parcellations). iso=number(0..1) →
+  // INTENSITY isosurface at iso·p99 so the surface dips into dark sulci → crisp gyri/sulci on a real scan.
+  const iso=(opts.iso!=null&&isFinite(opts.iso))?opts.iso:null, inorm=1/(p99||1);
+  for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){ const src=data[(minx+x)+(miny+y)*nx+(minz+z)*nx*ny], o=(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh;
+    occ[o]= iso!=null ? Math.min(1,Math.max(0,src*inorm)) : (src>thr?1:0); }
+  if(iso!=null){                        // close interior holes so intensity-carving can't punch THROUGH the brain
+    const L=occ.length, out=new Uint8Array(L), st=[];                 // flood "outside" (sub-iso, border-reachable)
+    for(let z=0;z<fd;z++)for(let y=0;y<fh;y++)for(let x=0;x<fw;x++){ if(x===0||y===0||z===0||x===fw-1||y===fh-1||z===fd-1){ const p=x+y*fw+z*fw*fh; if(occ[p]<iso && !out[p]){ out[p]=1; st.push(p); } } }
+    while(st.length){ const p=st.pop(), x=p%fw, y=((p/fw)|0)%fh, z=(p/(fw*fh))|0;
+      const nb=[x>0?p-1:-1, x<fw-1?p+1:-1, y>0?p-fw:-1, y<fh-1?p+fw:-1, z>0?p-fw*fh:-1, z<fd-1?p+fw*fh:-1];
+      for(const q of nb){ if(q>=0 && !out[q] && occ[q]<iso){ out[q]=1; st.push(q); } } }
+    for(let i=0;i<L;i++) if(occ[i]<iso && !out[i]) occ[i]=iso+0.06;    // interior pocket → raise just inside (fold stays)
+  }
+  gaussianBlur3D(occ,[fw,fh,fd], opts.blur!=null?opts.blur:1.1);   // smoothing control
+  const lvl=iso!=null?iso:0.5;
+  const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=lvl-occ[i];
   const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) throw new Error('No surface extracted.');
   const tjs=(i,j,k)=>{ const w=worldOf(i,j,k); return [w[0],w[2],-w[1]]; };
   const vmap=sn.positions.map(p=>tjs(minx-PAD+p[0], miny-PAD+p[1], minz-PAD+p[2]));
@@ -2870,7 +2957,9 @@ function buildSurfaceFromNifti(nii, name){
   installBuiltAtlas([rec], {1:[]}, name||'Brain surface');
   return 1;
 }
+let _builtScene=null;   // name of the current custom-built scene (BET surface / dropped .nii) — null = bundled atlas
 function installBuiltAtlas(finalRecs, SAMP, name){
+  _builtScene = name || 'Custom';   // mark the scene as custom-built so it bakes into saved projects
   for(const rec of meshes){ rec.mesh.removeFromParent(); rec.mesh.geometry.dispose(); if(rec.mesh.material.dispose) rec.mesh.material.dispose(); }
   if(typeof setSelected==='function') setSelected(null);
   meshes.length=0; byId.clear(); META.length=0; byNode.clear();
@@ -3049,10 +3138,63 @@ async function loadSurfaceOrTracts(file){
 // color scheme
 $('scheme').addEventListener('change', e=>{
   $('singleRow').style.display = e.target.value==='single' ? 'flex':'none';
+  if(e.target.value==='random' && e.isTrusted) _randSeed=Math.random();   // fresh colors each time the USER picks Random (not on project restore)
   applyScheme(e.target.value);
 });
-$('applyScheme').onclick = ()=>applyScheme($('scheme').value);
+$('applyScheme').onclick = ()=>{ if($('scheme').value==='random') _randSeed=Math.random(); applyScheme($('scheme').value); };   // ↻ re-rolls Random
 $('singleColor').addEventListener('input', ()=>{ if($('scheme').value==='single') applyScheme('single'); });
+
+// ================= LIGHTING: master brightness + ambient/key + droppable point lights =================
+let ptLights=[], lightDrag=null;
+(function(){
+  const bind=(id,vid,fn,fix)=>{ const el=$(id); if(!el) return;
+    el.addEventListener('input', ()=>{ const v=$(vid); if(v) v.textContent=(+el.value).toFixed(fix==null?2:fix); fn(+el.value); requestRender(); }); };
+  bind('exposure','exposureV', v=>{ renderer.toneMappingExposure=v; });
+  bind('ambInt','ambIntV', v=>{ ambientLight.intensity=v; });
+  bind('keyInt','keyIntV', v=>{ key.intensity=v; });
+
+  function addPointLight(pos, opt={}){
+    const col=opt.color||'#ffffff';
+    const l=new THREE.PointLight(new THREE.Color(col), opt.intensity!=null?opt.intensity:1.4, opt.distance||0, 2);
+    l.position.copy(pos || new THREE.Vector3(sceneCenter.x+modelRadius*1.1, sceneCenter.y+modelRadius*0.9, sceneCenter.z+modelRadius*1.1));
+    scene.add(l);
+    const giz=new THREE.Mesh(new THREE.SphereGeometry(Math.max(2,modelRadius*0.035),16,12), new THREE.MeshBasicMaterial({color:new THREE.Color(col)}));
+    giz.position.copy(l.position); giz.userData.lightGizmo=true; scene.add(giz);
+    const rec={light:l, gizmo:giz, color:col, intensity:l.intensity, distance:l.distance};
+    giz.userData.rec=rec; ptLights.push(rec); renderLightList(); requestRender(); return rec;
+  }
+  function removePointLight(rec){ scene.remove(rec.light); scene.remove(rec.gizmo); rec.gizmo.geometry.dispose(); rec.gizmo.material.dispose();
+    ptLights=ptLights.filter(r=>r!==rec); renderLightList(); requestRender(); }
+  function renderLightList(){ const box=$('lightList'); if(!box) return; box.innerHTML=''; const hint=$('lightHint'); if(hint) hint.style.display=ptLights.length?'block':'none';
+    ptLights.forEach(rec=>{ const row=document.createElement('div');
+      row.style.cssText='display:grid;grid-template-columns:auto 1fr 1fr auto;gap:6px;align-items:center;background:#0003;padding:4px 6px;border-radius:6px';
+      const col=document.createElement('input'); col.type='color'; col.value=rec.color; col.title='Light color';
+      col.oninput=()=>{ rec.color=col.value; rec.light.color.set(col.value); rec.gizmo.material.color.set(col.value); requestRender(); };
+      const it=document.createElement('input'); it.type='range'; it.min='0'; it.max='6'; it.step='0.1'; it.value=rec.intensity; it.title='Intensity';
+      it.oninput=()=>{ rec.intensity=+it.value; rec.light.intensity=+it.value; requestRender(); };
+      const rg=document.createElement('input'); rg.type='range'; rg.min='0'; rg.max=String(Math.max(50,Math.round(modelRadius*8))); rg.step='1'; rg.value=rec.distance; rg.title='Range (0 = infinite reach)';
+      rg.oninput=()=>{ rec.distance=+rg.value; rec.light.distance=+rg.value; requestRender(); };
+      const del=document.createElement('button'); del.className='sm'; del.textContent='✕'; del.title='Remove this light'; del.onclick=()=>removePointLight(rec);
+      row.append(col,it,rg,del); box.appendChild(row); });
+  }
+  $('lightAdd') && $('lightAdd').addEventListener('click', ()=>addPointLight());
+  // exposed for project save/restore
+  window._lightsState = ()=> ptLights.map(r=>({color:r.color, intensity:r.intensity, distance:r.distance, pos:[+r.gizmo.position.x.toFixed(2),+r.gizmo.position.y.toFixed(2),+r.gizmo.position.z.toFixed(2)]}));
+  window._lightsRestore = arr=>{ ptLights.slice().forEach(removePointLight); (arr||[]).forEach(pt=>addPointLight(new THREE.Vector3().fromArray(pt.pos), pt)); };
+
+  // drag a light's glowing handle in 3D — along the camera-facing plane through the handle (capture phase beats OrbitControls)
+  const rc=new THREE.Raycaster(), nd=new THREE.Vector2(), pl=new THREE.Plane(), hp=new THREE.Vector3(), cv=renderer.domElement;
+  cv.addEventListener('pointerdown', e=>{ if(!ptLights.length) return;
+    const r=cv.getBoundingClientRect(); nd.set((e.clientX-r.left)/r.width*2-1, -((e.clientY-r.top)/r.height*2-1));
+    rc.setFromCamera(nd,camera); const hit=rc.intersectObjects(ptLights.map(p=>p.gizmo),false)[0]; if(!hit) return;
+    e.stopPropagation(); controls.enabled=false; const rec=hit.object.userData.rec;
+    pl.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), rec.gizmo.position); lightDrag=rec;
+    const mv=ev=>{ const rr=cv.getBoundingClientRect(); nd.set((ev.clientX-rr.left)/rr.width*2-1, -((ev.clientY-rr.top)/rr.height*2-1));
+      rc.setFromCamera(nd,camera); if(rc.ray.intersectPlane(pl,hp)){ rec.gizmo.position.copy(hp); rec.light.position.copy(hp); requestRender(); } };
+    const up=()=>{ controls.enabled=true; lightDrag=null; removeEventListener('pointermove',mv); removeEventListener('pointerup',up); };
+    addEventListener('pointermove',mv); addEventListener('pointerup',up);
+  }, true);
+})();
 
 // ---------- UI: ROI chart ----------
 function buildList(){
@@ -3853,6 +3995,8 @@ const PRESET_IDS = ['explode','distance','animSpeed','opacity','surfStyle','patS
   'ovStyle','cmap','ovColor','ovBaseColor','cmin','cmax','cthresh','cmapInvert','cmapAbs','cthreshMode','cthreshTwo','cthreshCenter','fxSparkle','sparkAmt','sparkSpeed','sparkTw',
   'coloredOp','grayOp','satCut','glass','smooth','slMeshVox','meshVoxOp',
   'volOn','volMode','volCmap','volThr','volOp','volSteps','volClip',
+  'exposure','ambInt','keyInt',
+  'projOn','projMode','projBlend','projTarget','projOp','projScale','projScaleY','projOffX','projOffY','projRot','projRim','projSpin','projMirror','projVidSpeed',
   'auraOn','auraColor','auraSize','auraIntensity','auraPulse','auraRainbow'];
 function capturePreset(){
   const p={};
@@ -5114,6 +5258,7 @@ async function betRun(){
   const v=_betSource||underlayVol;
   if(!v){ betStatus('Load a subject T1/T2 first — drag one in, or 🩻 Underlay → “＋ Load .nii”, or “＋ Load T1/T2” above. (MNI152 is a template, not a subject.)', true); return; }
   const qual=$('betQual')?$('betQual').value:'learned', refined=qual==='refined', t2=$('betSeq')&&$('betSeq').value==='t2';
+  const backend=$('betBackend')?$('betBackend').value:'wasm';
   if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'});
       _betWorker.onerror=(ev)=>{ betProgress(0); betStatus('Extraction worker failed to load'+((ev&&ev.message)?': '+ev.message:'')+'. Try a hard refresh; BET needs the app served (not file://).', true); _betWorker=null; if($('betRun')) $('betRun').disabled=false; }; }
     catch(e){ betStatus('Could not start the extraction worker: '+(e.message||e), true); return; } }
@@ -5128,12 +5273,73 @@ async function betRun(){
   _betWorker.onmessage=(e)=>{ const d=e.data;
     if(d.type==='progress') return betProgress(d.pct,d.msg);
     if(d.type==='error'){ betProgress(0); betStatus('Extraction failed: '+d.msg, true); $('betRun').disabled=false; return; }
-    if(d.type==='done'){ betProgress(0);
+    if(d.type==='done'){
       _betResult={ mask:d.mask, cortex:d.cortex, wm:d.wm, gm:d.gm, dim, M, T, voxels:d.voxels, total:d.total, centroids:d.centroids, srcData:v.data };
-      betStatus(`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`);
+      const stat=`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`;
       $('betResults').style.display='block'; ['chopCortex','chopWM','chopGM','chopTissueUnder'].forEach(id=>{ if($(id)) $(id).disabled=false; });
-      if($('chopHint')) $('chopHint').textContent='Ready — pick a compartment.'; $('betRun').disabled=false; } };
-  _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ method:qual, refined:refined&&!!(mni&&prior), t2, dilMM:6 } }, transfer);
+      if($('chopHint')) $('chopHint').textContent='Ready — pick a compartment.';
+      betProgress(96,'Building 3D surface…');                    // auto-show the extracted brain as a folded surface
+      setTimeout(()=>{ try{ betShowSurface(_betResult.cortex,'BET cortex'); betStatus(stat+' — 3D cortex shown.'); }
+                       catch(err){ betStatus('Surface build failed: '+(err.message||err), true); }
+                       betProgress(0); if($('betRun')) $('betRun').disabled=false; }, 40);   // yield so the bar paints before the (blocking) mesh build
+      return; } };
+  _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ method:qual, refined:refined&&!!(mni&&prior), t2, dilMM:6, backend, pial:+(($('betPial')||{}).value||0), maskType:(($('betMaskType')||{}).value||'cortical') } }, transfer);
+}
+// per-layer show/hide toggles (outer→inner) so you can peel the head; built after Head layers runs
+function betBuildLayerToggles(){
+  const box=$('betLayerCtl'); if(!box) return; box.innerHTML='';
+  const hdr=document.createElement('div'); hdr.textContent='Layers — toggle to peel:'; hdr.style.cssText='font-size:10px;color:var(--muted);margin-bottom:4px'; box.appendChild(hdr);
+  const order=[5,4,1,3,2];                                   // scalp, skull, CSF, WM, GM (outer→inner)
+  const recs=[]; for(const id of order){ const r=byId.get(id); if(r) recs.push(r); }
+  for(const r of meshes) if(!recs.includes(r)) recs.push(r);  // any extras
+  const swHex=r=>{ try{ return '#'+r.mesh.material.color.getHexString(); }catch(e){ return r.meta.color||'#888'; } };
+  for(const r of recs){
+    const lab=document.createElement('label'); lab.style.cssText='display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer;padding:2px 0';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=r.mesh.visible!==false;
+    const sw=document.createElement('span'); sw.style.cssText='width:12px;height:12px;border-radius:3px;flex:none;border:1px solid #0006;background:'+swHex(r);
+    const nm=document.createElement('span'); nm.textContent=r.meta.name||r.meta.abbr||('#'+r.meta.id);
+    cb.addEventListener('change',()=>{ r.mesh.visible=cb.checked; requestRender(); });
+    lab.append(cb,sw,nm); box.appendChild(lab);
+  }
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:5px;margin-top:6px';
+  const preset=(txt,keep)=>{ const b=document.createElement('button'); b.className='sm'; b.textContent=txt; b.style.cssText='flex:1;font-size:10px;padding:3px';
+    b.onclick=()=>{ for(const r of meshes) r.mesh.visible = keep(r.meta.id); requestRender(); betBuildLayerToggles(); }; return b; };
+  row.append(
+    preset('All', ()=>true),
+    preset('Brain', id=>id===2||id===3),               // GM+WM only
+    preset('None', ()=>false));
+  box.appendChild(row); box.style.display='block';
+}
+// Full-head 6-tissue layers: run bet_head6.onnx in the worker, then build one peelable colored
+// region per tissue (scalp·skull·CSF·GM·WM) via the atlas builder — toggle/opacity = peel the head.
+async function betHeadLayers(){
+  if(location.protocol==='file:'){ betStatus('Head layers can’t run from a file:// page — serve the folder (python3 -m http.server) or use the live site.', true); return; }
+  const v=_betSource||underlayVol;
+  if(!v){ betStatus('Load a subject T1 first (＋ Load T1/T2), then Head layers.', true); return; }
+  const backend=$('betBackend')?$('betBackend').value:'wasm';
+  if(!_betWorker){ try{ _betWorker=new Worker(new URL('./bet/bet_worker.js',import.meta.url),{type:'module'});
+      _betWorker.onerror=(ev)=>{ betProgress(0); betStatus('Worker failed to load'+((ev&&ev.message)?': '+ev.message:'')+'. Hard-refresh; BET needs the app served.', true); _betWorker=null; if($('betHead'))$('betHead').disabled=false; if($('betRun'))$('betRun').disabled=false; }; }
+    catch(e){ betStatus('Could not start the worker: '+(e.message||e), true); return; } }
+  if($('betHead'))$('betHead').disabled=true; if($('betRun'))$('betRun').disabled=true; betProgress(4,'Preparing…');
+  if($('betLayerCtl')) $('betLayerCtl').style.display='none';
+  const dim=v.dim.slice(), M=v.M.slice(), T=v.T.slice();
+  const vol={ data:Float32Array.from(v.data), dims:dim, spacing:betSpacing(v), affine:betAffine(v) };
+  _betWorker.onmessage=(e)=>{ const d=e.data;
+    if(d.type==='progress') return betProgress(d.pct,d.msg);
+    if(d.type==='error'){ betProgress(0); betStatus('Head segmentation failed: '+d.msg, true); if($('betHead'))$('betHead').disabled=false; if($('betRun'))$('betRun').disabled=false; return; }
+    if(d.type==='headdone'){
+      betProgress(96,'Building layered head…');
+      setTimeout(()=>{ try{
+        const lab=new Float32Array(d.label);   // native 6-class: 1CSF 2GM 3WM 4skull 5scalp
+        const names='1 CSF Cerebrospinal fluid\n2 GM Gray matter\n3 WM White matter\n4 Skull Skull\n5 Scalp Scalp / soft tissue';
+        _betSuppressCapture=true; try{ buildAtlasFromNifti(makeVol(lab, dim, M, T), names, 'Full head (6-tissue)'); } finally{ _betSuppressCapture=false; }
+        setViewMode('mesh');
+        betBuildLayerToggles();                                  // per-layer show/hide checkboxes below
+        betStatus(d.note+' — layers built. Use the checkboxes below (or the Regions panel) to show/hide each and peel the head.');
+      }catch(err){ betStatus('Layer build failed: '+(err.message||err), true); }
+      betProgress(0); if($('betHead'))$('betHead').disabled=false; if($('betRun'))$('betRun').disabled=false; }, 40);
+      return; } };
+  _betWorker.postMessage({ cmd:'extract', vol, opts:{ method:'headlayers', backend } }, [vol.data.buffer]);
 }
 const betNii=arr=>makeVol(arr,_betResult.dim.slice(),_betResult.M.slice(),_betResult.T.slice());
 // crop a native array to the nonzero bounding box (+margin) so the surface keeps FULL resolution
@@ -5146,8 +5352,13 @@ function betCrop(arr,dim,M,T,margin=2){ const [nx,ny,nz]=dim; let x0=nx,y0=ny,z0
   for(let k=0;k<dk;k++)for(let j=0;j<dj;j++){ const sb=nx*((j+y0)+ny*(k+z0))+x0, db=di*(j+dj*k); for(let i=0;i<di;i++) out[db+i]=arr[sb+i]; }
   const T2=[M[0]*x0+M[1]*y0+M[2]*z0+T[0], M[3]*x0+M[4]*y0+M[5]*z0+T[1], M[6]*x0+M[7]*y0+M[8]*z0+T[2]];
   return {data:out,dim:[di,dj,dk],M:M.slice(),T:T2}; }
+function betSurfOpts(){ const d=$('betDetail'), s=$('betSmooth'), iso=$('betIso');   // detail%→cap; smoothing→blur; sulcal detail→intensity iso
+  const detail=d?+d.value:100, sm=s?+s.value:1;
+  const o={ cap: Math.max(250000, Math.round(2500000*detail/100)), blur: 0.25 + sm*0.45 };   // lower blur floor → crisper folds
+  const iv=iso?+iso.value:0; if(iv>0) o.iso=iv;   // >0 → carve along T1 intensity (gyri/sulci); 0 → smooth mask envelope
+  return o; }
 function betShowSurface(arr,name){ if(!_betResult) return; const c=betCrop(arr,_betResult.dim,_betResult.M,_betResult.T);
-  _betSuppressCapture=true; try{ buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name); } finally{ _betSuppressCapture=false; }
+  _betSuppressCapture=true; try{ buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name,betSurfOpts()); } finally{ _betSuppressCapture=false; }
   setViewMode('mesh'); betStatus(name+' surface — switch atlas from the picker to restore regions.'); }
 function betMaskedIntensity(){ const d=_betResult.srcData||(underlayVol&&underlayVol.data)||[], a=new Float32Array(_betResult.total); for(let i=0;i<a.length;i++) a[i]=_betResult.mask[i]?(d[i]||0):0; return a; }
 function betAsUnderlay(){ if(!_betResult) return; setUnderlay({data:betMaskedIntensity(), dim:_betResult.dim, M:_betResult.M, T:_betResult.T}); setViewMode('slice'); betStatus('Skull-stripped scan set as slice/mosaic underlay.'); }
@@ -5174,6 +5385,7 @@ function betDownload(bytes,name){ const a=document.createElement('a'); a.href=UR
 const betBaseName=()=>(underlayName||'scan').replace(/\.nii(\.gz)?$/i,'');
 function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wired=true;
   $('betRun').addEventListener('click', betRun);
+  if($('betHead')) $('betHead').addEventListener('click', betHeadLayers);
   $('betLoad').addEventListener('click', ()=>$('betFile').click());
   $('betFile').addEventListener('change', async e=>{ const f=e.target.files[0]; if(!f) return; betStatus('Loading '+f.name+'…');
     try{ await loadUnderlayFromFile(f); betStatus('Loaded '+f.name+'. Click Extract brain.'); }catch(err){ betStatus('Load failed: '+(err.message||err), true); } betRefreshSrc(); e.target.value=''; });
@@ -5185,6 +5397,21 @@ function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wi
   $('chopWM').addEventListener('click', ()=>betShowSurface(_betResult.wm,'White matter'));
   $('chopGM').addEventListener('click', ()=>betShowSurface(_betResult.gm,'Gray matter'));
   $('chopTissueUnder').addEventListener('click', betTissueRegions);
+  // --- BET tuning controls: pial reach + mask type re-derive off-thread (no re-inference); smoothing/detail re-mesh only ---
+  const betReprocess=()=>{ if(!_betWorker||!_betResult) return; betProgress(30,'Applying controls…');
+    _betWorker.postMessage({ cmd:'reprocess', opts:{ pial:+(($('betPial')||{}).value||0), maskType:(($('betMaskType')||{}).value||'cortical'), t2:($('betSeq')&&$('betSeq').value==='t2') } }); };
+  const betReSurface=()=>{ if(!_betResult) return;                       // keep the user's rotation/zoom while tuning params
+    const cp=camera.position.clone(), ct=controls.target.clone();
+    betShowSurface(_betResult.cortex,'BET cortex');
+    camera.position.copy(cp); controls.target.copy(ct); controls.update(); requestRender(); };
+  const bindRange=(id,vid,unit,fn)=>{ const el=$(id); if(!el) return;
+    el.addEventListener('input',()=>{ if($(vid)) $(vid).textContent=el.value+(unit||''); });
+    el.addEventListener('change',fn); };
+  bindRange('betPial','betPialV','',betReprocess);       // grow to pial edge (re-derive)
+  bindRange('betSmooth','betSmoothV','',betReSurface);   // surface de-jag (re-mesh)
+  bindRange('betDetail','betDetailV','%',betReSurface);  // mesh detail/speed (re-mesh)
+  bindRange('betIso','betIsoV','',betReSurface);         // sulcal detail (intensity isosurface, re-mesh)
+  if($('betMaskType')) $('betMaskType').addEventListener('change',betReprocess);
   const acc=$('accBET'); if(acc) acc.addEventListener('toggle', ()=>{ if(acc.open) betRefreshSrc(); });
   betRefreshSrc();
 }
@@ -5333,6 +5560,12 @@ window.brainAPI = {
     const data={ overlays:{}, underlay: underlayRaw?{name:underlayName,b64:underlayRaw}:null };
     overlays.forEach((o,i)=>{ if(o.kind==='file' && o.raw) data.overlays[i]=o.raw;
       else if(o.kind==='csv' && o.vals) data.overlays[i]={csv:o.vals, name:o.fileName||o.name}; });
+    // A CUSTOM-built scene (extracted brain / dropped .nii surface or parcellation) isn't a bundled
+    // atlas, so bake its geometry+samples — the whole look depends on this mesh existing.
+    if(_builtScene && meshes.length){ data.built = { name:_builtScene, samples: SAMPLES,
+      meshes: meshes.map(o=>({ pos: bufToB64(new Float32Array(o.mesh.geometry.attributes.position.array).buffer),
+        meta:{id:o.meta.id,node:o.meta.node,abbr:o.meta.abbr,name:o.meta.name,hemi:o.meta.hemi,lobe:o.meta.lobe,centroid:o.meta.centroid,color:o.meta.color},
+        matcap:!!o.mesh.userData.forceMatcap })) }; }
     const tracts = tractAtlasId ? {
       atlas: tractAtlasId, visible: tractRecs.filter(r=>r.visible).map(r=>r.meta.id),
       smooth:$('tractSmooth').value, opacity:$('tractOp').value, renderMode:$('tractRenderMode').value, colorMode:$('tractColorMode').value,
@@ -5348,7 +5581,16 @@ window.brainAPI = {
   },
   async loadProject(p){
     if(!p||!p.viewer) return false;
-    const atlasMismatch = p.atlas && p.atlas!==ATLAS_ID;
+    if(p.data && p.data.built){ try{ const B=p.data.built;   // rebuild the baked custom scene (extracted brain / dropped surface)
+      const recs=B.meshes.map(m=>{ const pos=new Float32Array(b64ToBuf(m.pos));
+        const geo=new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos,3)); geo.computeVertexNormals();
+        const vc=geo.attributes.position.count, bary=new Float32Array(vc*3); for(let k=0;k<vc;k++) bary[k*3+(k%3)]=1; geo.setAttribute('barycentric', new THREE.BufferAttribute(bary,3));
+        const mesh=new THREE.Mesh(geo, buildMaterial(m.matcap?'Matcap':'Standard', m.meta.color)); if(m.matcap) mesh.userData.forceMatcap=true; mesh.userData.meta=m.meta;
+        return {mesh, base:new THREE.Vector3(0,0,0), meta:m.meta, origPos:Float32Array.from(pos), origNrm:Float32Array.from(geo.attributes.normal.array)}; });
+      installBuiltAtlas(recs, B.samples||{}, B.name);
+      p.viewer.atlas = ATLAS_ID;   // baked scene is self-contained → don't prompt an atlas switch
+    }catch(e){ console.warn('built-scene restore failed', e); } }
+    const atlasMismatch = p.atlas && p.atlas!==ATLAS_ID && !(p.data&&p.data.built);
     // The panels + editor figure are self-contained baked images, so they load regardless of which
     // atlas is active. Only the live 3D brains / overlays / tracts need the matching atlas — skip
     // those on a mismatch (with a non-blocking offer to switch) instead of refusing the whole load.
@@ -5384,7 +5626,7 @@ window.brainAPI = {
     if(p.panels){ pbItems=p.panels.map(it=> it?{label:it.label,cfg:it.cfg,dataURL:it.dataURL,cbar:it.cbar}:null); pbRender(); }
     window._projEditor=p.editor||null; window._projEditorSize=p.editorSize||null;
     if(feCanvas && window._projEditor) feLoadProjectEditor();
-    if(atlasMismatch) projMismatchNote(p.atlas);
+    if(atlasMismatch) projMismatchNote(p.atlas, p);
     return true;
   }
 };
@@ -5586,7 +5828,10 @@ function captureViewerCfg(){
   const ids=[...PRESET_IDS,'regionSet','scheme','singleColor'];   // taskMap/overlay look now per-overlay in `overlays`
   const vals={};
   for(const id of ids){ const el=$(id); if(!el) continue; vals[id]= el.type==='checkbox'?el.checked:el.value; }
-  return { atlas:ATLAS_ID, vals,
+  const shv=vals.shading||'', cmk=shv.indexOf('matcap:✎ ')===0?shv.slice(7):null;   // bake the dropped material image so the look reproduces
+  const custom=(cmk && customMatcaps[cmk]) ? {[cmk]:customMatcaps[cmk]} : null;
+  return { atlas:ATLAS_ID, vals, customMatcaps:custom, projector:captureProjector(), randSeed:_randSeed,
+    lights: (window._lightsState && window._lightsState().length) ? {points:window._lightsState()} : null,
     camP: camera.position.toArray().map(v=>+v.toFixed(2)),
     camT: controls.target.toArray().map(v=>+v.toFixed(2)),
     vis: meshes.filter(o=>o.mesh.visible).map(o=>o.meta.id),
@@ -5605,7 +5850,7 @@ function captureViewerCfg(){
       // (a few hundred numbers) and make each panel/tile self-contained, so restoring a panel or
       // re-rendering the figure never falls back to lobe coloring for lack of data.
       return { name:o.name, kind:o.kind, term:o.term||'', fileName: used ? (o.fileName||'') : '', visible:o.visible!==false, tfce:!!o.tfce,
-        vals: ((o.kind==='csv'||o.kind==='file') && o.vals) ? o.vals : null, s:{...o.s} }; }) };
+        vals: o.vals || null, s:{...o.s} }; }) };   // bake per-region vals for EVERY kind (incl. task/NeuroQuery) → self-contained
 }
 function applyViewerCfg(cfg){
   if(cfg.atlas!==ATLAS_ID){
@@ -5613,6 +5858,9 @@ function applyViewerCfg(cfg){
       location.href = location.pathname+'?atlas='+encodeURIComponent(cfg.atlas);
     return;
   }
+  if(cfg.randSeed!=null) _randSeed=cfg.randSeed;   // reproduce the exact "Random" colors that were saved
+  if(window._lightsRestore) window._lightsRestore(cfg.lights && cfg.lights.points);   // restore droppable point lights
+  if(cfg.customMatcaps){ for(const k in cfg.customMatcaps){ try{ applyDroppedMatcap(cfg.customMatcaps[k], k.replace(/^✎ /,'')); }catch(e){} } }   // rebuild dropped materials so the look reproduces
   const v=cfg.vals||{};
   Object.keys(v).forEach(id=>{ if(id==='taskMap') return; setControl(id,v[id]); });   // non-overlay look
   // rebuild the overlay stack
@@ -5650,6 +5898,7 @@ function applyViewerCfg(cfg){
     if($('mosZAx')) $('mosZAx').textContent = mosaicPlane==='axi'?'z':mosaicPlane==='cor'?'y':'x';
     document.querySelectorAll('.mpbtn').forEach(x=>x.classList.toggle('on',x.dataset.mp===mosaicPlane)); }
   setViewMode(cfg.mode||'mesh');
+  if(cfg.projector) restoreProjector(cfg.projector);   // media + aim + region set + decals (controls already applied via vals)
   requestRender();
 }
 // draw one panel's colorbar (gradient + min/max + name) into ctx at (bx,by,W,H)
@@ -5810,6 +6059,7 @@ $('pbSaveProj').addEventListener('click',()=>{ const p=window.brainAPI.projectJS
   const a=document.createElement('a'); a.download='figure.bwzproj';
   a.href=URL.createObjectURL(new Blob([JSON.stringify(p)],{type:'application/json'})); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); });
 $('pbLoadProj').addEventListener('click',()=>$('pbProjFile').click());
+if($('tbSaveProj')) $('tbSaveProj').addEventListener('click',()=>$('pbSaveProj').click());   // top-bar Save mirrors the panel Save
 $('pbProjFile').addEventListener('change',async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
   try{ const p=JSON.parse(await f.text()); await window.brainAPI.loadProject(p); }catch(err){ alert('Could not load project: '+err.message); } });
 [['pbBrain','pbBrainV','px'],['pbTitle','pbTitleV','px'],['pbCbar','pbCbarV','px'],['pbGap','pbGapV','px']]
@@ -5940,7 +6190,7 @@ function renderMeshSlices(){
     const W=Math.round(Math.max(8,cv.clientWidth)*dpr), H=Math.round(Math.max(8,cv.clientHeight)*dpr);
     cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
     if(viewTransparent) ctx.clearRect(0,0,W,H); else { ctx.fillStyle=viewBg(); ctx.fillRect(0,0,W,H); }
-    const sc=Math.min(W/win.hr,H/win.vr), dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));
+    const sc=Math.min(W/win.hr,H/win.vr)*0.92, dw=Math.max(1,Math.round(win.hr*sc)), dh=Math.max(1,Math.round(win.vr*sc));   // 8% smaller so mesh/mesh+vox slices match the Voxels view framing
     const ox=Math.floor((W-dw)/2), oy=Math.floor((H-dh)/2);
     const toX=h=>ox+((h-win.hmin)/win.hr)*dw, toY=v=>oy+((win.vmax-v)/win.vr)*dh;
     // plane normal axis (three.js) + (h,v) accessor matching the voxel slices' orientation
@@ -6525,7 +6775,7 @@ function feApplyGradient(){ const on=$('feGrad').checked, a=(+$('feGradAng').val
   feCanvas.requestRenderAll(); }
 // Non-blocking banner shown when a dropped project's atlas differs from the loaded one. The figure
 // (baked images) is already displayed; this only offers to switch atlas for LIVE 3D re-rendering.
-function projMismatchNote(atlas){
+function projMismatchNote(atlas, proj){
   const old=document.getElementById('projMismatch'); if(old) old.remove();
   const d=document.createElement('div'); d.id='projMismatch';
   d.style.cssText='position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:9500;max-width:560px;'
@@ -6535,7 +6785,8 @@ function projMismatchNote(atlas){
     +'this project needs atlas <b>'+atlas+'</b>.</span>';
   const btn=document.createElement('button'); btn.textContent='Switch atlas';
   btn.style.cssText='flex:none;background:#2f6fed;color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600';
-  btn.onclick=()=>{ location.href=location.pathname+'?atlas='+encodeURIComponent(atlas); };
+  btn.onclick=()=>{ try{ if(proj) sessionStorage.setItem('mwPendingProject', JSON.stringify(proj)); }catch(e){}   // carry the project across the atlas reload
+    location.href=location.pathname+'?atlas='+encodeURIComponent(atlas); };
   const x=document.createElement('button'); x.textContent='✕';
   x.style.cssText='flex:none;background:transparent;color:#9fb3c8;border:0;cursor:pointer;font-size:15px';
   x.onclick=()=>d.remove();
