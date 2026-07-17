@@ -568,8 +568,19 @@
   </div></details>
 
   <details class="acc" id="accCHOP"><summary><span class="chev">▸</span>✂️ Segment (CHOP)</summary><div class="accb">
+    <div style="font-size:11px;opacity:.82;line-height:1.4;margin-bottom:6px"><b>🧩 Native parcellation</b> — warp the loaded atlas into <i>this subject's</i> space:
+      register the subject T1 → MNI, invert, and resample the atlas labels voxelwise into native space, then turn those voxel regions into meshes.
+      Load an <b>atlas</b> (picker, e.g. AAL) + a subject <b>T1</b> (BET → ＋ Load T1/T2), then:</div>
+    <div class="row" style="gap:5px">
+      <button class="sm" id="chopParc" style="flex:1;padding:5px" title="Register the subject T1 to MNI, invert, and warp the currently-loaded atlas's regions into the subject's native space (voxelwise → per-ROI meshes). Affine registration — borders won't follow individual gyri exactly.">🧩 Parcellate native</button></div>
+    <div id="chopParcResults" class="row" style="gap:5px;margin-top:4px;display:none">
+      <button class="sm" id="chopParcRegions" title="Show the native parcellation as colored per-ROI meshes (like an atlas, but in this subject's space)">🧠 Regions</button>
+      <button class="sm" id="chopParcDownload" title="Download the native-space parcellation as .nii.gz (aligned to the subject T1)">⬇ .nii.gz</button></div>
+    <div id="chopParcBar" style="height:6px;background:#0003;border-radius:4px;overflow:hidden;display:none;margin:4px 0"><div id="chopParcBarIn" style="height:100%;width:0%;background:linear-gradient(90deg,#4ea3ff,#7ce0c0);transition:width .2s"></div></div>
+    <div id="chopParcStatus" style="font-size:11px;opacity:.85;min-height:13px;margin:3px 0 6px"></div>
+    <div style="border-top:1px solid var(--line);margin:6px 0"></div>
     <div style="font-size:11px;opacity:.72;line-height:1.35;margin-bottom:8px">
-      Parcel an extracted brain into <b>tissue compartments</b> (from the BET run above). Render any
+      Or parcel an extracted brain into <b>tissue compartments</b> (from the BET run above). Render any
       compartment as a folded 3D surface or drop it under the slices. <span id="chopHint" style="opacity:.8">Run 🧠 Extract brain first.</span></div>
     <div class="row" style="gap:5px">
       <button class="sm" id="chopCortex" disabled title="GM∪WM cortex (CSF removed) — folded pial-like surface">Cortex (GM+WM)</button>
@@ -1209,6 +1220,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { registerAffine, invert4x4, resampleLabels } from './chop/chop.js';   // CHOP: subject→MNI registration + label warp
 
 // ---------- pick & load atlas bundle (dynamic, file://-friendly) ----------
 function loadScript(src){ return new Promise((res)=>{ const s=document.createElement('script');
@@ -5383,6 +5395,57 @@ function makeNiftiGz(arr,dim,M,T,dtype){ const [nx,ny,nz]=dim,n=nx*ny*nz,u8=dtyp
   return window.pako.gzip(new Uint8Array(buf)); }
 function betDownload(bytes,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([bytes],{type:'application/gzip'})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1500); }
 const betBaseName=()=>(underlayName||'scan').replace(/\.nii(\.gz)?$/i,'');
+// ================= CHOP: warp the loaded atlas into the subject's NATIVE space =================
+let _chopNative=null;   // {data:Float32Array labels, dim, M, T, name, labelsText}
+function chopPStatus(t,err){ const e=$('chopParcStatus'); if(e){ e.textContent=t||''; e.style.color=err?'#ff8a8a':''; } }
+function chopPBar(pct){ const b=$('chopParcBar'), i=$('chopParcBarIn'); if(!b||!i) return; if(!pct){ b.style.display='none'; i.style.width='0%'; } else { b.style.display='block'; i.style.width=Math.min(100,pct)+'%'; } }
+const _aff16=(M,T)=>[M[0],M[1],M[2],T[0], M[3],M[4],M[5],T[1], M[6],M[7],M[8],T[2], 0,0,0,1];
+// voxelize the current atlas meshes into the MNI152 grid (per-axial-slice polygon fill) → {data,dims,affine}
+function voxelizeAtlasToMNI(onProg){
+  const mni=ensureMNI(); if(!mni) throw new Error('MNI template unavailable');
+  const [nx,ny,nz]=mni.dim, M=mni.M, T=mni.T, Mi=mni.Minv, label=new Int32Array(nx*ny*nz);
+  const cvs=document.createElement('canvas'); cvs.width=nx; cvs.height=ny; const ctx=cvs.getContext('2d',{willReadFrequently:true});
+  const recs=meshes.map(o=>{ const g=o.mesh.geometry; if(!g.boundingBox) g.computeBoundingBox(); return {id:o.meta.id, pos:g.attributes.position.array, y0:g.boundingBox.min.y, y1:g.boundingBox.max.y}; });
+  for(let k=0;k<nz;k++){ const wz=M[6]*(nx>>1)+M[7]*(ny>>1)+M[8]*k+T[2]; let any=false; ctx.clearRect(0,0,nx,ny);   // MNI world-Z of this slice (axis-aligned template)
+    for(const r of recs){ if(wz<r.y0-1||wz>r.y1+1) continue;                                   // mesh doesn't reach this slice
+      const loops=sectionLoops(r.pos, 1, wz+1e-3, (x,y,z)=>[x,-z]); if(!loops.length) continue;  // section as (MNI x, MNI y)
+      ctx.fillStyle='rgb('+(r.id&255)+','+((r.id>>8)&255)+',0)'; ctx.beginPath();               // encode roiId in R+G
+      for(const lp of loops){ for(let q=0;q<lp.length;q++){ const dx=lp[q][0]-T[0], dy=lp[q][1]-T[1], dz=wz-T[2];
+        const vi=Mi[0]*dx+Mi[1]*dy+Mi[2]*dz, vj=Mi[3]*dx+Mi[4]*dy+Mi[5]*dz; q?ctx.lineTo(vi,vj):ctx.moveTo(vi,vj); } ctx.closePath(); }
+      ctx.fill('evenodd'); any=true; }
+    if(any){ const d=ctx.getImageData(0,0,nx,ny).data; for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){ const o=(j*nx+i)*4, id=d[o]|(d[o+1]<<8); if(id&&byId.has(id)) label[i+nx*(j+ny*k)]=id; } }  // byId.has → drop AA-blended edge ids
+    if(onProg&&k%8===0) onProg(k/nz);
+  }
+  return {data:label, dims:[nx,ny,nz], affine:_aff16(M,T)};
+}
+async function chopParcellate(){
+  if(!meshes.length || _builtScene){ chopPStatus('Load a bundled ATLAS from the picker first — CHOP warps that atlas. (A custom/extracted scene isn’t an atlas.)', true); return; }
+  const sub=_betResult?{data:betMaskedIntensity(),dim:_betResult.dim.slice(),M:_betResult.M.slice(),T:_betResult.T.slice()}
+    :(underlayVol?{data:underlayVol.data,dim:underlayVol.dim.slice(),M:underlayVol.M.slice(),T:underlayVol.T.slice()}:null);
+  if(!sub){ chopPStatus('Load a subject T1 first (BET → ＋ Load T1/T2). An extracted brain registers best.', true); return; }
+  const atlasName=(REG.find(a=>a.id===ATLAS_ID)||{}).name||ATLAS_ID;
+  const labelsText=meshes.map(o=>o.meta.id+' '+(o.meta.abbr||('R'+o.meta.id))+' '+(o.meta.name||o.meta.abbr||('Region '+o.meta.id))).join('\n');
+  $('chopParc').disabled=true; chopPBar(6); chopPStatus('Registering subject → MNI (≈10–30s)…'); await new Promise(r=>setTimeout(r,50));
+  try{
+    const mni=ensureMNI();
+    const reg=registerAffine({data:Float32Array.from(sub.data),dims:sub.dim,affine:_aff16(sub.M,sub.T)}, {data:mni.data,dims:mni.dim,affine:_aff16(mni.M,mni.T)});
+    const xform=invert4x4(reg.matrix);                     // reg.matrix = MNI→subject; invert → subject→MNI (what resampleLabels needs)
+    chopPBar(45); chopPStatus('Voxelizing atlas (reg NMI '+reg.nmi.toFixed(3)+')…'); await new Promise(r=>setTimeout(r,50));
+    const atlasMNI=voxelizeAtlasToMNI(f=>chopPBar(45+Math.round(f*38)));
+    chopPBar(85); chopPStatus('Warping labels → native…'); await new Promise(r=>setTimeout(r,50));
+    const nat=resampleLabels(atlasMNI, {dims:sub.dim, affine:_aff16(sub.M,sub.T)}, xform);
+    const fl=new Float32Array(nat.length); let cnt=0; for(let i=0;i<nat.length;i++){ fl[i]=nat[i]; if(nat[i])cnt++; }
+    if(!cnt) throw new Error('no labels landed in native space (registration failed — try after Extract brain)');
+    _chopNative={data:fl, dim:sub.dim.slice(), M:sub.M.slice(), T:sub.T.slice(), name:atlasName, labelsText};
+    chopPBar(95); chopPStatus('Building native regions…'); await new Promise(r=>setTimeout(r,50));
+    chopShowRegions(); $('chopParcResults').style.display='flex'; chopPBar(0);
+    chopPStatus('✅ '+atlasName+' → native: '+(100*cnt/nat.length).toFixed(1)+'% labeled · reg NMI '+reg.nmi.toFixed(3)+'. (Affine — borders approximate individual gyri.)');
+  }catch(e){ chopPBar(0); chopPStatus('CHOP failed: '+(e.message||e), true); }
+  $('chopParc').disabled=false;
+}
+function chopShowRegions(){ if(!_chopNative) return; const c=_chopNative;
+  _betSuppressCapture=true; try{ buildAtlasFromNifti(makeVol(c.data,c.dim.slice(),c.M.slice(),c.T.slice()), c.labelsText, 'CHOP: '+c.name+' (native)'); } finally{ _betSuppressCapture=false; }
+  setViewMode('mesh'); requestRender(); }
 function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wired=true;
   $('betRun').addEventListener('click', betRun);
   if($('betHead')) $('betHead').addEventListener('click', betHeadLayers);
@@ -5393,6 +5456,9 @@ function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wi
   $('betUnder').addEventListener('click', betAsUnderlay);
   $('betDownload').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(_betResult.mask,_betResult.dim,_betResult.M,_betResult.T,2), betBaseName()+'_mask.nii.gz'); });
   $('betDownloadBrain').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(betMaskedIntensity(),_betResult.dim,_betResult.M,_betResult.T,16), betBaseName()+'_brain.nii.gz'); });
+  if($('chopParc')) $('chopParc').addEventListener('click', chopParcellate);
+  if($('chopParcRegions')) $('chopParcRegions').addEventListener('click', chopShowRegions);
+  if($('chopParcDownload')) $('chopParcDownload').addEventListener('click', ()=>{ if(_chopNative) betDownload(makeNiftiGz(_chopNative.data,_chopNative.dim,_chopNative.M,_chopNative.T,16), ((underlayName||'subject').replace(/\.nii(\.gz)?$/i,''))+'_'+_chopNative.name.replace(/\W+/g,'')+'_parc.nii.gz'); });
   $('chopCortex').addEventListener('click', ()=>betShowSurface(_betResult.cortex,'Cortex (GM+WM)'));
   $('chopWM').addEventListener('click', ()=>betShowSurface(_betResult.wm,'White matter'));
   $('chopGM').addEventListener('click', ()=>betShowSurface(_betResult.gm,'Gray matter'));
