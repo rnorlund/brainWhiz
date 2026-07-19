@@ -5303,8 +5303,19 @@ async function betRun(){
   _betWorker.postMessage({ cmd:'extract', vol, mni, prior, opts:{ method:qual, refined:refined&&!!(mni&&prior), t2, dilMM:6, backend, pial:+(($('betPial')||{}).value||0), maskType:(($('betMaskType')||{}).value||'cortical') } }, transfer);
 }
 // per-layer show/hide toggles (outer→inner) so you can peel the head; built after Head layers runs
+let _headResult=null;   // {label:6-class native, dim, M, T, src:T1} from the head model — for the GM cortex mesh
+// brainchop-style crisp cortex: isosurface the CNN's GM+WM segmentation (follows the actual gyri/sulci)
+function betCortexFromGM(){ if(!_headResult){ betStatus('Run 🧑 Head layers first.', true); return; }
+  const h=_headResult, n=h.label.length, cortex=new Float32Array(n), d=h.src||[];
+  for(let i=0;i<n;i++){ const c=h.label[i]; if(c===2||c===3) cortex[i]=d[i]||0; }   // GM(2)+WM(3) intensity, CSF/skull/scalp → 0
+  const c=betCrop(cortex,h.dim,h.M,h.T);                                             // crop to bbox → keep full resolution
+  _betSuppressCapture=true; try{ buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),'Cortex (GM — CNN)', betSurfOpts()); } finally{ _betSuppressCapture=false; }
+  setViewMode('mesh'); betStatus('Cortex from the 6-tissue GM+WM segmentation — crisp folds from the CNN. Tune Sulcal detail / Smoothing / Detail above.'); }
 function betBuildLayerToggles(){
   const box=$('betLayerCtl'); if(!box) return; box.innerHTML='';
+  if(_headResult){ const cb=document.createElement('button'); cb.className='sm'; cb.textContent='🧠 Cortex surface (from GM)';
+    cb.title='Build a crisp folded cortex mesh from the CNN GM+WM segmentation (brainchop-style — follows the actual gyri). Tune with Sulcal detail / Smoothing above.';
+    cb.style.cssText='width:100%;margin-bottom:7px;padding:5px;font-weight:600'; cb.onclick=betCortexFromGM; box.appendChild(cb); }
   const hdr=document.createElement('div'); hdr.textContent='Layers — toggle to peel:'; hdr.style.cssText='font-size:10px;color:var(--muted);margin-bottom:4px'; box.appendChild(hdr);
   const order=[5,4,1,3,2];                                   // scalp, skull, CSF, WM, GM (outer→inner)
   const recs=[]; for(const id of order){ const r=byId.get(id); if(r) recs.push(r); }
@@ -5348,6 +5359,7 @@ async function betHeadLayers(){
       betProgress(96,'Building layered head…');
       setTimeout(()=>{ try{
         const lab=new Float32Array(d.label);   // native 6-class: 1CSF 2GM 3WM 4skull 5scalp
+        _headResult={label:lab, dim, M, T, src:v.data};   // keep for "Cortex surface (from GM)" (brainchop-style crisp mesh)
         const names='1 CSF Cerebrospinal fluid\n2 GM Gray matter\n3 WM White matter\n4 Skull Skull\n5 Scalp Scalp / soft tissue';
         _betSuppressCapture=true; try{ buildAtlasFromNifti(makeVol(lab, dim, M, T), names, 'Full head (6-tissue)'); } finally{ _betSuppressCapture=false; }
         setViewMode('mesh');
