@@ -574,8 +574,11 @@
     <div class="row" style="gap:5px">
       <button class="sm" id="chopParc" style="flex:1;padding:5px" title="Register the subject T1 to MNI, invert, and warp the currently-loaded atlas's regions into the subject's native space (voxelwise → per-ROI meshes). Affine registration — borders won't follow individual gyri exactly.">🧩 Parcellate native</button></div>
     <div id="chopParcResults" class="row" style="gap:5px;margin-top:4px;display:none">
-      <button class="sm" id="chopParcRegions" title="Show the native parcellation as colored per-ROI meshes (like an atlas, but in this subject's space)">🧠 Regions</button>
+      <button class="sm" id="chopParcRegions" title="Show the native parcellation as colored per-ROI meshes (like an atlas, but in this subject's space)">🧠 3D regions</button>
+      <button class="sm" id="chopParcSlices" title="Switch to Slices — the parcellation is painted voxelwise on the subject T1 (click/scroll to navigate)">🔪 Slices</button>
       <button class="sm" id="chopParcDownload" title="Download the native-space parcellation as .nii.gz (aligned to the subject T1)">⬇ .nii.gz</button></div>
+    <div id="chopSliceRow" class="row" style="gap:6px;margin-top:4px;display:none"><label class="toggle" title="Paint the parcellation over the T1 in the Slices view (Voxels kind) — every brain voxel colored by its area"><input type="checkbox" id="chopSliceShow" checked> On slices</label>
+      <input type="range" id="chopSliceOp" min="0.1" max="1" step="0.05" value="0.6" style="flex:1" title="Parcellation opacity over the T1 in slices"></div>
     <div id="chopParcBar" style="height:6px;background:#0003;border-radius:4px;overflow:hidden;display:none;margin:4px 0"><div id="chopParcBarIn" style="height:100%;width:0%;background:linear-gradient(90deg,#4ea3ff,#7ce0c0);transition:width .2s"></div></div>
     <div id="chopParcStatus" style="font-size:11px;opacity:.85;min-height:13px;margin:3px 0 6px"></div>
     <div style="border-top:1px solid var(--line);margin:6px 0"></div>
@@ -5477,14 +5480,17 @@ async function chopParcellate(){
     if(!cnt) throw new Error('no labels landed on the brain (normalization failed — check the extraction)');
     _chopNative={data:fl, dim, M:Msub, T:Tsub, name:atlasName, labelsText};
     chopPBar(95); chopPStatus('Building the parcellated brain…'); await new Promise(r=>setTimeout(r,50));
-    chopShowRegions(); $('chopParcResults').style.display='flex'; chopPBar(0);
+    chopShowRegions(); $('chopParcResults').style.display='flex'; if($('chopSliceRow'))$('chopSliceRow').style.display='flex'; chopPBar(0);
     chopPStatus('✅ '+atlasName+' projected onto the subject’s brain ('+cnt.toLocaleString()+' voxels · norm NMI '+reg.nmi.toFixed(3)+'). Affine — borders approximate individual gyri.');
   }catch(e){ chopPBar(0); chopPStatus('CHOP failed: '+(e.message||e), true); }
   $('chopParc').disabled=false;
 }
+let _chopLUT=null;   // region id → [r,g,b] for voxelwise slice coloring (matches the 3D region colors)
 function chopShowRegions(){ if(!_chopNative) return; const c=_chopNative;
   _betSuppressCapture=true; try{ buildAtlasFromNifti(makeVol(c.data,c.dim.slice(),c.M.slice(),c.T.slice()), c.labelsText, 'CHOP: '+c.name+' (native)'); } finally{ _betSuppressCapture=false; }
   if($('scheme')){ $('scheme').value='rainbow'; applyScheme('rainbow'); }   // distinct color per region (not by-lobe, which greys JHU to mostly "Other")
+  _chopNative.vol = makeVol(c.data, c.dim.slice(), c.M.slice(), c.T.slice());       // nearest-neighbour sampler for slices
+  _chopLUT={}; for(const o of meshes){ const col=o.mesh.material.color; _chopLUT[o.meta.id]=[col.r*255,col.g*255,col.b*255]; }
   setViewMode('mesh'); requestRender(); }
 function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wired=true;
   $('betRun').addEventListener('click', betRun);
@@ -5497,7 +5503,10 @@ function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wi
   $('betDownload').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(_betResult.mask,_betResult.dim,_betResult.M,_betResult.T,2), betBaseName()+'_mask.nii.gz'); });
   $('betDownloadBrain').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(betMaskedIntensity(),_betResult.dim,_betResult.M,_betResult.T,16), betBaseName()+'_brain.nii.gz'); });
   if($('chopParc')) $('chopParc').addEventListener('click', chopParcellate);
-  if($('chopParcRegions')) $('chopParcRegions').addEventListener('click', chopShowRegions);
+  if($('chopParcRegions')) $('chopParcRegions').addEventListener('click', ()=>{ if(_chopNative&&!meshes.length)chopShowRegions(); setViewMode('mesh'); });
+  if($('chopParcSlices')) $('chopParcSlices').addEventListener('click', ()=>{ setViewMode('slice'); sliceKind='voxel'; if(typeof syncKindButtons==='function')syncKindButtons(); if(typeof syncSliceCtx==='function')syncSliceCtx(); sliceRenderAll(); });
+  if($('chopSliceShow')) $('chopSliceShow').addEventListener('change', ()=>{ if(sliceMode) sliceRenderAll(); });
+  if($('chopSliceOp')) $('chopSliceOp').addEventListener('input', ()=>{ if(sliceMode) sliceRenderAll(); });
   if($('chopParcDownload')) $('chopParcDownload').addEventListener('click', ()=>{ if(_chopNative) betDownload(makeNiftiGz(_chopNative.data,_chopNative.dim,_chopNative.M,_chopNative.T,16), ((underlayName||'subject').replace(/\.nii(\.gz)?$/i,''))+'_'+_chopNative.name.replace(/\W+/g,'')+'_parc.nii.gz'); });
   $('chopCortex').addEventListener('click', ()=>betShowSurface(_betResult.cortex,'Cortex (GM+WM)'));
   $('chopWM').addEventListener('click', ()=>betShowSurface(_betResult.wm,'White matter'));
@@ -6481,6 +6490,9 @@ function renderPlane(cv, plane){
         const a=p.opacity*(0.2+0.8*ramp);
         r=r*(1-a)+cr*a; gg=gg*(1-a)+cg*a; bb=bb*(1-a)+cb*a;
       }
+      if(_chopNative && _chopNative.vol && (!$('chopSliceShow')||$('chopSliceShow').checked)){   // voxelwise CHOP parcellation over the T1
+        const lab=Math.round(_chopNative.vol.sampleMM(w[0],w[1],w[2])||0), c=_chopLUT&&_chopLUT[lab];
+        if(c){ const a=$('chopSliceOp')?+$('chopSliceOp').value:0.6; r=r*(1-a)+c[0]*a; gg=gg*(1-a)+c[1]*a; bb=bb*(1-a)+c[2]*a; painted=true; } }
       if(tmask && painted && !tmask.sampleMM(w[0],w[1],w[2])){ const L=0.30*r+0.59*gg+0.11*bb; r=gg=bb=L*0.45; }   // off-tract -> dim gray
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
   }}
