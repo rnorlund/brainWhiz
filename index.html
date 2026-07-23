@@ -5529,8 +5529,8 @@ async function chopParcellate(){
     _chopNative={data:fl, dim, M:Msub, T:Tsub, name:atlasName, labelsText};
     try{ let brainVox=0; for(let i=0;i<mask.length;i++) if(mask[i]) brainVox++;
       const seen=new Set(); for(let i=0;i<fl.length;i++) if(fl[i]) seen.add(fl[i]);
-      window._chopLast={ atlas:atlasName, nmi:+reg.nmi.toFixed(3), regions:seen.size, labeledVox:cnt, brainVox, coverage:+(cnt/(brainVox||1)).toFixed(3) };
-      window._chopNativeDbg={ data:fl, dim, spacing:[Math.hypot(Msub[0],Msub[3],Msub[6]),Math.hypot(Msub[1],Msub[4],Msub[7]),Math.hypot(Msub[2],Msub[5],Msub[8])], labelsText }; }catch(e){}
+      window._chopLast={ atlas:atlasName, nmi:+reg.nmi.toFixed(3), regions:seen.size, labeledVox:cnt, brainVox, coverage:+(cnt/(brainVox||1)).toFixed(3), params:reg.params.map(v=>+v.toFixed(4)), xform:Array.from(xform), aff:_aff16(Msub,Tsub) };
+      window._chopNativeDbg={ data:fl, dim, spacing:[Math.hypot(Msub[0],Msub[3],Msub[6]),Math.hypot(Msub[1],Msub[4],Msub[7]),Math.hypot(Msub[2],Msub[5],Msub[8])], M:Msub, T:Tsub, labelsText }; }catch(e){}
     chopPBar(95); chopPStatus('Building the parcellated brain…'); await new Promise(r=>setTimeout(r,50));
     chopShowRegions(); $('chopParcResults').style.display='flex'; if($('chopSliceRow'))$('chopSliceRow').style.display='flex'; chopPBar(0);
     chopPStatus('✅ '+atlasName+' projected onto the subject’s brain ('+cnt.toLocaleString()+' voxels · norm NMI '+reg.nmi.toFixed(3)+'). Affine — borders approximate individual gyri.');

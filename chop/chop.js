@@ -116,20 +116,26 @@ export function registerAffine(moving, fixed, opts={}){
   const Minv=invert4x4(affTo16(moving.affine)); if(!Minv) throw new Error('moving affine not invertible');
   const cF=centerOfMass(fixed), cM=centerOfMass(moving);
   const ls=Math.log((extentRadius(moving)/(extentRadius(fixed)||1))||1);
-  // 12 params: tx,ty,tz, rx,ry,rz, log(sx),log(sy),log(sz), shear_xy,shear_xz,shear_yz. Init isotropic + no shear.
+  // 12 params: tx,ty,tz, rx,ry,rz, log(sx),log(sy),log(sz), shear_xy,shear_xz,shear_yz.
   let p=[0,0,0, 0,0,0, ls,ls,ls, 0,0,0];
-  // step sizes per level: mm, radians, log-scale, shear (dimensionless). Coordinate descent only ACCEPTS
-  // NMI-improving moves, so anisotropic scale/shear can't diverge from the isotropic start.
-  const levels=opts.levels|| [[4, [8,0.12,0.08,0.05]], [2, [4,0.06,0.04,0.03]], [1, [2,0.03,0.02,0.015]]];
-  for(const [stride, step0] of levels){
-    let steps=[step0[0],step0[0],step0[0], step0[1],step0[1],step0[1], step0[2],step0[2],step0[2], step0[3],step0[3],step0[3]];
+  // STAGE the DOF: rigid (translation+rotation) FIRST, so the head POSE — including a tilted head — is
+  // locked before scale/shear can absorb the misalignment (which would leave the parcellation un-rotated
+  // and mislabel across lobes). Then add anisotropic scale, then shear. Coarse→fine strides within each
+  // stage; coordinate descent accepts only NMI-improving moves.
+  const step=(mm,rad,sc,sh)=>[mm,mm,mm, rad,rad,rad, sc,sc,sc, sh,sh,sh];
+  const descend=(dof, steps, stride, sweeps)=>{
     let best=nmiCost(p, fixed, moving, Minv, cF, cM, stride);
-    for(let sweep=0; sweep<(opts.sweeps||16); sweep++){ let improved=false;
-      for(let d=0; d<12; d++){ for(const sgn of [1,-1]){ const q=p.slice(); q[d]+=sgn*steps[d];
+    for(let sweep=0; sweep<sweeps; sweep++){ let improved=false;
+      for(let d=0; d<dof; d++){ for(const sgn of [1,-1]){ const q=p.slice(); q[d]+=sgn*steps[d];
         const c=nmiCost(q, fixed, moving, Minv, cF, cM, stride); if(c>best){ best=c; p=q; improved=true; } } }
-      if(!improved){ for(let d=0;d<12;d++) steps[d]*=0.5; if(steps[0]<0.25) break; }
+      if(!improved){ for(let d=0;d<dof;d++) steps[d]*=0.5; if(steps[0]<0.25 && steps[3]<0.008) break; }
     }
-  }
+  };
+  descend(6,  step(12,0.20,0,0),        4, 40);   // rigid, coarse — recover the head tilt from a 0 start
+  descend(6,  step(6, 0.10,0,0),        2, 30);   // rigid, medium
+  descend(9,  step(4, 0.05,0.06,0),     2, 24);   // + anisotropic scale
+  descend(12, step(2, 0.03,0.03,0.04),  1, 24);   // + shear, fine
+  descend(12, step(1, 0.015,0.015,0.02),1, 18);   // finer
   // build FIXED->MOVING matrix: xM = cM + t + A(xF - cF), A = R·K, K = per-axis scale + upper-tri shear
   const R=eulerMat(p[3],p[4],p[5]);
   const sx=Math.exp(p[6]), sy=Math.exp(p[7]), sz=Math.exp(p[8]), hxy=p[9], hxz=p[10], hyz=p[11];
