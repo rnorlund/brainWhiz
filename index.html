@@ -573,10 +573,12 @@
 
   <details class="acc" id="accCHOP"><summary><span class="chev">▸</span>✂️ Segment (CHOP)</summary><div class="accb">
     <div style="font-size:11px;opacity:.82;line-height:1.4;margin-bottom:6px"><b>🧩 Native parcellation</b> — color <i>this subject's</i> brain by the atlas (like brainchop).
-      <b>1)</b> pick an <b>atlas</b> (picker, e.g. AAL). <b>2)</b> load a subject <b>T1</b> + <b>🧠 Extract brain</b> (BET) above.
-      <b>3)</b> Parcellate: normalizes the extracted brain → MNI, inverts, and projects the atlas voxelwise back onto the brain (masked + gap-filled), then builds per-ROI meshes.</div>
+      <b>1)</b> load a subject <b>T1</b> + <b>🧠 Extract brain</b> (BET) above. <b>2)</b> choose an <b>atlas</b> below. <b>3)</b> Parcellate:
+      normalizes the extracted brain → MNI, inverts, and projects the atlas voxelwise onto the brain (masked + gap-filled), then builds per-ROI meshes.</div>
+    <div class="row" style="gap:6px;margin-bottom:5px"><label style="opacity:.82;min-width:38px">Atlas</label>
+      <select id="chopAtlasSel" style="flex:1" title="Which atlas to parcellate this subject into — any bundled atlas (loaded on demand)"></select></div>
     <div class="row" style="gap:5px">
-      <button class="sm" id="chopParc" style="flex:1;padding:5px" title="Register the subject T1 to MNI, invert, and warp the currently-loaded atlas's regions into the subject's native space (voxelwise → per-ROI meshes). Affine registration — borders won't follow individual gyri exactly.">🧩 Parcellate native</button></div>
+      <button class="sm" id="chopParc" style="flex:1;padding:5px" title="Normalize the subject T1 to MNI, invert, and project the CHOSEN atlas's regions voxelwise into the subject's native space (→ per-ROI meshes + voxelwise slices). Affine — borders approximate individual gyri.">🧩 Parcellate native</button></div>
     <div id="chopParcResults" class="row" style="gap:5px;margin-top:4px;display:none">
       <button class="sm" id="chopParcRegions" title="Show the native parcellation as colored per-ROI meshes (like an atlas, but in this subject's space)">🧠 3D regions</button>
       <button class="sm" id="chopParcSlices" title="Switch to Slices — the parcellation is painted voxelwise on the subject T1 (click/scroll to navigate)">🔪 Slices</button>
@@ -5425,10 +5427,29 @@ function chopPStatus(t,err){ const e=$('chopParcStatus'); if(e){ e.textContent=t
 function chopPBar(pct){ const b=$('chopParcBar'), i=$('chopParcBarIn'); if(!b||!i) return; if(!pct){ b.style.display='none'; i.style.width='0%'; } else { b.style.display='block'; i.style.width=Math.min(100,pct)+'%'; } }
 const _aff16=(M,T)=>[M[0],M[1],M[2],T[0], M[3],M[4],M[5],T[1], M[6],M[7],M[8],T[2], 0,0,0,1];
 // voxelize the current atlas meshes into the MNI152 grid (per-axial-slice polygon fill) → {data,dims,affine}
-function voxelizeAtlasToMNI(onProg){
+// load ANY bundled atlas's ROI geometry+names on demand (for CHOP into a non-active atlas), without
+// disturbing the live scene — inject its data.js, grab the globals, restore them, parse the GLB. Cached.
+const _atlasVoxCache={};
+async function loadAtlasVoxSrc(id){
+  if(_atlasVoxSrc && _atlasVoxSrc.id===id) return _atlasVoxSrc;   // the active atlas (snapshotted at load)
+  if(_atlasVoxCache[id]) return _atlasVoxCache[id];
+  const savedGLB=window.ATLAS_GLB_B64, savedLabels=window.ATLAS_LABELS;
+  window.ATLAS_GLB_B64=null; window.ATLAS_LABELS=null;
+  const ok=await loadScript('bundles/'+id+'/data.js');
+  const glb=window.ATLAS_GLB_B64, labels=window.ATLAS_LABELS||[];
+  window.ATLAS_GLB_B64=savedGLB; window.ATLAS_LABELS=savedLabels;   // restore the active atlas's globals
+  if(!ok || !glb) throw new Error('could not load atlas bundle "'+id+'"');
+  const byNodeL=new Map(); labels.forEach(m=>{ if(m&&m.node) byNodeL.set(m.node,m); });
+  const recs=await new Promise((res,rej)=>{ new GLTFLoader().parse(b64ToBuf(glb),'',(gltf)=>{ const out=[]; let i=0;
+    gltf.scene.traverse(o=>{ if(!o.isMesh) return; const meta=byNodeL.get(o.name)||labels[i]||{id:i+1,abbr:o.name,name:o.name};
+      let g=o.geometry; if(g.index) g=g.toNonIndexed();
+      out.push({id:meta.id, abbr:meta.abbr, name:meta.name, pos:Float32Array.from(g.attributes.position.array)}); i++; }); res(out); }, e=>rej(e)); });
+  return _atlasVoxCache[id]={ id, name:(REG.find(a=>a.id===id)||{}).name||id, recs };
+}
+function voxelizeAtlasToMNI(src, onProg){
   const mni=ensureMNI(); if(!mni) throw new Error('MNI template unavailable');
   const [nx,ny,nz]=mni.dim, M=mni.M, T=mni.T, Mi=mni.Minv, label=new Int32Array(nx*ny*nz);
-  const recs=(_atlasVoxSrc?_atlasVoxSrc.recs:[]).map(r=>{ const p=r.pos; let y0=Infinity,y1=-Infinity; for(let t=1;t<p.length;t+=3){ if(p[t]<y0)y0=p[t]; if(p[t]>y1)y1=p[t]; } return {id:r.id, pos:p, y0, y1}; });
+  const recs=(((src||_atlasVoxSrc)||{}).recs||[]).map(r=>{ const p=r.pos; let y0=Infinity,y1=-Infinity; for(let t=1;t<p.length;t+=3){ if(p[t]<y0)y0=p[t]; if(p[t]>y1)y1=p[t]; } return {id:r.id, pos:p, y0, y1}; });
   // EXACT even-odd scanline rasterization straight into the integer label grid — NO canvas, NO
   // anti-aliasing (canvas AA blended neighbouring ROI colours into in-between ids, scattering labels).
   for(let k=0;k<nz;k++){ const wz=M[6]*(nx>>1)+M[7]*(ny>>1)+M[8]*k+T[2], zb=k*nx*ny;             // MNI world-Z of this slice
@@ -5462,21 +5483,24 @@ function chopMaskFill(nat, mask, dims){
   return out;
 }
 async function chopParcellate(){
-  if(!_atlasVoxSrc){ chopPStatus('Pick a bundled ATLAS from the picker first — CHOP projects that atlas onto your subject.', true); return; }
   if(!_betResult){ chopPStatus('Extract the brain FIRST — Brain extraction (BET) → 🧠 Extract brain. CHOP normalizes the extracted brain to MNI, then projects the atlas back onto it.', true); return; }
+  const chosenId=$('chopAtlasSel')?$('chopAtlasSel').value:(_atlasVoxSrc?_atlasVoxSrc.id:ATLAS_ID);
   const dim=_betResult.dim.slice(), Msub=_betResult.M.slice(), Tsub=_betResult.T.slice(), mask=_betResult.mask;
   // Our MNI152 template has a skull, so the WHOLE-HEAD T1 aligns to it (NMI≈2); a skull-stripped brain
   // mismatches it (NMI≈1.2). So normalize the full T1, then constrain the projected labels to the BET mask.
   const brain=_betResult.srcData || (underlayVol&&underlayVol.data) || betMaskedIntensity();
-  const atlasName=_atlasVoxSrc.name;
-  const labelsText=_atlasVoxSrc.recs.map(r=>r.id+' '+(r.abbr||('R'+r.id))+' '+(r.name||r.abbr||('Region '+r.id))).join('\n');
-  $('chopParc').disabled=true; chopPBar(6); chopPStatus('Normalizing subject T1 → MNI (≈10–30s)…'); await new Promise(r=>setTimeout(r,50));
+  $('chopParc').disabled=true; chopPBar(4); chopPStatus('Loading atlas “'+chosenId+'”…'); await new Promise(r=>setTimeout(r,50));
   try{
+    const src=await loadAtlasVoxSrc(chosenId);
+    if(!src || !src.recs || !src.recs.length) throw new Error('atlas “'+chosenId+'” has no regions');
+    const atlasName=src.name;
+    const labelsText=src.recs.map(r=>r.id+' '+(r.abbr||('R'+r.id))+' '+(r.name||r.abbr||('Region '+r.id))).join('\n');
+    chopPBar(8); chopPStatus('Normalizing subject T1 → MNI (≈10–30s)…'); await new Promise(r=>setTimeout(r,50));
     const mni=ensureMNI();
     const reg=registerAffine({data:Float32Array.from(brain),dims:dim,affine:_aff16(Msub,Tsub)}, {data:mni.data,dims:mni.dim,affine:_aff16(mni.M,mni.T)});
     const xform=invert4x4(reg.matrix);                     // reg.matrix = MNI→subject (forward); its INVERSE = subject→MNI, applied to project the atlas onto native
-    chopPBar(45); chopPStatus('Voxelizing atlas (norm NMI '+reg.nmi.toFixed(3)+')…'); await new Promise(r=>setTimeout(r,50));
-    const atlasMNI=voxelizeAtlasToMNI(f=>chopPBar(45+Math.round(f*38)));
+    chopPBar(45); chopPStatus('Voxelizing '+atlasName+' (norm NMI '+reg.nmi.toFixed(3)+')…'); await new Promise(r=>setTimeout(r,50));
+    const atlasMNI=voxelizeAtlasToMNI(src, f=>chopPBar(45+Math.round(f*38)));
     chopPBar(85); chopPStatus('Projecting parcellation onto the subject brain…'); await new Promise(r=>setTimeout(r,50));
     const nat=resampleLabels(atlasMNI, {dims:dim, affine:_aff16(Msub,Tsub)}, xform);
     const filled=chopMaskFill(nat, mask, dim);             // constrain to the brain + fill gaps → whole brain colored
@@ -5506,6 +5530,7 @@ function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wi
   $('betUnder').addEventListener('click', betAsUnderlay);
   $('betDownload').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(_betResult.mask,_betResult.dim,_betResult.M,_betResult.T,2), betBaseName()+'_mask.nii.gz'); });
   $('betDownloadBrain').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(betMaskedIntensity(),_betResult.dim,_betResult.M,_betResult.T,16), betBaseName()+'_brain.nii.gz'); });
+  if($('chopAtlasSel')){ const sel=$('chopAtlasSel'); sel.innerHTML=REG.map(a=>'<option value="'+a.id+'">'+a.name+'</option>').join(''); sel.value=ATLAS_ID; }   // choose any atlas to parcellate into
   if($('chopParc')) $('chopParc').addEventListener('click', chopParcellate);
   if($('chopParcRegions')) $('chopParcRegions').addEventListener('click', ()=>{ if(_chopNative&&!meshes.length)chopShowRegions(); setViewMode('mesh'); });
   if($('chopParcSlices')) $('chopParcSlices').addEventListener('click', ()=>{ setViewMode('slice'); sliceKind='voxel'; if(typeof syncKindButtons==='function')syncKindButtons(); if(typeof syncSliceCtx==='function')syncSliceCtx(); sliceRenderAll(); });
