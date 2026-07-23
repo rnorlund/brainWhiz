@@ -5421,17 +5421,23 @@ const _aff16=(M,T)=>[M[0],M[1],M[2],T[0], M[3],M[4],M[5],T[1], M[6],M[7],M[8],T[
 function voxelizeAtlasToMNI(onProg){
   const mni=ensureMNI(); if(!mni) throw new Error('MNI template unavailable');
   const [nx,ny,nz]=mni.dim, M=mni.M, T=mni.T, Mi=mni.Minv, label=new Int32Array(nx*ny*nz);
-  const cvs=document.createElement('canvas'); cvs.width=nx; cvs.height=ny; const ctx=cvs.getContext('2d',{willReadFrequently:true});
   const recs=(_atlasVoxSrc?_atlasVoxSrc.recs:[]).map(r=>{ const p=r.pos; let y0=Infinity,y1=-Infinity; for(let t=1;t<p.length;t+=3){ if(p[t]<y0)y0=p[t]; if(p[t]>y1)y1=p[t]; } return {id:r.id, pos:p, y0, y1}; });
-  const valid=new Set(recs.map(r=>r.id));   // the ATLAS's ids (NOT byId — that's the live scene, which BET replaced)
-  for(let k=0;k<nz;k++){ const wz=M[6]*(nx>>1)+M[7]*(ny>>1)+M[8]*k+T[2]; let any=false; ctx.clearRect(0,0,nx,ny);   // MNI world-Z of this slice (axis-aligned template)
-    for(const r of recs){ if(wz<r.y0-1||wz>r.y1+1) continue;                                   // mesh doesn't reach this slice
-      const loops=sectionLoops(r.pos, 1, wz+1e-3, (x,y,z)=>[x,-z]); if(!loops.length) continue;  // section as (MNI x, MNI y)
-      ctx.fillStyle='rgb('+(r.id&255)+','+((r.id>>8)&255)+',0)'; ctx.beginPath();               // encode roiId in R+G
-      for(const lp of loops){ for(let q=0;q<lp.length;q++){ const dx=lp[q][0]-T[0], dy=lp[q][1]-T[1], dz=wz-T[2];
-        const vi=Mi[0]*dx+Mi[1]*dy+Mi[2]*dz, vj=Mi[3]*dx+Mi[4]*dy+Mi[5]*dz; q?ctx.lineTo(vi,vj):ctx.moveTo(vi,vj); } ctx.closePath(); }
-      ctx.fill('evenodd'); any=true; }
-    if(any){ const d=ctx.getImageData(0,0,nx,ny).data; for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){ const o=(j*nx+i)*4, id=d[o]|(d[o+1]<<8); if(id&&valid.has(id)) label[i+nx*(j+ny*k)]=id; } }  // valid → drop AA-blended edge ids
+  // EXACT even-odd scanline rasterization straight into the integer label grid — NO canvas, NO
+  // anti-aliasing (canvas AA blended neighbouring ROI colours into in-between ids, scattering labels).
+  for(let k=0;k<nz;k++){ const wz=M[6]*(nx>>1)+M[7]*(ny>>1)+M[8]*k+T[2], zb=k*nx*ny;             // MNI world-Z of this slice
+    for(const r of recs){ if(wz<r.y0-1||wz>r.y1+1) continue;
+      const loops=sectionLoops(r.pos, 1, wz+1e-3, (x,y,z)=>[x,-z]); if(!loops.length) continue;   // (MNI x, MNI y)
+      const polys=[]; let jmin=ny,jmax=-1;                                                        // → voxel (i,j) polygons
+      for(const lp of loops){ const P=[]; for(const pt of lp){ const dx=pt[0]-T[0], dy=pt[1]-T[1], dz=wz-T[2];
+        const vi=Mi[0]*dx+Mi[1]*dy+Mi[2]*dz, vj=Mi[3]*dx+Mi[4]*dy+Mi[5]*dz; P.push([vi,vj]); if(vj<jmin)jmin=vj; if(vj>jmax)jmax=vj; } polys.push(P); }
+      const j0=Math.max(0,Math.ceil(jmin-0.5)), j1=Math.min(ny-1,Math.floor(jmax+0.5));
+      for(let j=j0;j<=j1;j++){ const yc=j+0.5, xs=[];
+        for(const P of polys){ const n=P.length; for(let a=0;a<n;a++){ const p1=P[a], p2=P[(a+1)%n], y1=p1[1], y2=p2[1];
+          if((y1<=yc)!==(y2<=yc)){ xs.push(p1[0]+(yc-y1)/(y2-y1)*(p2[0]-p1[0])); } } }
+        xs.sort((a,b)=>a-b); const jb=zb+j*nx;
+        for(let s=0;s+1<xs.length;s+=2){ const x0=Math.max(0,Math.ceil(xs[s]-0.5)), x1=Math.min(nx-1,Math.floor(xs[s+1]-0.5));
+          for(let i=x0;i<=x1;i++) label[jb+i]=r.id; } }
+    }
     if(onProg&&k%8===0) onProg(k/nz);
   }
   return {data:label, dims:[nx,ny,nz], affine:_aff16(M,T)};
