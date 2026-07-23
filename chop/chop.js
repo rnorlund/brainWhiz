@@ -77,7 +77,10 @@ const eulerMat=(rx,ry,rz)=>{ const cx=Math.cos(rx),sx=Math.sin(rx),cy=Math.cos(r
 // at `stride`. cF/cM are fixed/moving centers of mass (world); Minv = inverse moving affine.
 function nmiCost(p, fixed, moving, Minv, cF, cM, stride, bins=48){
   const [fx,fy,fz]=fixed.dims, F=affTo16(fixed.affine), fd=fixed.data, md=moving.data, [mx,my,mz]=moving.dims;
-  const R=eulerMat(p[3],p[4],p[5]), s=Math.exp(p[6]);
+  const R=eulerMat(p[3],p[4],p[5]);
+  // 12-DOF affine: A = R · K, with K upper-triangular = per-axis scale (exp) + shear. (7-DOF rigid+iso
+  // can't fit a brain to MNI — poles/proportions drift, mislabeling frontal↔temporal.)
+  const sx=Math.exp(p[6]), sy=Math.exp(p[7]), sz=Math.exp(p[8]), hxy=p[9], hxz=p[10], hyz=p[11];
   const HA=new Float64Array(bins), HB=new Float64Array(bins), HJ=new Float64Array(bins*bins);
   // intensity ranges (precomputed once by caller via fixed._lo etc.)
   const fl=fixed._lo, fs=(bins-1)/((fixed._hi-fl)||1), ml=moving._lo, ms=(bins-1)/((moving._hi-ml)||1);
@@ -85,7 +88,8 @@ function nmiCost(p, fixed, moving, Minv, cF, cM, stride, bins=48){
   for(let k=0;k<fz;k+=stride)for(let j=0;j<fy;j+=stride)for(let i=0;i<fx;i+=stride){
     const fv=fd[i+fx*(j+fy*k)]; if(fv<=fl) continue;                 // skip background of fixed
     const w=applyAffine(F,i,j,k), dx=w[0]-cF[0],dy=w[1]-cF[1],dz=w[2]-cF[2];
-    const wx=cM[0]+p[0]+s*(R[0]*dx+R[1]*dy+R[2]*dz), wy=cM[1]+p[1]+s*(R[3]*dx+R[4]*dy+R[5]*dz), wz=cM[2]+p[2]+s*(R[6]*dx+R[7]*dy+R[8]*dz);
+    const kx=sx*dx+hxy*dy+hxz*dz, ky=sy*dy+hyz*dz, kz=sz*dz;         // K·d
+    const wx=cM[0]+p[0]+(R[0]*kx+R[1]*ky+R[2]*kz), wy=cM[1]+p[1]+(R[3]*kx+R[4]*ky+R[5]*kz), wz=cM[2]+p[2]+(R[6]*kx+R[7]*ky+R[8]*kz);
     const v=applyAffine(Minv, wx,wy,wz); const ix=v[0],iy=v[1],iz=v[2];
     if(ix<0||iy<0||iz<0||ix>=mx-1||iy>=my-1||iz>=mz-1) continue;
     const x0=ix|0,y0=iy|0,z0=iz|0, fxk=ix-x0,fyk=iy-y0,fzk=iz-z0;    // trilinear
@@ -111,23 +115,31 @@ export function registerAffine(moving, fixed, opts={}){
   prep(fixed); prep(moving);
   const Minv=invert4x4(affTo16(moving.affine)); if(!Minv) throw new Error('moving affine not invertible');
   const cF=centerOfMass(fixed), cM=centerOfMass(moving);
-  let p=[0,0,0, 0,0,0, Math.log((extentRadius(moving)/(extentRadius(fixed)||1))||1)];  // COM + scale init
-  // step sizes: mm, radians, log-scale
-  const levels=opts.levels|| [[4, [8,0.12,0.10]], [2, [4,0.06,0.05]], [1, [2,0.03,0.02]]];
+  const ls=Math.log((extentRadius(moving)/(extentRadius(fixed)||1))||1);
+  // 12 params: tx,ty,tz, rx,ry,rz, log(sx),log(sy),log(sz), shear_xy,shear_xz,shear_yz. Init isotropic + no shear.
+  let p=[0,0,0, 0,0,0, ls,ls,ls, 0,0,0];
+  // step sizes per level: mm, radians, log-scale, shear (dimensionless). Coordinate descent only ACCEPTS
+  // NMI-improving moves, so anisotropic scale/shear can't diverge from the isotropic start.
+  const levels=opts.levels|| [[4, [8,0.12,0.08,0.05]], [2, [4,0.06,0.04,0.03]], [1, [2,0.03,0.02,0.015]]];
   for(const [stride, step0] of levels){
-    let steps=[step0[0],step0[0],step0[0], step0[1],step0[1],step0[1], step0[2]];
+    let steps=[step0[0],step0[0],step0[0], step0[1],step0[1],step0[1], step0[2],step0[2],step0[2], step0[3],step0[3],step0[3]];
     let best=nmiCost(p, fixed, moving, Minv, cF, cM, stride);
-    for(let sweep=0; sweep<(opts.sweeps||12); sweep++){ let improved=false;
-      for(let d=0; d<7; d++){ for(const sgn of [1,-1]){ const q=p.slice(); q[d]+=sgn*steps[d];
+    for(let sweep=0; sweep<(opts.sweeps||16); sweep++){ let improved=false;
+      for(let d=0; d<12; d++){ for(const sgn of [1,-1]){ const q=p.slice(); q[d]+=sgn*steps[d];
         const c=nmiCost(q, fixed, moving, Minv, cF, cM, stride); if(c>best){ best=c; p=q; improved=true; } } }
-      if(!improved){ for(let d=0;d<7;d++) steps[d]*=0.5; if(steps[0]<0.25) break; }
+      if(!improved){ for(let d=0;d<12;d++) steps[d]*=0.5; if(steps[0]<0.25) break; }
     }
   }
-  // build FIXED->MOVING matrix from p (xM = cM + t + s R (xF - cF))
-  const R=eulerMat(p[3],p[4],p[5]), s=Math.exp(p[6]);
-  const M=[ s*R[0],s*R[1],s*R[2], cM[0]+p[0]-s*(R[0]*cF[0]+R[1]*cF[1]+R[2]*cF[2]),
-            s*R[3],s*R[4],s*R[5], cM[1]+p[1]-s*(R[3]*cF[0]+R[4]*cF[1]+R[5]*cF[2]),
-            s*R[6],s*R[7],s*R[8], cM[2]+p[2]-s*(R[6]*cF[0]+R[7]*cF[1]+R[8]*cF[2]), 0,0,0,1 ];
+  // build FIXED->MOVING matrix: xM = cM + t + A(xF - cF), A = R·K, K = per-axis scale + upper-tri shear
+  const R=eulerMat(p[3],p[4],p[5]);
+  const sx=Math.exp(p[6]), sy=Math.exp(p[7]), sz=Math.exp(p[8]), hxy=p[9], hxz=p[10], hyz=p[11];
+  const K=[sx,hxy,hxz, 0,sy,hyz, 0,0,sz];
+  const A=[ R[0]*K[0]+R[1]*K[3]+R[2]*K[6], R[0]*K[1]+R[1]*K[4]+R[2]*K[7], R[0]*K[2]+R[1]*K[5]+R[2]*K[8],
+            R[3]*K[0]+R[4]*K[3]+R[5]*K[6], R[3]*K[1]+R[4]*K[4]+R[5]*K[7], R[3]*K[2]+R[4]*K[5]+R[5]*K[8],
+            R[6]*K[0]+R[7]*K[3]+R[8]*K[6], R[6]*K[1]+R[7]*K[4]+R[8]*K[7], R[6]*K[2]+R[7]*K[5]+R[8]*K[8] ];
+  const M=[ A[0],A[1],A[2], cM[0]+p[0]-(A[0]*cF[0]+A[1]*cF[1]+A[2]*cF[2]),
+            A[3],A[4],A[5], cM[1]+p[1]-(A[3]*cF[0]+A[4]*cF[1]+A[5]*cF[2]),
+            A[6],A[7],A[8], cM[2]+p[2]-(A[6]*cF[0]+A[7]*cF[1]+A[8]*cF[2]), 0,0,0,1 ];
   return { params:p, matrix:M, nmi: nmiCost(p, fixed, moving, Minv, cF, cM, 1) };
 }
 

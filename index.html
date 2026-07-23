@@ -1389,6 +1389,7 @@ const connGroup = new THREE.Group();
 group.add(connGroup);
 
 const meshes = [];          // {mesh, base:Vector3(centroid dir), meta}
+window.meshes = meshes;     // expose the live region records (debug/headless isolation aid)
 const byId = new Map();     // roi id -> mesh record
 let modelRadius = 150;
 
@@ -5468,17 +5469,31 @@ function voxelizeAtlasToMNI(src, onProg){
     }
     if(onProg&&k%8===0) onProg(k/nz);
   }
+  // Return the raw rasterized atlas labels. The seams between adjacent ROIs and the WM gaps are closed
+  // later in NATIVE space (chopMaskFill through the subject's brain mask) — the anatomically-correct place,
+  // because filling through the individual's own tissue respects their sulci. Nothing is filled here.
   return {data:label, dims:[nx,ny,nz], affine:_aff16(M,T)};
 }
 // keep labels only inside the brain mask, then flood-fill unlabeled brain voxels with the nearest
 // region → the subject's WHOLE brain is colored (not the shrunken atlas silhouette / atlas gaps).
-function chopMaskFill(nat, mask, dims){
-  const [nx,ny,nz]=dims, N=nx*ny*nz, nxy=nx*ny, out=new Int32Array(N), q=[];
-  for(let i=0;i<N;i++){ if(mask[i] && nat[i]){ out[i]=nat[i]; q.push(i); } }   // seeds = labeled brain voxels
-  let head=0;
-  while(head<q.length){ const p=q[head++], lab=out[p], z=(p/nxy)|0, r=p-z*nxy, y=(r/nx)|0, x=r-y*nx;
-    const nb=[x>0?p-1:-1, x<nx-1?p+1:-1, y>0?p-nx:-1, y<ny-1?p+nx:-1, z>0?p-nxy:-1, z<nz-1?p+nxy:-1];
-    for(const nbi of nb){ if(nbi>=0 && mask[nbi] && !out[nbi]){ out[nbi]=lab; q.push(nbi); } }
+// Fill unlabeled brain voxels from the nearest labeled seed — but BOUNDED to maxDist rings, so a region
+// can only close small coverage gaps/seams (a few mm), NEVER balloon across an unlabeled corridor into a
+// distant lobe (the frontal→temporal-pole artifact). Voxels farther than maxDist from any label stay 0.
+// Nearest-label fill that grows ONLY through `mask` (the subject's brain tissue). Because sulcal CSF is
+// not in the cortical mask, labels can't jump across a sulcus/fissure — a frontal region can't leak into
+// the temporal pole. Unlabeled tissue between two regions fills from both sides, meeting at a boundary.
+// Seeds = labeled in-mask voxels; every in-mask voxel ends up labeled → 100% coverage, no cross-lobe spill.
+function chopMaskFill(nat, mask, dims, maxDist){
+  maxDist = (maxDist==null ? Infinity : maxDist);
+  const [nx,ny,nz]=dims, N=nx*ny*nz, nxy=nx*ny, out=new Int32Array(N);
+  let cur=[]; for(let i=0;i<N;i++){ if(nat[i] && (!mask||mask[i])){ out[i]=nat[i]; cur.push(i); } }   // seeds = labeled in-mask voxels
+  for(let d=0; d<maxDist && cur.length; d++){                                     // grow the frontier one ring/iteration
+    const next=[];
+    for(let h=0; h<cur.length; h++){ const p=cur[h], lab=out[p], z=(p/nxy)|0, r=p-z*nxy, y=(r/nx)|0, x=r-y*nx;
+      const nb=[x>0?p-1:-1, x<nx-1?p+1:-1, y>0?p-nx:-1, y<ny-1?p+nx:-1, z>0?p-nxy:-1, z<nz-1?p+nxy:-1];
+      for(const nbi of nb){ if(nbi>=0 && !out[nbi] && (!mask || mask[nbi])){ out[nbi]=lab; next.push(nbi); } }
+    }
+    cur=next;
   }
   return out;
 }
@@ -5486,27 +5501,36 @@ async function chopParcellate(){
   if(!_betResult){ chopPStatus('Extract the brain FIRST — Brain extraction (BET) → 🧠 Extract brain. CHOP normalizes the extracted brain to MNI, then projects the atlas back onto it.', true); return; }
   const chosenId=$('chopAtlasSel')?$('chopAtlasSel').value:(_atlasVoxSrc?_atlasVoxSrc.id:ATLAS_ID);
   const dim=_betResult.dim.slice(), Msub=_betResult.M.slice(), Tsub=_betResult.T.slice(), mask=_betResult.mask;
-  // Our MNI152 template has a skull, so the WHOLE-HEAD T1 aligns to it (NMI≈2); a skull-stripped brain
-  // mismatches it (NMI≈1.2). So normalize the full T1, then constrain the projected labels to the BET mask.
-  const brain=_betResult.srcData || (underlayVol&&underlayVol.data) || betMaskedIntensity();
+  // Brain↔brain normalization: register the subject's EXTRACTED brain to a BRAIN-ONLY MNI (skull removed via
+  // the prior). No skull/scalp to fight the fit → the transform actually aligns the cortex, not the head shell.
+  const srcI=_betResult.srcData || (underlayVol&&underlayVol.data) || betMaskedIntensity();
+  const brain=new Float32Array(srcI.length); for(let i=0;i<brain.length;i++) brain[i]= mask[i]? srcI[i] : 0;   // extracted brain intensity
   $('chopParc').disabled=true; chopPBar(4); chopPStatus('Loading atlas “'+chosenId+'”…'); await new Promise(r=>setTimeout(r,50));
   try{
     const src=await loadAtlasVoxSrc(chosenId);
     if(!src || !src.recs || !src.recs.length) throw new Error('atlas “'+chosenId+'” has no regions');
     const atlasName=src.name;
     const labelsText=src.recs.map(r=>r.id+' '+(r.abbr||('R'+r.id))+' '+(r.name||r.abbr||('Region '+r.id))).join('\n');
-    chopPBar(8); chopPStatus('Normalizing subject T1 → MNI (≈10–30s)…'); await new Promise(r=>setTimeout(r,50));
-    const mni=ensureMNI();
-    const reg=registerAffine({data:Float32Array.from(brain),dims:dim,affine:_aff16(Msub,Tsub)}, {data:mni.data,dims:mni.dim,affine:_aff16(mni.M,mni.T)});
+    chopPBar(8); chopPStatus('Normalizing extracted brain → MNI (≈10–30s)…'); await new Promise(r=>setTimeout(r,50));
+    const mni=await ensureMNIBrain();
+    const reg=registerAffine({data:brain,dims:dim,affine:_aff16(Msub,Tsub)}, {data:mni.data,dims:mni.dim,affine:_aff16(mni.M,mni.T)});
     const xform=invert4x4(reg.matrix);                     // reg.matrix = MNI→subject (forward); its INVERSE = subject→MNI, applied to project the atlas onto native
     chopPBar(45); chopPStatus('Voxelizing '+atlasName+' (norm NMI '+reg.nmi.toFixed(3)+')…'); await new Promise(r=>setTimeout(r,50));
     const atlasMNI=voxelizeAtlasToMNI(src, f=>chopPBar(45+Math.round(f*38)));
     chopPBar(85); chopPStatus('Projecting parcellation onto the subject brain…'); await new Promise(r=>setTimeout(r,50));
-    const nat=resampleLabels(atlasMNI, {dims:dim, affine:_aff16(Msub,Tsub)}, xform);
-    const filled=chopMaskFill(nat, mask, dim);             // constrain to the brain + fill gaps → whole brain colored
-    const fl=new Float32Array(filled.length); let cnt=0; for(let i=0;i<filled.length;i++){ fl[i]=filled[i]; if(filled[i])cnt++; }
+    // Inverse-transform resample: every subject voxel picks up the atlas label at its warped position.
+    const nat0=resampleLabels(atlasMNI, {dims:dim, affine:_aff16(Msub,Tsub)}, xform);
+    // Close mesh-rasterization seams + assign WM/ventricles by growing labels through the subject's brain
+    // tissue only (no cross-sulcus leak). 'none' = raw warp (GM only, ~standard) for comparison/testing.
+    const fillMode=(typeof window!=='undefined' && window._chopFillCfg && window._chopFillCfg.mode) || 'fill';
+    const nat = (fillMode==='none') ? nat0 : chopMaskFill(nat0, mask, dim);
+    const fl=new Float32Array(nat.length); let cnt=0; for(let i=0;i<nat.length;i++){ if(mask[i] && nat[i]){ fl[i]=nat[i]; cnt++; } }
     if(!cnt) throw new Error('no labels landed on the brain (normalization failed — check the extraction)');
     _chopNative={data:fl, dim, M:Msub, T:Tsub, name:atlasName, labelsText};
+    try{ let brainVox=0; for(let i=0;i<mask.length;i++) if(mask[i]) brainVox++;
+      const seen=new Set(); for(let i=0;i<fl.length;i++) if(fl[i]) seen.add(fl[i]);
+      window._chopLast={ atlas:atlasName, nmi:+reg.nmi.toFixed(3), regions:seen.size, labeledVox:cnt, brainVox, coverage:+(cnt/(brainVox||1)).toFixed(3) };
+      window._chopNativeDbg={ data:fl, dim, spacing:[Math.hypot(Msub[0],Msub[3],Msub[6]),Math.hypot(Msub[1],Msub[4],Msub[7]),Math.hypot(Msub[2],Msub[5],Msub[8])], labelsText }; }catch(e){}
     chopPBar(95); chopPStatus('Building the parcellated brain…'); await new Promise(r=>setTimeout(r,50));
     chopShowRegions(); $('chopParcResults').style.display='flex'; if($('chopSliceRow'))$('chopSliceRow').style.display='flex'; chopPBar(0);
     chopPStatus('✅ '+atlasName+' projected onto the subject’s brain ('+cnt.toLocaleString()+' voxels · norm NMI '+reg.nmi.toFixed(3)+'). Affine — borders approximate individual gyri.');
@@ -6396,6 +6420,20 @@ function ensureMNI(){
   const raw=window.pako.ungzip(u), a=m.affine;
   MNIVOL=makeVol(raw, m.dim, [a[0][0],a[0][1],a[0][2],a[1][0],a[1][1],a[1][2],a[2][0],a[2][1],a[2][2]], [a[0][3],a[1][3],a[2][3]]);
   return MNIVOL;
+}
+// A BRAIN-ONLY MNI152 (skull/scalp removed) built by masking the template with the bundled brain-probability
+// prior (same grid). CHOP registers the subject's EXTRACTED brain to THIS — brain↔brain, so the skull no
+// longer confounds the fit. Falls back to the whole-head template if the prior is missing / off-grid.
+let MNI_BRAINVOL=null, MNI_BRAINMASK=null;
+async function ensureMNIBrain(){
+  if(MNI_BRAINVOL) return MNI_BRAINVOL;
+  const mni=ensureMNI(); if(!mni) return null;
+  let pr=null; try{ pr = (typeof betLoadPrior==='function') ? await betLoadPrior() : null; }catch(e){ pr=null; }
+  if(!pr || !pr.data || pr.data.length!==mni.data.length){ MNI_BRAINVOL=mni; MNI_BRAINMASK=null; return mni; }  // no prior / grid mismatch → whole-head
+  const thr=(pr.pt!=null?pr.pt:0.2)*(pr.n||1), N=mni.data.length, out=new Float32Array(N), msk=new Uint8Array(N);   // prior = 0..n counts; pt is a fraction
+  for(let i=0;i<N;i++){ if(pr.data[i]>thr){ out[i]=mni.data[i]; msk[i]=1; } }
+  MNI_BRAINVOL=makeVol(out, mni.dim.slice(), mni.M.slice(), mni.T.slice()); MNI_BRAINMASK=msk;
+  return MNI_BRAINVOL;
 }
 // load a NIfTI (parsed) as the slice/mosaic background underlay, normalized to 0..255 grayscale
 function setUnderlay(nii){
