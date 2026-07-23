@@ -49,9 +49,13 @@
 
   /* ---- top toolbar ---- */
   #topbar{position:absolute;top:0;left:0;right:0;min-height:46px;background:var(--panel);
-    border-bottom:1px solid var(--line);display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:4px 10px;z-index:20;
+    border-bottom:1px solid var(--line);display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:4px 48px;z-index:20;
     overflow:visible;zoom:var(--uiScale)}   /* WRAPS to multiple rows on narrow windows so nothing (Panels/Editor) is ever
-       hidden or clipped; resize() reads the real height into --topH so the content below moves down to match */
+       hidden or clipped; resize() reads the real height into --topH so the content below moves down to match. side padding
+       leaves room for the pinned sidebar toggles below. */
+  /* sidebar toggles are PINNED to the far edges (out of the wrapping flow) so they never drift to the middle */
+  #navToggle{position:absolute;left:8px;top:5px;z-index:3}
+  #navToggleR{position:absolute;right:8px;top:5px;z-index:3}
   #topbar .brand{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px;white-space:nowrap}
   #topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
   /* Brand: logo + wordmark stay a FIXED size regardless of the UI text-size setting (topbar is
