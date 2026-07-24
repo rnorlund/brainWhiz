@@ -2904,8 +2904,14 @@ function buildAtlasFromNifti(nii, labelsText, name){
     const PAD=3, fw=bw+2*PAD, fh=bh+2*PAD, fd=bd+2*PAD, occ=new Float32Array(fw*fh*fd);
     for(let z=0;z<bd;z++)for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
       if(Math.round(data[(x0+x)+(y0+y)*nx+(z0+z)*nx*ny])===e.lab) occ[(x+PAD)+(y+PAD)*fw+(z+PAD)*fw*fh]=1; }
-    gaussianBlur3D(occ,[fw,fh,fd],0.9);                                  // soften the mask -> smooth iso-surface
-    const field=new Float32Array(occ.length); for(let i=0;i<occ.length;i++) field[i]=0.5-occ[i];  // inside (<0) where occ>0.5
+    // DILATE each region by 1 voxel (26-connected) so neighbouring ROIs OVERLAP and meet FLUSH — otherwise
+    // each independently-isosurfaced region's surface sits ~½ voxel inside its own label, leaving visible gaps.
+    const dil=occ.slice();
+    for(let z=1;z<fd-1;z++)for(let y=1;y<fh-1;y++)for(let x=1;x<fw-1;x++){ const o=x+y*fw+z*fw*fh; if(occ[o]) continue;
+      let hit=0; for(let dz=-1;dz<=1&&!hit;dz++)for(let dy=-1;dy<=1&&!hit;dy++)for(let dx=-1;dx<=1;dx++){ if(occ[o+dx+dy*fw+dz*fw*fh]){hit=1;break;} }
+      if(hit) dil[o]=1; }
+    gaussianBlur3D(dil,[fw,fh,fd],0.9);                                  // soften the mask -> smooth iso-surface
+    const field=new Float32Array(dil.length); for(let i=0;i<dil.length;i++) field[i]=0.5-dil[i];  // inside (<0) where dil>0.5
     const sn=surfaceNets(field,[fw,fh,fd]); if(!sn.positions.length) continue;
     const vmap=sn.positions.map(p=>tjs(x0-PAD+p[0], y0-PAD+p[1], z0-PAD+p[2]));
     const pos=[]; for(const c of sn.cells){ const a=vmap[c[0]],b=vmap[c[1]],d=vmap[c[2]],f=vmap[c[3]];
