@@ -5448,7 +5448,7 @@ async function loadAtlasVoxSrc(id){
   return _atlasVoxCache[id]={ id, name:(REG.find(a=>a.id===id)||{}).name||id, recs };
 }
 function voxelizeAtlasToMNI(src, onProg){
-  const mni=ensureMNI(); if(!mni) throw new Error('MNI template unavailable');
+  const mni=ensureMNI(true); if(!mni) throw new Error('MNI template unavailable');
   const [nx,ny,nz]=mni.dim, M=mni.M, T=mni.T, Mi=mni.Minv, label=new Int32Array(nx*ny*nz);
   const recs=(((src||_atlasVoxSrc)||{}).recs||[]).map(r=>{ const p=r.pos; let y0=Infinity,y1=-Infinity; for(let t=1;t<p.length;t+=3){ if(p[t]<y0)y0=p[t]; if(p[t]>y1)y1=p[t]; } return {id:r.id, pos:p, y0, y1}; });
   // EXACT even-odd scanline rasterization straight into the integer label grid — NO canvas, NO
@@ -5501,10 +5501,11 @@ async function chopParcellate(){
   if(!_betResult){ chopPStatus('Extract the brain FIRST — Brain extraction (BET) → 🧠 Extract brain. CHOP normalizes the extracted brain to MNI, then projects the atlas back onto it.', true); return; }
   const chosenId=$('chopAtlasSel')?$('chopAtlasSel').value:(_atlasVoxSrc?_atlasVoxSrc.id:ATLAS_ID);
   const dim=_betResult.dim.slice(), Msub=_betResult.M.slice(), Tsub=_betResult.T.slice(), mask=_betResult.mask;
-  // Brain↔brain normalization: register the subject's EXTRACTED brain to a BRAIN-ONLY MNI (skull removed via
-  // the prior). No skull/scalp to fight the fit → the transform actually aligns the cortex, not the head shell.
+  // Register the subject's EXTRACTED brain to a BRAIN-ONLY MNI (skull removed via the prior). Orientation is
+  // seeded by a brain-OVERLAP rotation search in registerAffine (NMI alone is blind to a tilt) so the warp
+  // actually follows a tilted head instead of throwing orbitalis/fusiform into the wrong lobe.
   const srcI=_betResult.srcData || (underlayVol&&underlayVol.data) || betMaskedIntensity();
-  const brain=new Float32Array(srcI.length); for(let i=0;i<brain.length;i++) brain[i]= mask[i]? srcI[i] : 0;   // extracted brain intensity
+  const brain=new Float32Array(srcI.length); for(let i=0;i<brain.length;i++) brain[i]= mask[i]? srcI[i] : 0;   // extracted brain
   $('chopParc').disabled=true; chopPBar(4); chopPStatus('Loading atlas “'+chosenId+'”…'); await new Promise(r=>setTimeout(r,50));
   try{
     const src=await loadAtlasVoxSrc(chosenId);
@@ -5515,7 +5516,7 @@ async function chopParcellate(){
     const mni=await ensureMNIBrain();
     const reg=registerAffine({data:brain,dims:dim,affine:_aff16(Msub,Tsub)}, {data:mni.data,dims:mni.dim,affine:_aff16(mni.M,mni.T)});
     const xform=invert4x4(reg.matrix);                     // reg.matrix = MNI→subject (forward); its INVERSE = subject→MNI, applied to project the atlas onto native
-    chopPBar(45); chopPStatus('Voxelizing '+atlasName+' (norm NMI '+reg.nmi.toFixed(3)+')…'); await new Promise(r=>setTimeout(r,50));
+    chopPBar(45); chopPStatus('Voxelizing '+atlasName+' (brain overlap '+(reg.dice!=null?reg.dice.toFixed(3):reg.nmi.toFixed(3))+')…'); await new Promise(r=>setTimeout(r,50));
     const atlasMNI=voxelizeAtlasToMNI(src, f=>chopPBar(45+Math.round(f*38)));
     chopPBar(85); chopPStatus('Projecting parcellation onto the subject brain…'); await new Promise(r=>setTimeout(r,50));
     // Inverse-transform resample: every subject voxel picks up the atlas label at its warped position.
@@ -5529,11 +5530,11 @@ async function chopParcellate(){
     _chopNative={data:fl, dim, M:Msub, T:Tsub, name:atlasName, labelsText};
     try{ let brainVox=0; for(let i=0;i<mask.length;i++) if(mask[i]) brainVox++;
       const seen=new Set(); for(let i=0;i<fl.length;i++) if(fl[i]) seen.add(fl[i]);
-      window._chopLast={ atlas:atlasName, nmi:+reg.nmi.toFixed(3), regions:seen.size, labeledVox:cnt, brainVox, coverage:+(cnt/(brainVox||1)).toFixed(3), params:reg.params.map(v=>+v.toFixed(4)), xform:Array.from(xform), aff:_aff16(Msub,Tsub) };
+      window._chopLast={ atlas:atlasName, dice:+(reg.dice||0).toFixed(3), nmi:+reg.nmi.toFixed(3), regions:seen.size, labeledVox:cnt, brainVox, coverage:+(cnt/(brainVox||1)).toFixed(3), params:reg.params.map(v=>+v.toFixed(4)), dbg:reg.dbg, xform:Array.from(xform), aff:_aff16(Msub,Tsub) };
       window._chopNativeDbg={ data:fl, dim, spacing:[Math.hypot(Msub[0],Msub[3],Msub[6]),Math.hypot(Msub[1],Msub[4],Msub[7]),Math.hypot(Msub[2],Msub[5],Msub[8])], M:Msub, T:Tsub, labelsText }; }catch(e){}
     chopPBar(95); chopPStatus('Building the parcellated brain…'); await new Promise(r=>setTimeout(r,50));
     chopShowRegions(); $('chopParcResults').style.display='flex'; if($('chopSliceRow'))$('chopSliceRow').style.display='flex'; chopPBar(0);
-    chopPStatus('✅ '+atlasName+' projected onto the subject’s brain ('+cnt.toLocaleString()+' voxels · norm NMI '+reg.nmi.toFixed(3)+'). Affine — borders approximate individual gyri.');
+    chopPStatus('✅ '+atlasName+' projected onto the subject’s brain ('+cnt.toLocaleString()+' voxels · brain overlap '+(reg.dice!=null?reg.dice.toFixed(3):reg.nmi.toFixed(3))+'). Affine — borders approximate individual gyri.');
   }catch(e){ chopPBar(0); chopPStatus('CHOP failed: '+(e.message||e), true); }
   $('chopParc').disabled=false;
 }
@@ -6412,8 +6413,8 @@ function renderMeshSlices(){
     cv._plane={plane,ox,oy,dw,dh,hmin:win.hmin,hr:win.hr,vmax:win.vmax,vr:win.vr,mesh:true};
   }
 }
-function ensureMNI(){
-  if(underlayVol) return underlayVol;        // a loaded T1/anatomical underlay replaces the MNI template
+function ensureMNI(forceTemplate){
+  if(underlayVol && !forceTemplate) return underlayVol;   // a loaded T1/anatomical underlay replaces the MNI template for the slice background — but CHOP must force the REAL MNI152 (forceTemplate=true) or it would register the subject to ITSELF
   if(MNIVOL || !window.MNI152) return MNIVOL;
   const m=window.MNI152, bin=atob(m.data), u=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
@@ -6427,7 +6428,7 @@ function ensureMNI(){
 let MNI_BRAINVOL=null, MNI_BRAINMASK=null;
 async function ensureMNIBrain(){
   if(MNI_BRAINVOL) return MNI_BRAINVOL;
-  const mni=ensureMNI(); if(!mni) return null;
+  const mni=ensureMNI(true); if(!mni) return null;
   let pr=null; try{ pr = (typeof betLoadPrior==='function') ? await betLoadPrior() : null; }catch(e){ pr=null; }
   if(!pr || !pr.data || pr.data.length!==mni.data.length){ MNI_BRAINVOL=mni; MNI_BRAINMASK=null; return mni; }  // no prior / grid mismatch → whole-head
   const thr=(pr.pt!=null?pr.pt:0.2)*(pr.n||1), N=mni.data.length, out=new Float32Array(N), msk=new Uint8Array(N);   // prior = 0..n counts; pt is a fraction
