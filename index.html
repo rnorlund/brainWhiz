@@ -554,6 +554,8 @@
         <button class="sm" id="betSurf" title="Render the extracted brain as a 3D folded-cortex surface (replaces current meshes)">🧠 3D surface</button>
         <button class="sm" id="betUnder" title="Use the skull-stripped scan as the slice/mosaic underlay">🔪 As underlay</button></div>
       <div class="row" style="gap:5px;margin-top:4px">
+        <button class="sm" id="betCheck" title="Overlay the extracted-brain outline in RED on the native T1 slices (sagittal/coronal/axial) so you can QC where BET included/excluded tissue. Click again to turn off.">🔍 Check BET (edges on T1)</button></div>
+      <div class="row" style="gap:5px;margin-top:4px">
         <button class="sm" id="betDownload" title="Download the binary brain mask as .nii.gz (native space)">⬇ mask.nii.gz</button>
         <button class="sm" id="betDownloadBrain" title="Download the skull-stripped scan as .nii.gz">⬇ brain.nii.gz</button></div>
       <div id="betCtl" style="margin-top:7px;border-top:1px solid var(--line);padding-top:7px;display:grid;gap:5px;font-size:11px">
@@ -5270,6 +5272,7 @@ function nextFrames(n=2){ return new Promise(res=>{ (function step(k){ k<=0?res(
    Runs our clean-room bet/tissue/chop modules in a Web Worker on the loaded subject scan.
    Requires the app to be SERVED (http/https) — module workers can't load on file://. */
 let _betWorker=null, _betResult=null, _betPrior=undefined;   // _betResult={mask,cortex,wm,gm,dim,M,T,voxels,total}
+let _betEdgeShow=false, _betMaskVol=null;   // Check-BET: red extracted-brain outline on the native T1 slices
 let _betSource=null, _betSourceName='', _betSuppressCapture=false;   // most-recent subject volume loaded by ANY path
 // capture a loaded NIfTI volume as the BET/CHOP subject (drag-to-surface, atlas, or underlay). Latest wins.
 function betSetSource(nii,name){ if(_betSuppressCapture||!nii||!nii.data||!nii.dim||!nii.M||!nii.T) return;
@@ -5307,6 +5310,9 @@ async function betRun(){
     if(d.type==='progress') return betProgress(d.pct,d.msg);
     if(d.type==='error'){ betProgress(0); betStatus('Extraction failed: '+d.msg, true); $('betRun').disabled=false; return; }
     if(d.type==='done'){
+      try{ const clean=largestCC(d.mask, dim); let vox=0;          // drop floating BET false-positive islands
+        for(let i=0;i<clean.length;i++){ if(clean[i]) vox++; else { if(d.cortex)d.cortex[i]=0; if(d.wm)d.wm[i]=0; if(d.gm)d.gm[i]=0; } }
+        d.mask=clean; d.voxels=vox; }catch(e){}
       _betResult={ mask:d.mask, cortex:d.cortex, wm:d.wm, gm:d.gm, dim, M, T, voxels:d.voxels, total:d.total, centroids:d.centroids, srcData:v.data };
       const stat=`Brain: ${(100*d.voxels/d.total).toFixed(1)}% of volume — ${d.note}. CSF/GM/WM≈[${(d.centroids||[]).map(c=>c.toFixed(0)).join(', ')}].`;
       $('betResults').style.display='block'; ['chopCortex','chopWM','chopGM','chopTissueUnder'].forEach(id=>{ if($(id)) $(id).disabled=false; });
@@ -5402,6 +5408,18 @@ function betSurfOpts(){ const d=$('betDetail'), s=$('betSmooth'), iso=$('betIso'
   const o={ cap: Math.max(250000, Math.round(2500000*detail/100)), blur: 0.25 + sm*0.45 };   // lower blur floor → crisper folds
   const iv=iso?+iso.value:0; if(iv>0) o.iso=iv;   // >0 → carve along T1 intensity (gyri/sulci); 0 → smooth mask envelope
   return o; }
+// keep only the LARGEST 26-connected component of a binary mask — drops BET false-positive islands
+// (floating tissue not attached to the brain). Returns a new Uint8Array.
+function largestCC(mask, dim){
+  const [nx,ny,nz]=dim, N=nx*ny*nz, nxy=nx*ny, lbl=new Int32Array(N); let cur=0, best=0, bestSz=0;
+  const stack=new Int32Array(N);
+  for(let s=0;s<N;s++){ if(!mask[s]||lbl[s]) continue; cur++; let sz=0, sp=0; stack[sp++]=s; lbl[s]=cur;
+    while(sp){ const p=stack[--sp]; sz++; const z=(p/nxy)|0, r=p-z*nxy, y=(r/nx)|0, x=r-y*nx;
+      for(let dz=-1;dz<=1;dz++){ const zz=z+dz; if(zz<0||zz>=nz) continue; for(let dy=-1;dy<=1;dy++){ const yy=y+dy; if(yy<0||yy>=ny) continue;
+        for(let dx=-1;dx<=1;dx++){ const xx=x+dx; if(xx<0||xx>=nx) continue; const q=xx+yy*nx+zz*nxy; if(mask[q]&&!lbl[q]){ lbl[q]=cur; stack[sp++]=q; } } } } }
+    if(sz>bestSz){ bestSz=sz; best=cur; } }
+  const out=new Uint8Array(N); for(let i=0;i<N;i++) if(lbl[i]===best) out[i]=1; return out;
+}
 function betShowSurface(arr,name){ if(!_betResult) return; const c=betCrop(arr,_betResult.dim,_betResult.M,_betResult.T);
   _betSuppressCapture=true; try{ buildSurfaceFromNifti(makeVol(c.data,c.dim,c.M,c.T),name,betSurfOpts()); } finally{ _betSuppressCapture=false; }
   setViewMode('mesh'); betStatus(name+' surface — switch atlas from the picker to restore regions.'); }
@@ -5558,6 +5576,18 @@ function betInit(){ if(!$('betRun')||$('betRun')._wired) return; $('betRun')._wi
   $('betFile').addEventListener('change', async e=>{ const f=e.target.files[0]; if(!f) return; betStatus('Loading '+f.name+'…');
     try{ await loadUnderlayFromFile(f); betStatus('Loaded '+f.name+'. Click Extract brain.'); }catch(err){ betStatus('Load failed: '+(err.message||err), true); } betRefreshSrc(); e.target.value=''; });
   $('betSurf').addEventListener('click', ()=>betShowSurface(_betResult.cortex,'BET cortex'));
+  if($('betCheck')) $('betCheck').addEventListener('click', ()=>{
+    if(!_betResult){ betStatus('Run 🧠 Extract brain first.', true); return; }
+    _betEdgeShow=!_betEdgeShow;
+    if(_betEdgeShow){ const m=_betResult.mask; let sum=0; const f=new Float32Array(m.length); for(let i=0;i<m.length;i++){ f[i]=m[i]?1:0; if(m[i])sum++; }   // mask as a samplable volume
+      console.log('[CheckBET] mask voxels', sum, 'reported voxels', _betResult.voxels);
+      _betMaskVol=makeVol(f, _betResult.dim.slice(), _betResult.M.slice(), _betResult.T.slice());
+      // keep the currently-loaded native T1 as the slice background (don't swap in the skull-stripped srcData)
+      setViewMode('slice'); betStatus('Check BET: brain BET kept is tinted RED over the native T1. Click again to hide.'); }
+    else { _betMaskVol=null; betStatus('Check BET off.'); }
+    $('betCheck').classList.toggle('tbon', _betEdgeShow);
+    if(typeof sliceRenderAll==='function') sliceRenderAll();
+  });
   $('betUnder').addEventListener('click', betAsUnderlay);
   $('betDownload').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(_betResult.mask,_betResult.dim,_betResult.M,_betResult.T,2), betBaseName()+'_mask.nii.gz'); });
   $('betDownloadBrain').addEventListener('click', ()=>{ if(_betResult) betDownload(makeNiftiGz(betMaskedIntensity(),_betResult.dim,_betResult.M,_betResult.T,16), betBaseName()+'_brain.nii.gz'); });
@@ -5724,6 +5754,22 @@ window.brainAPI = {
   captureView(w=900,h=680,transparent=true){
     if(mosaicMode){ viewTransparent=!!transparent; renderMosaic(); const u=$('mosaicCanvas').toDataURL('image/png'); viewTransparent=false; renderMosaic(); return u; }
     if(sliceMode){ viewTransparent=!!transparent; sliceRenderAll(); const u=captureSlices2x2(w,h); viewTransparent=false; sliceRenderAll(); return u; }
+    return this.renderTo(w,h,transparent);
+  },
+  // render the mesh with the camera dollied to fit the ACTUAL brain bounding box (not the bounding sphere,
+  // which is ~2× the brain's height and leaves huge margins) at the target aspect — publication-tight framing.
+  frameTight(w=560,h=440,transparent=true,fill=0.94){
+    if(sliceMode||mosaicMode) return this.captureView(w,h,transparent);
+    const box=new THREE.Box3(); meshes.forEach(o=>{ if(o.mesh.visible) box.expandByObject(o.mesh); });
+    if(box.isEmpty()) return this.renderTo(w,h,transparent);
+    const c=box.getCenter(new THREE.Vector3()), size=box.getSize(new THREE.Vector3());
+    const dir=new THREE.Vector3().subVectors(camera.position,c); if(dir.lengthSq()<1e-6) dir.set(-1,0,0); dir.normalize();
+    const right=new THREE.Vector3().crossVectors(dir,camera.up).normalize();
+    const up=new THREE.Vector3().crossVectors(right,dir).normalize();
+    const hx=0.5*(Math.abs(size.x*right.x)+Math.abs(size.y*right.y)+Math.abs(size.z*right.z));   // half-extent across screen-x
+    const hy=0.5*(Math.abs(size.x*up.x)+Math.abs(size.y*up.y)+Math.abs(size.z*up.z));            // half-extent across screen-y
+    const tanY=Math.tan(camera.fov*Math.PI/360), d=Math.max(hy/(fill*tanY), hx/(fill*tanY*(w/h)));
+    controls.target.copy(c); camera.position.copy(c).add(dir.multiplyScalar(d)); controls.update();
     return this.renderTo(w,h,transparent);
   },
   // describe the active overlay colorbar (for figure legends), or null
@@ -6547,6 +6593,7 @@ function renderPlane(cv, plane){
   const ovs=sliceOverlays().map(ovSliceParams);   // each blended in its own color/threshold
   const [bgR,bgG,bgB]=hex2rgb(viewBg());          // outside the brain = the background color
   const tmask=spotlightOn()?tractMask():null;     // spotlight: dim everything off the tract
+  const betEdge=(_betEdgeShow&&_betMaskVol)?_betMaskVol:null;  // Check-BET: translucent red brain over the T1
   for(let py=0;py<dh;py++){ const vW=vmax-(py/(dh-1||1))*vr;
     for(let px=0;px<dw;px++){ const hW=hmin+(px/(dw-1||1))*hr; const w=inplaneToMNI(plane,hW,vW);
       const tv=mni.sampleMM(w[0],w[1],w[2])||0; let painted=tv>6, r,gg,bb; if(tv>6){ r=gg=bb=tv; } else { r=bgR;gg=bgG;bb=bgB; }
@@ -6567,6 +6614,8 @@ function renderPlane(cv, plane){
       if(_chopNative && _chopNative.vol && (!$('chopSliceShow')||$('chopSliceShow').checked)){   // voxelwise CHOP parcellation over the T1
         const lab=Math.round(_chopNative.vol.sampleMM(w[0],w[1],w[2])||0), c=_chopLUT&&_chopLUT[lab];
         if(c){ const a=$('chopSliceOp')?+$('chopSliceOp').value:0.6; r=r*(1-a)+c[0]*a; gg=gg*(1-a)+c[1]*a; bb=bb*(1-a)+c[2]*a; painted=true; } }
+      if(betEdge && betEdge.sampleMM(w[0],w[1],w[2])>0.5){     // Check BET: translucent red where BET kept brain, over the native T1
+        const a=0.34; r=r*(1-a)+255*a; gg=gg*(1-a)+45*a; bb=bb*(1-a)+45*a; painted=true; }
       if(tmask && painted && !tmask.sampleMM(w[0],w[1],w[2])){ const L=0.30*r+0.59*gg+0.11*bb; r=gg=bb=L*0.45; }   // off-tract -> dim gray
       const o=(py*dw+px)*4; D[o]=r;D[o+1]=gg;D[o+2]=bb;D[o+3]=(viewTransparent&&!painted)?0:255;
   }}
@@ -7085,8 +7134,11 @@ async function openFigEditor(){
 
 const clock=new THREE.Clock();
 let _sl3dAcc=0, _sl3dDirty=false;   // keep the slice-grid 3D thumbnail in sync with 3D appearance changes
+const _lastCamPos=new THREE.Vector3(1e9,0,0), _lastCamQuat=new THREE.Quaternion(); let _camMoving=false;
 function tick(){
   requestAnimationFrame(tick);
+  _camMoving = !camera.position.equals(_lastCamPos) || Math.abs(camera.quaternion.dot(_lastCamQuat))<0.99999;
+  _lastCamPos.copy(camera.position); _lastCamQuat.copy(camera.quaternion);
   const dt=clock.getDelta();
   const spinOn = $('spin').checked && !controls.autoRotate;
   const pulseOn = connUniforms.uPulse.value>0.5;
@@ -7132,9 +7184,11 @@ function tick(){
   // slice/mosaic canvases + the slice-grid 3D thumbnail — so changes show without a manual click.
   // Throttled so continuous animations (spin/flow/pulse) don't re-render every frame.
   // Safe from feedback loops: sliceRenderAll/renderMosaic never call requestRender.
-  if((sliceMode||mosaicMode) && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0; _sl3dDirty=false;
-    if(sliceMode){ try{ $('sl3d').src=window.brainAPI.renderTo(560,520,true,1.4); }catch(e){} }
-    try{ refreshSliceViews(); }catch(e){} } }
+  if((sliceMode||mosaicMode) && _sl3dDirty){ _sl3dAcc+=dt; if(_sl3dAcc>0.1){ _sl3dAcc=0;
+    if(sliceMode){ try{ $('sl3d').src=window.brainAPI.renderTo(560,520,true,1.4); }catch(e){} }   // 3D thumbnail follows rotation
+    // The anatomical slices don't change when the CAMERA moves — only re-sample them (expensive per-pixel,
+    // incl. CHOP paint) once the camera is STILL, so rotating in mesh+vox stays smooth.
+    if(!_camMoving){ _sl3dDirty=false; try{ refreshSliceViews(); }catch(e){} } } }
 }
 tick();
 </script>
