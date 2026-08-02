@@ -4,7 +4,7 @@
 
 **Interactive, multi-atlas "exploding-brain" viewer for neuroimaging figures.**
 Render any brain parcellation in 3D, color regions by functional/statistical data,
-draw DTI connectivity, and compose publication-ready figure panels — all in the browser.
+draw DTI connectivity, and compose publication-ready figure panels - all in the browser.
 
 ### ▶ **[Live demo](https://rnorlund.github.io/brainWhiz/)**  ·  `index.html?atlas=aal`
 
@@ -12,14 +12,14 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 
 <p align="center">
   <img src="docs/img/exploding_brain.gif" width="460" alt="exploding-brain animation recorded in brainWhiz"><br>
-  <em>Every region is its own 3-D object — explode it, light it up, orbit it. Recorded straight from the viewer (Figure ▸ Record MP4).</em>
+  <em>Every region is its own 3-D object - explode it, light it up, orbit it. Recorded straight from the viewer (Figure ▸ Record MP4).</em>
 </p>
 
 > **Why "brainWhiz"?** There's a well-known finding ([McCabe & Castel, 2008, *Cognition*](https://doi.org/10.1016/j.cognition.2007.07.017))
-> that simply *adding a brain image* to a write-up makes the reasoning seem more credible — it
+> that simply *adding a brain image* to a write-up makes the reasoning seem more credible - it
 > measurably nudged people toward believing (and editors toward publishing). It's the neuroscience
 > equivalent of squirting **Cheez Whiz on a cracker**: same cracker, but suddenly far more
-> appetizing. brainWhiz is the can of Cheez Whiz for your data — point it at your results and get a
+> appetizing. brainWhiz is the can of Cheez Whiz for your data - point it at your results and get a
 > figure that makes the whole thing go down easier. (Use the garnish responsibly. 🧠🧀)
 
 ---
@@ -27,20 +27,20 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 ## Highlights
 
 - **16 bundled atlases**, switchable from a dropdown (JHU, AAL/AAL3, AICHA, Harvard-Oxford, Brodmann, …).
-- **Bring your own data — no install:** drag-and-drop NIfTI (`.nii/.nii.gz`, 3D **and 4D**), **GIFTI** & **FreeSurfer** surfaces, **TRK/TCK** tractography, per-region **CSV**, figure recipes (`.bwz`).
-- **Build an atlas in the browser** from a label `.nii` (+ labels `.txt`) — Surface-Nets meshing, no Python. A T1 → a smooth brain surface, also in-browser.
-- **Every ROI is its own 3D object** — explode, rotate, isolate, recolor, fade.
-- **Overlay stack** — task maps *and* your own MNI maps, each with color/colormap/threshold/|abs|/TFCE, plus **✂ crop-to-background** to hide out-of-brain artifacts; one drives the 3D brain, all blend in slices/mosaic.
-- **4D timeseries** — scrub/▶ play a 4D overlay; the 3D mesh and 2D slices animate while you orbit.
-- **45-look shading library** — Cartoon (MRIcroGL pink+ink), Gooch, X-ray, Iridescent, Thermal, Hatching, Hologram… + a 16-material **matcap** set (gold, chrome, jade, ruby, glass…), all procedural; **✒ ink outline**; thumbnail previews in the menu.
-- **✨ Functional fMRI sparkle** — active regions glimmer/twinkle to signal live activity while you orbit.
-- **Volume rendering** — GLSL raymarch (MIP / Accumulate / MinIP / X-ray-DRR / Isosurface) of a map as glowing voxels **inside a glass brain**.
-- **White-matter tracts** — solid hulls *or* synthesized **fiber strands** (white, or DTI-orientation colored).
-- **Three view modes** — 3D mesh, ortho slices, mosaic/lightbox — with **28 colormaps** and TFCE.
-- **Connectivity, two kinds** — **DTI** structural (measured for JHU/AICHA) *and* **rs-fMRI** functional (measured for 7 atlases, estimated for 7 more); strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows. Switch DTI ↔ rs-fMRI per atlas.
-- **Projector** — cast an image / video / **webcam** onto the cortex; surface-conforming, shaped, **outlined decals**.
-- **🥔 PotatoHead** — paint realistic face features on a T1-derived head (MRI re-identification / privacy demo).
-- **Outputs** — PNG, **MP4/WebM recording**, a **🔗 living interactive `.html`** figure (rotate/zoom/explode), a **🎬 keyframe director → narrated MP4**, and multi-panel figure builder (PNG/PDF/SVG/`.bwz`).
+- **Bring your own data - no install:** drag-and-drop NIfTI (`.nii/.nii.gz`, 3D **and 4D**), **GIFTI** & **FreeSurfer** surfaces, **TRK/TCK** tractography, per-region **CSV**, figure recipes (`.bwz`).
+- **Build an atlas in the browser** from a label `.nii` (+ labels `.txt`) - Surface-Nets meshing, no Python. A T1 → a smooth brain surface, also in-browser.
+- **Every ROI is its own 3D object** - explode, rotate, isolate, recolor, fade.
+- **Overlay stack** - task maps *and* your own MNI maps, each with color/colormap/threshold/|abs|/TFCE, plus **✂ crop-to-background** to hide out-of-brain artifacts; one drives the 3D brain, all blend in slices/mosaic.
+- **4D timeseries** - scrub/▶ play a 4D overlay; the 3D mesh and 2D slices animate while you orbit.
+- **45-look shading library** - Cartoon (MRIcroGL pink+ink), Gooch, X-ray, Iridescent, Thermal, Hatching, Hologram… + a 16-material **matcap** set (gold, chrome, jade, ruby, glass…), all procedural; **✒ ink outline**; thumbnail previews in the menu.
+- **✨ Functional fMRI sparkle** - active regions glimmer/twinkle to signal live activity while you orbit.
+- **Volume rendering** - GLSL raymarch (MIP / Accumulate / MinIP / X-ray-DRR / Isosurface) of a map as glowing voxels **inside a glass brain**.
+- **White-matter tracts** - solid hulls *or* synthesized **fiber strands** (white, or DTI-orientation colored).
+- **Three view modes** - 3D mesh, ortho slices, mosaic/lightbox - with **28 colormaps** and TFCE.
+- **Connectivity, two kinds** - **DTI** structural (measured for JHU/AICHA) *and* **rs-fMRI** functional (measured for 7 atlases, estimated for 7 more); strength-sized cylinders, colormaps, pulsing flow, and arced 3D arrows. Switch DTI ↔ rs-fMRI per atlas.
+- **Projector** - cast an image / video / **webcam** onto the cortex; surface-conforming, shaped, **outlined decals**.
+- **🥔 PotatoHead** - paint realistic face features on a T1-derived head (MRI re-identification / privacy demo).
+- **Outputs** - PNG, **MP4/WebM recording**, a **🔗 living interactive `.html`** figure (rotate/zoom/explode), a **🎬 keyframe director → narrated MP4**, and multi-panel figure builder (PNG/PDF/SVG/`.bwz`).
 
 | Functional overlay (gray brain + activation) | AICHA atlas (384 ROIs) |
 |---|---|
@@ -51,7 +51,7 @@ draw DTI connectivity, and compose publication-ready figure panels — all in th
 ## 🖼 Gallery
 
 A **circular, interactive gallery** of 16 things brainWhiz can do: **[gallery.html](https://rnorlund.github.io/brainWhiz/gallery.html)**.
-A central brainWhiz render is ringed by live demo plates — click any to launch that exact demo
+A central brainWhiz render is ringed by live demo plates - click any to launch that exact demo
 (`index.html?demo=<id>`). Thumbnails, the keyframe-flythrough video, and the `?demo=` recipes live in
 [`exampleFiles/`](exampleFiles/). Full scripting reference: **[API.md](API.md)**.
 
@@ -59,7 +59,7 @@ A central brainWhiz render is ringed by live demo plates — click any to launch
 
 ## 🔗 Embed it (like NiiVue)
 
-Put a live, rotatable brainWhiz view in any web page — a NeuroSynth/NeuroQuery result, a lab
+Put a live, rotatable brainWhiz view in any web page - a NeuroSynth/NeuroQuery result, a lab
 site, an online journal article. Add `?embed=1` to hide all chrome (just the 3D viewport) and
 point the params at your data:
 
@@ -75,7 +75,7 @@ or a built-in `demo=`. For a fully self-contained, offline embed, export a **liv
 (Figure ▸ Export interactive .html) and host that one file.
 
 Want the host page to drive it **live** (swap overlay, move camera, change colormap) with no
-reload? brainWhiz speaks `postMessage` both ways — `{brainWhiz:true, cmd:'loadOverlay', url:…}`.
+reload? brainWhiz speaks `postMessage` both ways - `{brainWhiz:true, cmd:'loadOverlay', url:…}`.
 Full URL + `postMessage` reference: **[API.md §1b](API.md)**.
 
 ---
@@ -89,67 +89,67 @@ Full URL + `postMessage` reference: **[API.md §1b](API.md)**.
 **Local:** open `index.html` in Chrome/Safari (needs internet for the Three.js CDN).
 Switch atlas with the **Atlas** dropdown or the URL: `index.html?atlas=jhu` (`aal`, `bro`, `aicha`, `catani`, `fox`).
 
-> Loading a statistical `.nii/.nii.gz` works fully offline via the file picker — no server needed.
+> Loading a statistical `.nii/.nii.gz` works fully offline via the file picker - no server needed.
 
 ---
 
 ## Atlases (16 bundled)
 
-![16 atlases — JHU, AICHA, Harvard-Oxford, AAL, …](docs/img/multiatlas.png)
+![16 atlases - JHU, AICHA, Harvard-Oxford, AAL, …](docs/img/multiatlas.png)
 
-*Switch parcellation from the dropdown (or `?atlas=…`) — cortical, subcortical, white-matter tract and arterial atlases, all in MNI space.*
+*Switch parcellation from the dropdown (or `?atlas=…`) - cortical, subcortical, white-matter tract and arterial atlases, all in MNI space.*
 
 | id | atlas | ROIs | DTI | rs-fMRI | task maps |
 |----|-------|-----:|:---:|:---:|:---:|
 | `jhu` | JHU (Johns Hopkins) | 189 | ✅ | ✅ | ✅ |
 | `aicha` | AICHA | 384 | ✅ | ✅ | ✅ |
-| `anatomy3` | SPM Anatomy v3 | 186 | – | RS\* | ✅ |
-| `aal3` | AAL3 | 161 | – | RS\* | ✅ |
-| `aalcat` | AAL (categorized) | 150 | – | ✅ | ✅ |
-| `neuromorph` | Neuromorphometrics | 134 | – | RS\* | ✅ |
-| `ho` | Harvard-Oxford | 117 | – | RS\* | ✅ |
-| `aal` | AAL | 116 | – | ✅ | ✅ |
-| `hammers` | Hammers | 95 | – | RS\* | ✅ |
-| `bro` | Brodmann | 82 | – | ✅ | ✅ |
-| `lpba40` | LPBA40 | 56 | – | RS\* | ✅ |
-| `cobra` | COBRA (subcortical/cerebellar) | 52 | – | RS\* | ✅ |
-| `xtract` | XTRACT white-matter tracts | 42 | – | – | ✅ |
-| `arterial` | Arterial territories | 32 | – | – | ✅ |
-| `catani` | Catani tracts | 27 | – | ✅ | ✅ |
-| `fox` | Fox | 10 | – | ✅ | ✅ |
+| `anatomy3` | SPM Anatomy v3 | 186 | - | RS\* | ✅ |
+| `aal3` | AAL3 | 161 | - | RS\* | ✅ |
+| `aalcat` | AAL (categorized) | 150 | - | ✅ | ✅ |
+| `neuromorph` | Neuromorphometrics | 134 | - | RS\* | ✅ |
+| `ho` | Harvard-Oxford | 117 | - | RS\* | ✅ |
+| `aal` | AAL | 116 | - | ✅ | ✅ |
+| `hammers` | Hammers | 95 | - | RS\* | ✅ |
+| `bro` | Brodmann | 82 | - | ✅ | ✅ |
+| `lpba40` | LPBA40 | 56 | - | RS\* | ✅ |
+| `cobra` | COBRA (subcortical/cerebellar) | 52 | - | RS\* | ✅ |
+| `xtract` | XTRACT white-matter tracts | 42 | - | - | ✅ |
+| `arterial` | Arterial territories | 32 | - | - | ✅ |
+| `catani` | Catani tracts | 27 | - | ✅ | ✅ |
+| `fox` | Fox | 10 | - | ✅ | ✅ |
 
 ✅ = measured connectivity bundled · **RS\*** = rs-fMRI *estimated* by overlap-projection from the
-measured atlases ([`interpolate_conn.py`](interpolate_conn.py)) · – = none.
+measured atlases ([`interpolate_conn.py`](interpolate_conn.py)) · - = none.
 
 All atlases are in MNI space. **DTI** (white-matter streamline) connectivity is measured only for
-`jhu` and `aicha` — the only atlases with DTI matrices in the source ABC participant data
+`jhu` and `aicha` - the only atlases with DTI matrices in the source ABC participant data
 (`dti_jhu`/`dti_AICHA`); DTI is **never interpolated** (validated ~r≈0.1, unreliable). **rs-fMRI**
 functional connectivity is measured for **7 atlases** (`jhu`, `aicha`, `aal`, `aalcat`, `bro`,
 `catani`, `fox`) and **estimated (RS\*)** for 7 more by projecting the AICHA/JHU matrices through
-ROI overlap — useful as a prior, not a substitute for measured data. Overlays and task maps work
+ROI overlap - useful as a prior, not a substitute for measured data. Overlays and task maps work
 for **every** atlas (sampled/resampled into each atlas's own grid).
 
 ---
 
 ## Features in detail
 
-**Regions & layout** — explosion (amount / distance / speed) + looping animation; orbit, zoom, pan; sagittal-left default; Top/Side/Front presets; auto-rotate; axis lines & letters with adjustable color and width.
+**Regions & layout** - explosion (amount / distance / speed) + looping animation; orbit, zoom, pan; sagittal-left default; Top/Side/Front presets; auto-rotate; axis lines & letters with adjustable color and width.
 
-**ROI chart** — collapsible groups by lobe; show/hide; per-ROI color pickers; search; **saved region sets** (localStorage) plus built-in **canonical motor** and **canonical LH-language** sets.
+**ROI chart** - collapsible groups by lobe; show/hide; per-ROI color pickers; search; **saved region sets** (localStorage) plus built-in **canonical motor** and **canonical LH-language** sets.
 
-**Coloring** — schemes: by lobe, hemisphere, rainbow, random, single; or **color by value** (overlay) with 28 colormaps. Atlases whose labels don't map to lobes (e.g. Brodmann) auto-default to a distinct per-ROI scheme.
+**Coloring** - schemes: by lobe, hemisphere, rainbow, random, single; or **color by value** (overlay) with 28 colormaps. Atlases whose labels don't map to lobes (e.g. Brodmann) auto-default to a distinct per-ROI scheme.
 
-**Overlays** — build a stack of renameable overlays (each a baked **NeuroQuery** term or your own MNI `.nii/.nii.gz`). On the 3D mesh, the **active** overlay colors each ROI by its **mean value** (style = *gray brain + one color* or *full colormap*; editable range, threshold, invert, |abs|, live colorbar). In **Slices** and **Mosaic**, every visible overlay is **blended** in its own color/colormap/threshold over the MNI152 template (voxel-accurate, anatomy shows through), with optional **TFCE** cluster enhancement per overlay.
+**Overlays** - build a stack of renameable overlays (each a baked **NeuroQuery** term or your own MNI `.nii/.nii.gz`). On the 3D mesh, the **active** overlay colors each ROI by its **mean value** (style = *gray brain + one color* or *full colormap*; editable range, threshold, invert, |abs|, live colorbar). In **Slices** and **Mosaic**, every visible overlay is **blended** in its own color/colormap/threshold over the MNI152 template (voxel-accurate, anatomy shows through), with optional **TFCE** cluster enhancement per overlay.
 
-**Slices & Mosaic** — ortho viewer (axial/sagittal/coronal + 3D, click/drag to navigate, per-plane zoom; voxel heatmap or solid mesh cross-sections) and a publication-style **mosaic / lightbox** of evenly-spaced slices (choose plane, count, columns). Drop either into a figure panel.
+**Slices & Mosaic** - ortho viewer (axial/sagittal/coronal + 3D, click/drag to navigate, per-plane zoom; voxel heatmap or solid mesh cross-sections) and a publication-style **mosaic / lightbox** of evenly-spaced slices (choose plane, count, columns). Drop either into a figure panel.
 
-**Connectivity** — two networks per atlas: **DTI** averaged streamline strength (measured for `jhu`/`aicha`) and **rs-fMRI** functional correlation (measured for 7 atlases, overlap-estimated **RS\*** for 7 more). Pick the network, then threshold and style edges: cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection; arced 3-D arrows for directed views.
+**Connectivity** - two networks per atlas: **DTI** averaged streamline strength (measured for `jhu`/`aicha`) and **rs-fMRI** functional correlation (measured for 7 atlases, overlap-estimated **RS\*** for 7 more). Pick the network, then threshold and style edges: cylinder radius ∝ strength; color by strength (any colormap) or single color; **pulse** mode animates a bead of light traveling each connection; arced 3-D arrows for directed views.
 
-**Render & shading** — a **45-look shading library** in the Shading menu (each with a thumbnail preview):
+**Render & shading** - a **45-look shading library** in the Shading menu (each with a thumbnail preview):
 Standard, Matcap, and **Cartoon** (MRIcroGL-style pink cel-shade + black inked folds), plus ~20
-analytic models — **Gooch, Matte, Glossy, Phong, Metal, Anisotropic, Hemispheric, Subsurface, X-ray,
+analytic models - **Gooch, Matte, Glossy, Phong, Metal, Anisotropic, Hemispheric, Subsurface, X-ray,
 Curvature, Curvature 2-tone, Ambient occlusion, Iridescent, Spectral, Thermal, Velvet, Pearl, Chrome,
-Glass, Blueprint, Contour, Wax, Normals, Hatching, Hologram** — and a **16-material matcap library**
+Glass, Blueprint, Contour, Wax, Normals, Hatching, Hologram** - and a **16-material matcap library**
 (Clay, Skin, Pearl, Jade, Bronze, Chrome, Gold, Glass, Wax, Basalt, Copper, Pewter, Ruby, Emerald,
 Sapphire, Porcelain), all procedurally generated (no external assets). Plus a constant-width **✒ ink
 outline** (inverted-hull, composes with any look), an adjustable **base-brain color** (darken to make a
@@ -158,31 +158,31 @@ procedural **checkerboard / stripes / grid / dots / hatch**; per-tier opacity; a
 **Visual dropdowns**: the colormap menus show a gradient swatch and the Shading menu a brain thumbnail
 beside each option.
 
-**Loading data (drag-and-drop)** — drop files onto the viewport; the drop zone splits into **Background / Overlay / Build-atlas** bands (in Mesh view the top band is **Build mesh**). Accepts NIfTI, GIFTI, FreeSurfer, TRK/TCK, CSV, `.bwz`, `.bwzproj` — see [API.md §3](API.md).
+**Loading data (drag-and-drop)** - drop files onto the viewport; the drop zone splits into **Background / Overlay / Build-atlas** bands (in Mesh view the top band is **Build mesh**). Accepts NIfTI, GIFTI, FreeSurfer, TRK/TCK, CSV, `.bwz`, `.bwzproj` - see [API.md §3](API.md).
 
-**Browser-side atlas & surface building** — drop a **label `.nii`** (+ optional labels `.txt`) and brainWhiz extracts a full parcellation in-browser (Gaussian-smoothed **Surface Nets**, lobe-colored, named) — no `build_bundle.py` needed. A **continuous T1** builds one smooth brain surface (matcap).
+**Browser-side atlas & surface building** - drop a **label `.nii`** (+ optional labels `.txt`) and brainWhiz extracts a full parcellation in-browser (Gaussian-smoothed **Surface Nets**, lobe-colored, named) - no `build_bundle.py` needed. A **continuous T1** builds one smooth brain surface (matcap).
 
-**Surfaces & tractography** — load **GIFTI** (`.gii`) and **FreeSurfer** surfaces directly; load **TRK/TCK** streamlines rendered as fine DTI-orientation-colored lines. White-matter tract atlases (XTRACT/Catani) render as solid hulls **or** synthesized **fiber strands** (group-average look, individual fibers; white or DTI-colored), with a fiber-density control.
+**Surfaces & tractography** - load **GIFTI** (`.gii`) and **FreeSurfer** surfaces directly; load **TRK/TCK** streamlines rendered as fine DTI-orientation-colored lines. White-matter tract atlases (XTRACT/Catani) render as solid hulls **or** synthesized **fiber strands** (group-average look, individual fibers; white or DTI-colored), with a fiber-density control.
 
-**4D timeseries** — drop a 4D overlay and a **▶ frame player** appears; the 3D mesh colors and the 2D slices animate frame-by-frame (stable range) while you orbit/zoom.
+**4D timeseries** - drop a 4D overlay and a **▶ frame player** appears; the 3D mesh colors and the 2D slices animate frame-by-frame (stable range) while you orbit/zoom.
 
-**Volume rendering** — raymarch the active overlay as a 3D `Data3DTexture` with five transfer functions:
-**MIP** (max), **Accumulate** (composite), **MinIP** (min), **X-ray / DRR** (attenuation integral —
+**Volume rendering** - raymarch the active overlay as a 3D `Data3DTexture` with five transfer functions:
+**MIP** (max), **Accumulate** (composite), **MinIP** (min), **X-ray / DRR** (attenuation integral -
 simulated radiograph), and **Isosurface** (gradient-lit solid). Threshold/opacity/colormap/quality; pair
 with the **glass brain** to see glowing voxels inside the shell. 4D volumes animate on playback.
 
-**Functional sparkle (fMRI)** — a **✨ toggle** in the overlay editor makes active overlay regions
-*glimmer/twinkle* (strength / speed / twinkle-sharpness sliders) — a slow glow plus sharp per-region
+**Functional sparkle (fMRI)** - a **✨ toggle** in the overlay editor makes active overlay regions
+*glimmer/twinkle* (strength / speed / twinkle-sharpness sliders) - a slow glow plus sharp per-region
 twinkle that signals "this is live/functional," especially while orbiting or zooming. Works under any
 shading model; the inactive base brain stays calm.
 
-**Projector** — project an image, video, or **webcam** onto the cortex (wrap, project-from-view, or **decal stamp**). Decals conform to the surface, take **shapes** (circle/heart/star/…), and support **editable size/rotation + an outline** (color & thickness).
+**Projector** - project an image, video, or **webcam** onto the cortex (wrap, project-from-view, or **decal stamp**). Decals conform to the surface, take **shapes** (circle/heart/star/…), and support **editable size/rotation + an outline** (color & thickness).
 
-**🥔 PotatoHead (privacy demo)** — paint realistic, surface-conforming face features (eyes, brows, nose, mouth, glasses, ears) onto a T1-derived head, plus 3D hair — a hands-on demonstration of the MRI face-reconstruction re-identification risk (cf. Schwarz et al., *NEJM* 2019).
+**🥔 PotatoHead (privacy demo)** - paint realistic, surface-conforming face features (eyes, brows, nose, mouth, glasses, ears) onto a T1-derived head, plus 3D hair - a hands-on demonstration of the MRI face-reconstruction re-identification risk (cf. Schwarz et al., *NEJM* 2019).
 
-**Shareable outputs** — **PNG**; **MP4/WebM** screen recording of the 3D viewport; a **🔗 living interactive `.html`** figure (self-contained, rotate/zoom/explode — for journal supplementary); and a **🎬 keyframe director** that interpolates camera/explode/overlay/4D/caption keyframes and records a captioned MP4 flythrough.
+**Shareable outputs** - **PNG**; **MP4/WebM** screen recording of the 3D viewport; a **🔗 living interactive `.html`** figure (self-contained, rotate/zoom/explode - for journal supplementary); and a **🎬 keyframe director** that interpolates camera/explode/overlay/4D/caption keyframes and records a captioned MP4 flythrough.
 
-**Access** — the public site is open (the password gate is disabled; re-enable by deleting one `return;` line in the gate IIFE). Embeds (`?embed=1`) are never gated. Local use and the Engine edition are ungated.
+**Access** - the public site is open (the password gate is disabled; re-enable by deleting one `return;` line in the gate IIFE). Embeds (`?embed=1`) are never gated. Local use and the Engine edition are ungated.
 
 ---
 
@@ -202,7 +202,7 @@ node make_figure.mjs figure_example.json
 Each panel sets its own atlas, view, overlay, colors, explosion, etc. (`figure_example.json` included).
 
 ### Shareable figure recipes (`.bwz`)
-A **`.bwz`** file is a portable, human-/Claude-readable JSON that captures a whole figure —
+A **`.bwz`** file is a portable, human-/Claude-readable JSON that captures a whole figure -
 grid, per-panel atlas, overlay (task term *or* `.nii` filename), combine mode, colors,
 camera, visible regions, and all render + figure settings.
 
@@ -213,7 +213,7 @@ camera, visible regions, and all render + figure settings.
   node make_figure.mjs figure.bwz --root /path/to/nii-folder --out figure.png
   ```
 - Because it's plain JSON ([`example.bwz`](example.bwz) included), you can ask **Claude**:
-  *"write a brainWhiz .bwz for a 2×2 of motor, language, motor−language, and a working-memory map"* —
+  *"write a brainWhiz .bwz for a 2×2 of motor, language, motor−language, and a working-memory map"* -
   then render it. Share `.bwz` + the `.nii` files and anyone recreates your exact figure.
 
 The viewer exposes **`window.brainAPI`** for headless control:
@@ -250,7 +250,7 @@ Requires `nibabel numpy scikit-image trimesh fast_simplification scipy` (+ `neur
 ### Your own atlas + per-region values (CSV)
 
 Have a parcellation **brainWhiz doesn't ship** and a CSV of one value per region (factor
-loadings, scores, betas…)? It's a two-step flow — build the bundle once (offline), then drop
+loadings, scores, betas…)? It's a two-step flow - build the bundle once (offline), then drop
 the CSV onto it in the browser (no rebuild needed when the values change):
 
 ```bash
@@ -307,7 +307,7 @@ Ready-to-run recipes in [`examples/`](examples/) + shareable sample stat maps:
 |------|----------------|
 | [`example.bwz`](example.bwz) | 1×2: motor + language (3D meshes) |
 | [`examples/fig_tasks_2x2.bwz`](examples/fig_tasks_2x2.bwz) | 2×2 of task maps (no files needed) |
-| [`examples/fig_files.bwz`](examples/fig_files.bwz) | multi-overlay slice blend — motor (red) + language (blue); run with `--root examples` |
+| [`examples/fig_files.bwz`](examples/fig_files.bwz) | multi-overlay slice blend - motor (red) + language (blue); run with `--root examples` |
 | `examples/neuroquery_{motor,language,working_memory}.nii.gz` | sample MNI stat maps to load as overlays |
 
 ```bash
@@ -334,41 +334,41 @@ brainWhiz works **fully offline** with no CDN: the libraries are vendored in `ve
   fast_simplification scipy` (+ `neuroquery nilearn` for task maps). Overlays/atlases must be **MNI152**.
 
 ## Editing the project (Claude Code friendly)
-Clone the repo and open it in **Claude Code** — [`CLAUDE.md`](CLAUDE.md) orients the assistant on
+Clone the repo and open it in **Claude Code** - [`CLAUDE.md`](CLAUDE.md) orients the assistant on
 the architecture and common edits, and [`BWZ_FORMAT.md`](BWZ_FORMAT.md) documents every figure option.
 You can literally say *"add an atlas / new colormap / a 3×2 figure of these contrasts"* and it has the
 context to do it. `.bwz` files are plain JSON, so they're easy to hand-edit or have Claude generate.
 
 ## Data sources & citation
 - **Atlases** (JHU, AAL, AICHA, Brodmann, Harvard-Oxford, Neuromorphometrics, Hammers, LPBA40, COBRA,
-  Anatomy v3, AAL3, Catani, XTRACT, Fox, arterial) — © their respective authors; cite the original atlas.
-- **Task maps** — [NeuroQuery](https://neuroquery.org) (open).
-- **DTI/rsfMRI connectivity** — averaged from ABC-study participant data.
+  Anatomy v3, AAL3, Catani, XTRACT, Fox, arterial) - © their respective authors; cite the original atlas.
+- **Task maps** - [NeuroQuery](https://neuroquery.org) (open).
+- **DTI/rsfMRI connectivity** - averaged from ABC-study participant data.
 - Please cite the original atlas/NeuroQuery sources in any publication. To cite the tool, see
   [`CITATION.cff`](CITATION.cff).
 
 **DOI / archiving (Zenodo).** Releases are archived on Zenodo with a permanent DOI.
-Cite the **concept DOI** [`10.5281/zenodo.21246441`](https://doi.org/10.5281/zenodo.21246441) — it always
+Cite the **concept DOI** [`10.5281/zenodo.21246441`](https://doi.org/10.5281/zenodo.21246441) - it always
 resolves to the latest version. APA:
 
 > Newman-Norlund, R. D. (2026). *brainWhiz: Interactive multi-atlas visualization of brain parcellations and region-mapped data* (Version 1.2.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21246441
 
 Please also cite the original atlas / NeuroQuery / connectivity sources used in your figure.
 
-## Editions — Research vs. Engine
+## Editions - Research vs. Engine
 
 This repo contains **two editions**:
 
-- **Research edition** (the repo root) — ships all 16 atlases + NeuroQuery task maps + ABC
+- **Research edition** (the repo root) - ships all 16 atlases + NeuroQuery task maps + ABC
   connectivity + the MNI152 template. CC BY-NC 4.0 (noncommercial). This is what you use to test
   and make figures.
-- **Engine edition** (`engine/`) — the *same app with no third-party data*, for commercial use.
+- **Engine edition** (`engine/`) - the *same app with no third-party data*, for commercial use.
   It ships only a **procedurally-generated synthetic atlas + template** (`make_synth_atlas.py`,
-  100% original / license-free, clearly labelled "Synthetic" — not real anatomy) so it works out
+  100% original / license-free, clearly labelled "Synthetic" - not real anatomy) so it works out
   of the box; users bring their own real atlas (`build_bundle.py`), overlays (`.nii`/`.csv`), and
   slice underlay. See [`engine/README.md`](engine/README.md) and [`engine/THIRD_PARTY.md`](engine/THIRD_PARTY.md).
 
-`engine/` is **generated** — never hand-edit it. After changing the main app, resync with:
+`engine/` is **generated** - never hand-edit it. After changing the main app, resync with:
 
 ```bash
 node build_engine.mjs              # regenerate engine/ (app minus data, + synthetic atlas)
@@ -383,25 +383,25 @@ are the bundled research **datasets**, which the engine edition simply doesn't s
 ## License
 
 © 2026 Roger Newman-Norlund. **All rights reserved except as granted.** **Noncommercial use
-only** — licensed under [Creative Commons Attribution-NonCommercial 4.0 International
+only** - licensed under [Creative Commons Attribution-NonCommercial 4.0 International
 (CC BY-NC 4.0)](LICENSE), reinforced by the explicit terms in [`NOTICE.md`](NOTICE.md).
 
 Free for research, education, personal, and other noncommercial purposes (incl. academic papers
 and figures), **with attribution** and notices kept intact. **Not permitted without a separate
-written commercial license:** any commercial use — in/for a product, a paid or hosted/SaaS or
-ad-supported service, or a consulting deliverable — plus sublicensing, resale, relicensing, or
+written commercial license:** any commercial use - in/for a product, a paid or hosted/SaaS or
+ad-supported service, or a consulting deliverable - plus sublicensing, resale, relicensing, or
 stripping notices. For commercial licensing, contact **Roger Newman-Norlund
 (rnorlund@mailbox.sc.edu)**.
 
 The bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are **third-party
-data under their own terms**, included for noncommercial research use only — comply with and
+data under their own terms**, included for noncommercial research use only - comply with and
 cite the original sources. Provided **"as is", no warranty**; not a medical device; not for
 clinical use.
 
 ## Notes & credits
 
 - Task maps use **NeuroQuery** (the modern successor to Neurosynth); edit `NEURO_TERMS` in `build_bundle.py` to change them.
-- **DTI** connectivity is averaged from ABC-participant `.mat` files (`dti_jhu` / `dti_AICHA` fields). **rs-fMRI** functional connectivity is bundled for 7 atlases; the **RS\*** atlases are *estimated* by projecting the measured AICHA/JHU matrices through ROI overlap ([`interpolate_conn.py`](interpolate_conn.py)) — a prior, not measured data. DTI is never interpolated.
+- **DTI** connectivity is averaged from ABC-participant `.mat` files (`dti_jhu` / `dti_AICHA` fields). **rs-fMRI** functional connectivity is bundled for 7 atlases; the **RS\*** atlases are *estimated* by projecting the measured AICHA/JHU matrices through ROI overlap ([`interpolate_conn.py`](interpolate_conn.py)) - a prior, not measured data. DTI is never interpolated.
 - Lobe grouping is a name-based heuristic for coloring, not a formal parcellation.
 
 🤖 Built with [Claude Code](https://claude.com/claude-code)

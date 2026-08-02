@@ -1,6 +1,7 @@
 {
   "bwz": 1, "app": "brainWhiz", "grid": "2x2",
-  "figure": { "brain": 440, "titleSize": 20, "titleColor": "#111", "colorbarSize": 0, "gap": 14, "bg": "#ffffff" },
+  "figure": { "brain": 520, "titleSize": 22, "titleColor": "#111", "colorbarSize": 0, "gap": 8, "bg": "#ffffff",
+              "vals": { "axisLines": false, "axisLetters": false, "smooth": "10", "vivid": "1.45", "rim": "0.35" } },
   "panels": [
     { "label": "Motor",          "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"Motor","kind":"task","term":"motor","visible":true,"s":{"style":"solid","color":"#d62728","cthresh":"0.12"} } ] },
     { "label": "Language",       "atlas": "jhu", "mode": "mesh", "overlays": [ { "name":"Language","kind":"task","term":"language","visible":true,"s":{"style":"solid","color":"#1f77b4","cthresh":"0.12"} } ] },

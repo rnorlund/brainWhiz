@@ -110,11 +110,12 @@ async function cdp() {
 async function renderPanel(ctx, panel) {
   if (!panel) return null;
   const atlas = panel.atlas || "jhu";
-  await ctx.navigate(`file://${HERE}/index.html?atlas=${encodeURIComponent(atlas)}`);
+  await ctx.navigate(`${BASE}/index.html?atlas=${encodeURIComponent(atlas)}`);
   for (let i = 0; i < 60; i++) { const t = await ctx.ev(`typeof window.brainAPI`); if (t === "object") break; await sleep(400); }
   await ctx.ev(`window.brainAPI.ready`);
   await ctx.ev(`window.brainAPI.hideUI()`);
   const mode = panel.mode || "mesh";
+  if (spec.figure && spec.figure.vals) panel.vals = { ...spec.figure.vals, ...(panel.vals || {}) };   // figure-wide appearance defaults
   if (panel.overlays || panel.vals) {
     // .bwz panel: restore the full viewer config (overlay stack, view mode, slice/mosaic)
     await ctx.ev(`window.brainAPI.applyCfg(${JSON.stringify(panel)})`);
@@ -144,7 +145,9 @@ async function renderPanel(ctx, panel) {
     await ctx.ev(`window.brainAPI.applyConfig(${JSON.stringify(cfg)})`);
     await sleep(250);
   }
-  const dataURL = await ctx.ev(`window.brainAPI.captureView(${cellW},${cellH},true)`);
+  const dataURL = await ctx.ev(mode === "mesh"
+    ? `window.brainAPI.frameTight(${cellW},${cellH},true,0.88)`      // fit the actual brain box -> big brain, small clean margin
+    : `window.brainAPI.captureView(${cellW},${cellH},true)`);
   const cbar = (mode === "mesh") ? await ctx.ev(`window.brainAPI.colorbar()`) : null;  // slice/mosaic carry their own
   return { dataURL, label: panel.label || "", cbar };
 }
@@ -208,9 +211,19 @@ const COMPOSITOR = `async (F)=>{
   return cvs.toDataURL('image/png');
 }`;
 
+let BASE = null;
+function serveRepo() {   // brainAPI's ES module + import-map CDN don't initialize under file:// in headless Chrome — serve over http
+  const MIME = {".html":"text/html",".js":"text/javascript",".mjs":"text/javascript",".css":"text/css",".json":"application/json",".gz":"application/gzip",".png":"image/png",".glb":"model/gltf-binary",".nii":"application/octet-stream",".onnx":"application/octet-stream"};
+  const srv = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split("?")[0]); if (p === "/") p = "/index.html";
+    fs.readFile(path.join(HERE, p), (e, d) => { if (e) { r.writeHead(404); r.end(); return; }
+      r.writeHead(200, { "Content-Type": MIME[path.extname(p)] || "application/octet-stream" }); r.end(d); }); });
+  return new Promise(res => { srv.listen(0, "127.0.0.1", () => { BASE = `http://127.0.0.1:${srv.address().port}`; res(srv); }); });
+}
+
 (async () => {
   if (!CHROME) { console.error("Chrome/Chromium not found."); process.exit(1); }
   console.log(`rendering ${spec.panels.length} panel(s) …`);
+  const staticSrv = await serveRepo();
   const ctx = await cdp();
   const rendered = [];
   for (let i = 0; i < spec.panels.length; i++) {
@@ -226,6 +239,6 @@ const COMPOSITOR = `async (F)=>{
   const finalURL = await ctx.ev(`(${COMPOSITOR})(${JSON.stringify(payload)})`);
   fs.writeFileSync(out, Buffer.from(finalURL.split(",")[1], "base64"));
   console.log("wrote " + out);
-  ctx.sock.close(); ctx.chrome.kill();
+  ctx.sock.close(); ctx.chrome.kill(); staticSrv.close();
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
