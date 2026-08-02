@@ -315,9 +315,9 @@ node make_figure.mjs examples/fig_tasks_2x2.bwz --out tasks.png
 node make_figure.mjs examples/fig_files.bwz --root examples --out files.png
 ```
 
-| `fig_tasks_2x2.bwz` | `fig_files.bwz` (file overlays) |
-|---|---|
-| ![tasks](docs/img/sample_tasks.png) | ![files](docs/img/sample_files.png) |
+Output of `fig_tasks_2x2.bwz` (2x2 task-map montage):
+
+![2x2 task-map montage rendered by fig_tasks_2x2.bwz](docs/img/sample_tasks.png)
 
 ## Offline / firewalled use
 brainWhiz works **fully offline** with no CDN: the libraries are vendored in `vendor/`.
