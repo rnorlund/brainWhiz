@@ -24,7 +24,7 @@ from scipy import ndimage
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLES = os.path.join(HERE, "bundles")
 
-STEP, SMOOTH_SIG, TARGET_FACE, LAPLACIAN = 1, 0.6, 1500, 6
+STEP, SMOOTH_SIG, TARGET_FACE, LAPLACIAN = 1, 1.2, 1200, 14
 N_SAMPLES = 180
 NEURO_TERMS = ["motor","movement","finger tapping","language","speech production",
     "semantic","reading","working memory","attention","visual","auditory","face",

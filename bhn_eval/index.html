@@ -1,0 +1,144 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BHN Evaluator — load scans, detect tumor / stroke / WMH</title>
+<style>
+:root{--bg:#f5f2f0;--panel:#fff;--ink:#1c1517;--sub:#6f6264;--gar:#73000a;--line:#e6dfdf;--red:#b3121b;--warn:#9a1b2e;--ok:#2f7d4f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.top{background:var(--panel);border-bottom:1px solid var(--line);border-top:5px solid var(--gar);padding:12px 22px}
+.brand{font-weight:700;letter-spacing:2px;color:var(--gar);font-size:12px}h1{font-size:19px;margin:2px 0 0}
+main{max-width:1200px;margin:0 auto;padding:20px clamp(14px,3vw,36px)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.mod{border:1px solid var(--line);border-radius:9px;padding:10px}.mod b{font-size:13px}.mod .use{font-size:11px;color:var(--sub)}
+input[type=file]{font-size:12px;width:100%;margin-top:5px}
+button{background:var(--gar);color:#fff;border:0;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer;font-size:14px}
+button.mini{padding:5px 11px;font-size:13px}button:disabled{opacity:.5;cursor:default}
+label.chk{display:flex;gap:6px;align-items:center;font-size:13px}
+.muted{color:var(--sub);font-size:13px}.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+#status{margin-top:8px;font-size:13px;color:var(--gar);font-weight:600;min-height:18px}
+.bar{display:none;height:8px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;width:40%;border-radius:5px;background:linear-gradient(90deg,var(--gar),#c0392b);animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
+.flag{display:flex;gap:9px;align-items:center;margin:8px 0;font-size:14px}.dot{width:11px;height:11px;border-radius:50%;flex:none}
+table{border-collapse:collapse;font-size:13px;margin-top:8px}td,th{padding:5px 12px;border-bottom:1px solid var(--line);text-align:left}
+.nvwrap{position:relative;height:520px;overflow:hidden;border-radius:10px;background:#000;margin-top:10px}.nvwrap canvas{width:100%;height:100%;display:block}
+.ovtog{display:inline-flex;gap:7px;align-items:center;font-size:12px;margin-right:16px}
+.vctrl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.disc{color:var(--sub);font-size:12px;border-top:1px solid var(--line);padding-top:12px;margin-top:8px}
+</style></head><body>
+<div class="top"><div class="brand">UNIVERSITY OF SOUTH CAROLINA &middot; BRAIN HEALTH NETWORK</div><h1>Scan Evaluator — in-browser tumor / stroke / WMH detection</h1></div>
+<main>
+  <div class="card">
+    <div class="muted">1. Upload the scans you have (co-registered modalities improve accuracy). Each model runs on the modality it needs.</div>
+    <div class="mods" style="margin-top:10px">
+      <div class="mod"><b>T1</b> <span class="use">&rarr; chronic infarct</span><input type="file" id="f_t1" accept=".nii,.nii.gz,.gz"></div>
+      <div class="mod"><b>FLAIR</b> <span class="use">&rarr; WMH + tumor</span><input type="file" id="f_flair" accept=".nii,.nii.gz,.gz"></div>
+      <div class="mod"><b>T1c</b> <span class="use">&rarr; tumor (with FLAIR)</span><input type="file" id="f_t1c" accept=".nii,.nii.gz,.gz"></div>
+      <div class="mod"><b>T2</b> <span class="use">&rarr; tumor</span><input type="file" id="f_t2" accept=".nii,.nii.gz,.gz"></div>
+    </div>
+    <div id="previewwrap" style="display:none;margin-top:12px">
+      <div class="muted">Preview of the selected scan (axial / coronal / sagittal / 3D). <b>Look for skull &amp; neck</b> — if the brain is already extracted (no skull), tick the box below. <b>Right-drag = window/level</b> (like MRIcroGL) · left-drag box = contrast · scroll = slice · or use the min/max sliders below.</div>
+      <div class="nvwrap" style="height:340px"><canvas id="nvPrev"></canvas></div>
+      <div class="vctrl"><button class="mini" id="pzin">Zoom +</button><button class="mini" id="pzout">Zoom −</button><button class="mini" id="pzreset">Reset</button>
+        <span class="muted">Contrast: min</span><input type="range" id="pwlo" style="width:110px"><span class="muted">max</span><input type="range" id="pwhi" style="width:110px"><button class="mini" id="pwauto">Auto</button></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="chk"><input type="checkbox" id="stripped"> Input already skull-stripped (skip brain extraction, faster)</label>
+      <button id="run" disabled>Evaluate</button>
+    </div>
+    <div id="status"></div>
+    <div class="bar" id="bar"><i></i></div>
+  </div>
+  <div class="card" id="results" style="display:none"><h3 style="margin:0 0 6px">Findings</h3><div id="flags"></div><table id="voltbl"><thead><tr><th>Measure</th><th>Value</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><div class="muted">Viewer — underlay + detected masks (axial / coronal / sagittal / 3D).</div>
+    <div class="nvwrap"><canvas id="nv"></canvas></div>
+    <div class="vctrl" id="ovctl"></div>
+    <div class="vctrl"><button class="mini" id="zin">Zoom +</button><button class="mini" id="zout">Zoom −</button><button class="mini" id="zreset">Reset</button>
+      <span class="muted">Contrast: min</span><input type="range" id="vwlo" style="width:110px"><span class="muted">max</span><input type="range" id="vwhi" style="width:110px"><button class="mini" id="vwauto">Auto</button></div>
+    <div class="vctrl"><span class="muted">Right-drag = window/level (like MRIcroGL) · left-drag box = contrast · scroll = slice · sliders above set min/max directly · opacity per finding.</span></div>
+  </div>
+  <div class="disc">In-browser (onnxruntime-web, WASM) on a background worker so the page stays responsive. Preprocess conform&rarr;256&sup3; RAS 1mm&rarr;z-score (matches training). Tumor runs on <b>FLAIR</b>/T2 (val Dice 0.705) &mdash; <b>not</b> T1 alone. Chronic ~0.68, WMH ~0.61 agreement. Full-head input is auto skull-stripped on CPU (mindgrab, +~60–90s); tick &lsquo;skull-stripped&rsquo; only if the input is already extracted (faster). Research tool &mdash; not a diagnostic device.</div>
+</main>
+<script src="niivue.umd.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const setStage=(s,d)=>{ $("status").textContent = s + (d?" "+d:""); };
+const showBar=on=>{ $("bar").style.display=on?"block":"none"; };
+const files={t1:null,flair:null,t1c:null,t2:null};
+async function rawBytes(f){ let buf=await f.arrayBuffer(); if(f.name.endsWith(".gz")||new Uint8Array(buf)[0]===0x1f){ const ds=new DecompressionStream("gzip"); buf=await new Response(new Blob([buf]).stream().pipeThrough(ds)).arrayBuffer(); } return buf; }
+function niiB64(buf){ const u=new Uint8Array(buf); let s=""; for(let i=0;i<u.length;i+=8192) s+=String.fromCharCode.apply(null,u.subarray(i,i+8192)); return btoa(s); }
+function setDrag(nv,cid){ try{ const M=window.niivue&&niivue.DRAG_MODE;
+  if(M){ nv.opts.dragMode = (M.windowing!=null?M.windowing:M.contrast); if("dragModePrimary" in nv.opts) nv.opts.dragModePrimary = M.contrast; }
+  else { nv.opts.dragMode = 9; }
+  const cv=document.getElementById(cid); if(cv) cv.oncontextmenu = e=>{ e.preventDefault(); return false; };
+}catch(e){} }
+// explicit, reliable window/level control (works regardless of drag): set cal_min/cal_max on the base volume
+function winSet(nv,mn,mx){ if(!nv||!nv.volumes||!nv.volumes[0])return; const v=nv.volumes[0]; v.cal_min=+mn; v.cal_max=+mx; nv.updateGLVolume(); }
+function winInit(nv,pfx){ if(!nv||!nv.volumes||!nv.volumes[0])return; const v=nv.volumes[0];
+  const lo=$(pfx+"lo"),hi=$(pfx+"hi"); if(!lo||!hi)return;
+  const gmn=(v.global_min!=null?v.global_min:v.cal_min), gmx=(v.global_max!=null?v.global_max:v.cal_max), step=(gmx-gmn)/200||1;
+  [lo,hi].forEach(s=>{s.min=gmn;s.max=gmx;s.step=step;}); lo.value=v.cal_min; hi.value=v.cal_max;
+  const upd=()=>{ let a=+lo.value,b=+hi.value; if(a>b){const t=a;a=b;b=t;} winSet(nv,a,b); }; lo.oninput=upd; hi.oninput=upd;
+  const auto=$(pfx+"auto"); if(auto) auto.onclick=()=>{ v.cal_min=gmn+0.02*(gmx-gmn); v.cal_max=gmx-0.02*(gmx-gmn); lo.value=v.cal_min; hi.value=v.cal_max; nv.updateGLVolume(); }; }
+function zoom(nv,f){ if(!nv)return; try{ if(nv.scene&&nv.scene.pan2Dxyzmm){ nv.scene.pan2Dxyzmm[3]=Math.max(0.4,(nv.scene.pan2Dxyzmm[3]||1)*f); nv.drawScene(); } }catch(e){} }
+function zreset(nv){ if(!nv)return; try{ if(nv.scene&&nv.scene.pan2Dxyzmm){ nv.scene.pan2Dxyzmm=[0,0,0,1]; nv.drawScene(); } }catch(e){} }
+
+// ---------- preview (4-view) ----------
+let nvPrev=null;
+async function previewFile(f){ $("previewwrap").style.display="block"; setStage("Loading preview…","");
+  if(!nvPrev){ nvPrev=new niivue.Niivue({backColor:[0,0,0,1],show3Dcrosshair:true,multiplanarShowRender:"always",multiplanarForceRender:true}); await nvPrev.attachTo("nvPrev"); try{nvPrev.opts.multiplanarLayout=3;}catch(e){} setDrag(nvPrev,"nvPrev"); }
+  const b64=niiB64(await rawBytes(f)); nvPrev.volumes=[];
+  await nvPrev.addVolume(await niivue.NVImage.loadFromBase64({base64:b64,name:"scan.nii",colormap:"gray"}));
+  window.__prev=nvPrev; nvPrev.setSliceType(nvPrev.sliceTypeMultiplanar); nvPrev.updateGLVolume(); winInit(nvPrev,"pw"); setStage("Ready — review preview, then Evaluate","");
+}
+$("pzin").onclick=()=>zoom(nvPrev,1.25); $("pzout").onclick=()=>zoom(nvPrev,0.8); $("pzreset").onclick=()=>zreset(nvPrev);
+["t1","flair","t1c","t2"].forEach(k=>{ $("f_"+k).onchange=async e=>{ files[k]=e.target.files[0]||null; const any=Object.values(files).some(Boolean); $("run").disabled=!any; if(files[k]) try{await previewFile(files[k]);}catch(err){console.warn(err); setStage("preview error: "+err.message,"");} }; });
+
+// ---------- inference via worker (page stays responsive) ----------
+const worker=new Worker("evalworker.js"); let _noTumor=false;
+worker.onmessage=e=>{ const d=e.data;
+  if(d.type==="progress") setStage(d.stage, d.detail||"");
+  else if(d.type==="error"){ setStage("Error: "+d.msg,""); showBar(false); $("run").disabled=false; }
+  else if(d.type==="done") onResult(d);
+};
+$("run").onclick=async()=>{ if(!Object.values(files).some(Boolean))return;
+  $("run").disabled=true; $("results").style.display="none"; showBar(true); setStage("Reading files…","");
+  const mods={}; for(const k of ["t1","flair","t1c","t2"]) if(files[k]) mods[k]=await rawBytes(files[k]);
+  const tasks=[];
+  if(mods.t1) tasks.push({name:"chronic",file:"arc_chronic_t1_meshnet16.onnx",modKey:"t1",label:"Chronic infarct",cmap:"red"});
+  if(mods.flair) tasks.push({name:"wmh",file:"wmh_meshnet16.onnx",modKey:"flair",label:"WMH",cmap:"warm"});
+  const tKey=mods.flair?"flair":(mods.t2?"t2":null);
+  if(tKey) tasks.push({name:"tumor",file:"tumor_flair_meshnet16.onnx",modKey:tKey,label:"Tumor ("+tKey.toUpperCase()+")",cmap:"blue"});
+  _noTumor = !tKey && !!mods.t1;
+  worker.postMessage({mods,tasks,stripped:$("stripped").checked}, Object.values(mods));
+};
+function sevOf(label,vox){ const C={red:"var(--red)",warn:"var(--warn)",ok:"var(--ok)"};
+  if(label.startsWith("Chronic")) return vox>1000?[C.red,"infarct present"]:vox>50?[C.warn,"small infarct"]:[C.ok,"none detected"];
+  if(label.startsWith("WMH")) return vox>15000?[C.red,"extensive"]:vox>5000?[C.warn,"moderate"]:vox>500?[C.warn,"mild"]:[C.ok,"minimal"];
+  return vox>2000?[C.red,"present (large)"]:vox>200?[C.warn,"present"]:vox>10?[C.warn,"small focus"]:[C.ok,"none detected"]; }
+function onResult(d){ showBar(false); const flags=[],rows=[],overlays=[];
+  for(const o of d.overlays){ const cc=(o.vox/1000).toFixed(1),sv=sevOf(o.label,o.vox);
+    flags.push([sv[0], o.label+": "+sv[1]+" ("+cc+" cc, "+o.secs+"s)"]); rows.push([o.label+" volume", cc+" cc"]);
+    overlays.push({b64:niiB64(o.buf),cmap:o.cmap,label:o.label}); }
+  if(_noTumor) flags.push(["var(--sub)","Tumor: not assessed — needs FLAIR or T2 (non-contrast T1 misses metastases)"]);
+  $("results").style.display="block";
+  $("flags").innerHTML=flags.map(f=>`<div class="flag"><span class="dot" style="background:${f[0]}"></span>${f[1]}</div>`).join("")||`<div class="flag"><span class="dot" style="background:var(--ok)"></span>No abnormality detected</div>`;
+  $("voltbl").querySelector("tbody").innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("");
+  showViewer(niiB64(d.underlay),overlays); setStage("Done.",""); $("run").disabled=false;
+}
+// ---------- results viewer (4-view, overlay opacity, zoom) ----------
+let nv=null;
+async function showViewer(underlayB64,overlays){
+  if(!nv){ nv=new niivue.Niivue({backColor:[0,0,0,1],show3Dcrosshair:true,multiplanarShowRender:"always",multiplanarForceRender:true}); await nv.attachTo("nv"); try{nv.opts.multiplanarLayout=3;}catch(e){} setDrag(nv,"nv"); }
+  nv.volumes=[]; await nv.addVolume(await niivue.NVImage.loadFromBase64({base64:underlayB64,name:"u.nii",colormap:"gray"}));
+  for(const o of overlays) await nv.addVolume(await niivue.NVImage.loadFromBase64({base64:o.b64,name:o.label+".nii",colormap:o.cmap,opacity:0.6,cal_min:0.5,cal_max:1}));
+  window.__nv=nv; nv.setSliceType(nv.sliceTypeMultiplanar); nv.updateGLVolume();
+  const ctl=$("ovctl"); ctl.innerHTML="";
+  overlays.forEach((o,idx)=>{ const w=document.createElement("label"); w.className="ovtog";
+    const sp=document.createElement("span"); sp.textContent=o.label; sp.style.color="var(--sub)";
+    const r=document.createElement("input"); r.type="range"; r.min=0; r.max=100; r.value=60; r.style.width="120px";
+    r.oninput=()=>{ const v=r.value/100; try{ nv.setOpacity(idx+1,v); }catch(e){ try{ nv.volumes[idx+1].opacity=v; nv.updateGLVolume(); }catch(_){}} };
+    w.append(sp,r); ctl.append(w); });
+  winInit(nv,"vw");
+}
+$("zin").onclick=()=>zoom(nv,1.25); $("zout").onclick=()=>zoom(nv,0.8); $("zreset").onclick=()=>zreset(nv);
+</script></body></html>

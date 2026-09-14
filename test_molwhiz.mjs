@@ -423,6 +423,26 @@ console.log('\n== served mode (http + ./vendor) boots ==');
   if (sErr.length) sErr.slice(0,4).forEach(e => console.log('   !', e.slice(0,120)));
   await sp.close(); await new Promise(r => srv.close(r)); }
 
+// BOOT RESILIENCE — a blocked/down CDN used to leave a totally blank viewer with no error anywhere (the whole app is one
+// ES module, so a failed `import 'three'` kills it silently). file:// must fail over to the second CDN, and when every CDN
+// is unreachable it must show the #bootErr panel instead of nothing.
+console.log('\n== boot resilience (blocked CDN) ==');
+{ const bootTry = async (blockRe) => {
+    const ctx = await browser.newContext({ viewport: { width: 900, height: 700 } });
+    await ctx.route('**/*', r => (/^https?:/.test(r.request().url()) && blockRe.test(r.request().url())) ? r.abort() : r.continue());
+    const bp = await ctx.newPage();
+    await bp.goto(URL, { waitUntil: 'load' });
+    const booted = await bp.waitForFunction(() => typeof window.__mol === 'object', { timeout: 30000 }).then(()=>true).catch(()=>false);
+    const out = { booted, cdn: await bp.evaluate(() => window.__deps && window.__deps.cdn),
+                  panel: await bp.evaluate(() => !!document.getElementById('bootErr')) };
+    await ctx.close(); return out; };
+  if (netOK) { const fo = await bootTry(/jsdelivr/);
+    ok('file://: fails over to the backup CDN', fo.booted && fo.cdn === 'unpkg');
+    ok('file://: no error panel once it boots', !fo.panel);
+  } else { console.log('  – skipped failover check (no network)'); }
+  const dead = await bootTry(/jsdelivr|unpkg/);
+  ok('all CDNs blocked: explains itself instead of blank view', dead.panel && !dead.booted); }
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed  (network ${netOK?'ok':'skipped'})`);
 await browser.close();
 process.exit(fail ? 1 : 0);

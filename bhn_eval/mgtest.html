@@ -1,0 +1,8 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><script src="tf.min.js"></script><script src="tf-backend-wasm.min.js"></script></head><body><pre id="o">loading…</pre>
+<script>(async()=>{const o=document.getElementById('o'),log=t=>o.textContent+="\n"+t;
+try{ tf.wasm.setWasmPaths('./'); await tf.setBackend('wasm'); await tf.ready(); log('backend '+tf.getBackend());
+ const m=await tf.loadLayersModel('mindgrab/model.json'); log('loaded');
+ const x=tf.tidy(()=>{const a=tf.buffer([1,256,256,256,1]);for(let k=60;k<200;k+=2)for(let j=60;j<200;j+=2)for(let i=60;i<200;i+=2){const dx=i-128,dy=j-128,dz=k-128;if(dx*dx+dy*dy+dz*dz<70*70)a.set(0.8,0,i,j,k,0);}return a.toTensor();});
+ const t=Date.now();const y=m.predict(x);const arg=y.argMax(-1);const d=await arg.data();let mv=0;for(let i=0;i<d.length;i++)if(d[i]>0)mv++;
+ log('mask '+(mv/1000).toFixed(0)+'cc in '+((Date.now()-t)/1000).toFixed(0)+'s'); window.__done=true;
+}catch(e){log('ERR '+e.message);window.__done='err';}})();</script></body></html>

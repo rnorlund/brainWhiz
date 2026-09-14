@@ -30,3 +30,10 @@ _fig3_editable.bwzproj
 
 # VS Code extension build artifact
 *.vsix
+
+# Subject-level data. Never publish to a public repo.
+# T1_.nii.gz is a 192x256x256 1mm acquisition (scanner TE/timestamp in the NIfTI
+# descrip field), not a template, and full-res structurals are re-identifiable by
+# facial reconstruction. The case_study CSVs are per-subject regional perfusion.
+T1_.nii.gz
+case_study_subject*.csv

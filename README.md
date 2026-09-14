@@ -391,7 +391,7 @@ and figures), **with attribution** and notices kept intact. **Not permitted with
 written commercial license:** any commercial use - in/for a product, a paid or hosted/SaaS or
 ad-supported service, or a consulting deliverable - plus sublicensing, resale, relicensing, or
 stripping notices. For commercial licensing, contact **Roger Newman-Norlund
-(rnorlund@mailbox.sc.edu)**.
+(roger@newmannorlund.com)**.
 
 The bundled atlases, NeuroQuery maps, and ABC-derived DTI/rsfMRI connectivity are **third-party
 data under their own terms**, included for noncommercial research use only - comply with and

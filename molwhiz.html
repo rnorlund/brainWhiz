@@ -321,12 +321,31 @@
 </div>
 
 <script>
+// ---------- dependency loader ----------
+// Served over http(s): use the offline copy in ./vendor — no internet needed.
+// Opened straight off disk (file://): browsers refuse ES-module imports of local files (origin "null" fails
+// CORS), so three.js MUST come from a CDN. We list two independent raw-npm CDNs; if the first is blocked or
+// down, the boot watchdog at the end of this file reloads onto the next, and if all of them fail it shows a
+// real error instead of a silently blank viewer.
+// Only raw-npm CDNs belong in this list: esm.sh & friends rewrite `import 'three'` to their own copy, which
+// would load a SECOND three.js and break every instanceof check.
 (function(){ var served=location.protocol.indexOf('http')===0;
-  var three  = served ? './vendor/three.module.js' : 'https://unpkg.com/three@0.160.0/build/three.module.js';
-  var addons = served ? './vendor/jsm/' : 'https://unpkg.com/three@0.160.0/examples/jsm/';
+  var CDN={ jsdelivr:'https://cdn.jsdelivr.net/npm/', unpkg:'https://unpkg.com/' }, ORDER=['jsdelivr','unpkg'];
+  var want=(location.search.match(/[?&]three=([a-z]+)/)||[])[1];
+  var which=ORDER.indexOf(want)>=0?want:ORDER[0], B=CDN[which];
+  var three  = served ? './vendor/three.module.js'   : B+'three@0.160.0/build/three.module.js';
+  var addons = served ? './vendor/jsm/'              : B+'three@0.160.0/examples/jsm/';
+  var jspdf  = served ? './vendor/jspdf.umd.min.js'  : B+'jspdf@2.5.1/dist/jspdf.umd.min.js';
+  window.__deps={ served:served, cdn:which, next:ORDER[ORDER.indexOf(which)+1]||null,
+                  fxBase:(served?'https://cdn.jsdelivr.net/npm/':B)+'three@0.160.0/examples/jsm/postprocessing/', errs:[] };
+  function note(m){ if(window.__deps.errs.length<6) window.__deps.errs.push(String(m)); }
+  addEventListener('error',function(e){ var t=e.target;
+    if(t&&t.tagName==='SCRIPT'&&t.type==='module') window.__deps.moduleFailed=true;   // the app module itself failed to load its imports
+    note(t&&t.src?('could not load '+t.src):(e.message||'load error')); },true);
+  addEventListener('unhandledrejection',function(e){ note((e.reason&&e.reason.message)||e.reason||'promise rejected'); });
   var im=document.createElement('script'); im.type='importmap';
   im.textContent=JSON.stringify({imports:{'three':three,'three/addons/':addons}}); document.head.appendChild(im);
-  document.write('<scr'+'ipt src="'+(served?'./vendor/jspdf.umd.min.js':'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')+'"><\/scr'+'ipt>');   // for figure PDF export
+  document.write('<scr'+'ipt src="'+jspdf+'"><\/scr'+'ipt>');   // for figure PDF export
 })();
 </script>
 <script type="module">
@@ -365,7 +384,7 @@ const isSolvent=a=>a.het && SOLVENT.has((a.resName||'').toUpperCase());
 const app=$('app');
 const renderer=new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.localClippingEnabled=true; app.appendChild(renderer.domElement);
-const VERSION='v3.20'; $('verPill').textContent=VERSION;   // bump on every iteration
+const VERSION='v3.21'; $('verPill').textContent=VERSION;   // bump on every iteration
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e16);
 const _pmrem=new THREE.PMREMGenerator(renderer); scene.environment=_pmrem.fromScene(new RoomEnvironment(),0.04).texture;   // studio env → real reflections on metal/glass/glossy
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
@@ -392,7 +411,7 @@ function updateGizmo(){ if(builderOn && builderSel>=0 && MOL.atoms[builderSel]){
 let composer=null, ssaoPass=null, bloomPass=null, _fxMods=null, _fxLoading=false;
 // Load the postprocessing passes from the CDN on demand. Explicit CDN URLs (not the import map) so relative deps (./Pass.js,
 // ../shaders/…) resolve from the CDN too, while their bare `three` import still maps to the app's three — works served & file://.
-async function ensureFX(){ if(_fxMods) return _fxMods; const B='https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/';
+async function ensureFX(){ if(_fxMods) return _fxMods; const B=(window.__deps&&window.__deps.fxBase)||'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/';
   const m=await Promise.all([ import(B+'EffectComposer.js'), import(B+'RenderPass.js'), import(B+'SSAOPass.js'), import(B+'UnrealBloomPass.js'), import(B+'SMAAPass.js'), import(B+'OutputPass.js') ]);
   _fxMods={ EffectComposer:m[0].EffectComposer, RenderPass:m[1].RenderPass, SSAOPass:m[2].SSAOPass, UnrealBloomPass:m[3].UnrealBloomPass, SMAAPass:m[4].SMAAPass, OutputPass:m[5].OutputPass }; return _fxMods; }
 function buildComposer(){ if(composer||!_fxMods) return; const F=_fxMods; composer=new F.EffectComposer(renderer);
@@ -1702,4 +1721,46 @@ window.__mol={get MOL(){return MOL;}, rebuild, buildDNA, loadMol, fetchPdb, EX,
   fetchChem, activeSite, loadDataCSV, dataInfo:()=>({matched:_dataMatched, range:_dataRange, mode:_dataMode}),
   applyLightPreset, lightInfo:()=>({exposure:renderer.toneMappingExposure, key:key.intensity, fill:fill.intensity, back:back.intensity, amb:hemi.intensity}),
   auraLevel:()=>{ let v=null; if(auraGroup) auraGroup.traverse(o=>{ if(o.material&&v==null) v=(o.material.uniforms&&o.material.uniforms.uStr)?o.material.uniforms.uStr.value:o.material.opacity; }); return v; }};
+</script>
+<script>
+// ---------- boot watchdog: never leave a silently blank viewer ----------
+// The whole app is one ES module; if its three.js import fails (offline, a blocked CDN, a missing vendor/
+// folder) the module never runs and the UI sits there dead with no error anywhere. Poll for the module's
+// public handle, then either fail over to the next CDN once, or explain exactly what went wrong.
+(function(){
+  var D=window.__deps||{}, DEADLINE=10000, t0=Date.now();   // backstop for slow links; a module load error acts at once
+  var ss=(function(){ try{ var k='mw_probe'; sessionStorage.setItem(k,'1'); sessionStorage.removeItem(k); return sessionStorage; }catch(e){ return null; } })();
+  var get=function(k){ try{ return ss?ss.getItem(k):null; }catch(e){ return null; } };
+  var set=function(k,v){ try{ if(ss) ss.setItem(k,v); }catch(e){} };
+  var del=function(k){ try{ if(ss) ss.removeItem(k); }catch(e){} };
+  var alive=function(){ return typeof window.__mol==='object'; };
+  var esc=function(x){ return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+
+  function explain(){
+    var errs=(D.errs||[]).slice(0,3).map(function(e){ return '<div style="opacity:.6;font-size:11px;margin-top:3px;word-break:break-all">'+esc(e)+'</div>'; }).join('');
+    var body = D.served
+      ? '<div>three.js could not be loaded from <code>./vendor/</code>. Check that the <b>vendor/</b> folder is sitting next to <code>molwhiz.html</code> on the server.</div>'
+      : '<div>This page was opened straight from disk (<code>file://</code>), where browsers block ES-module files on your own machine \u2014 so three.js has to come from a CDN, and every CDN we tried was unreachable (no internet, or your network blocks them).</div>'
+        + '<div style="margin-top:11px;font-weight:600">Either serve the folder \u2014 that uses the bundled offline copy and needs no internet at all:</div>'
+        + '<div style="margin:6px 0 0;padding:8px 10px;background:#0c1220;border:1px solid #2a3546;border-radius:6px;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;color:#8fd0ff">cd '+esc(location.pathname.replace(/\/[^\/]*$/,''))+'<br>python3 -m http.server 8000<br>open http://localhost:8000/molwhiz.html</div>'
+        + '<div style="margin-top:11px">\u2026or use the live demo: <a href="https://rnorlund.github.io/brainWhiz/molwhiz.html" style="color:#5db0ff">rnorlund.github.io/brainWhiz/molwhiz.html</a></div>';
+    var d=document.createElement('div'); d.id='bootErr'; d.title='molWhiz could not load its 3D library';
+    d.style.cssText='position:fixed;left:calc(50% + 10px);top:46%;transform:translate(-50%,-50%);z-index:100;width:min(620px,calc(100vw - 60px));background:rgba(14,19,28,.98);border:1px solid #2a3546;border-left:4px solid #ff5b4a;border-radius:10px;padding:18px 20px;font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#dbe6f3;box-shadow:0 12px 44px rgba(0,0,0,.65)';
+    d.innerHTML='<div style="font-weight:700;font-size:15px;color:#ff8a7a;margin-bottom:9px">molWhiz could not start</div>'+body
+      +(errs?('<div style="margin-top:12px;border-top:1px solid #2a3546;padding-top:9px"><b style="font-size:10px;letter-spacing:.5px;opacity:.6">DETAILS</b>'+errs+'</div>'):'');
+    document.body.appendChild(d);
+    var st=document.getElementById('status'); if(st) st.textContent='could not start \u2014 see the message in the viewer';
+  }
+
+  (function poll(){
+    if(alive()){ del('mw_cdnTried'); return; }                       // booted fine \u2014 forget any failover history
+    if(!D.moduleFailed && Date.now()-t0 < DEADLINE) return void setTimeout(poll,250);
+    var tried=get('mw_cdnTried')||'';
+    if(D.next && tried.indexOf('|'+D.next+'|')<0){                   // this CDN is blocked/down \u2014 try the next one, once
+      set('mw_cdnTried', tried+'|'+D.next+'|');
+      try{ var u=new URL(location.href); u.hash=''; u.searchParams.set('three',D.next); return void location.replace(u.toString()); }catch(e){}
+    }
+    del('mw_cdnTried'); explain();
+  })();
+})();
 </script>

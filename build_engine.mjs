@@ -96,7 +96,7 @@ Copyright (c) 2026 Roger Newman-Norlund. All rights reserved.
 This is a COMMERCIAL edition. The brainWhiz application code (index.html, the build/tooling
 scripts, colormaps, and documentation authored by the copyright holder) is proprietary and may
 be licensed for commercial use under terms set by the copyright holder. Contact
-rnorlund@mailbox.sc.edu for licensing.
+roger@newmannorlund.com for licensing.
 
 Bundled third-party open-source libraries remain under their own licenses (MIT/BSD/CC0) — see
 THIRD_PARTY.md; their notices are retained.

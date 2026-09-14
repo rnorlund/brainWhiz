@@ -31,7 +31,7 @@ copyright holder's grant of permissions.
 
 ## Commercial licensing
 Commercial use requires a separate, written commercial license. Contact **Roger Newman-Norlund
-(rnorlund@mailbox.sc.edu)** to arrange terms.
+(roger@newmannorlund.com)** to arrange terms.
 
 ## Third-party data (separate terms apply)
 The bundled atlases, NeuroQuery/Neurosynth maps, and ABC-derived DTI/rsfMRI connectivity are
